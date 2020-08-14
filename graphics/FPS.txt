@@ -1,0 +1,21 @@
+. "@FPS"
+: "l"
+* "~f&local29&"
+loop start
+inc "local&local31&" by 1
+cycle 1
+loop for 4
+if "local30" = "TIME_SECONDS" then "l"
+set "local26" to "(-1>>1)"
+set "local27" to "(1<<31)"
+set "local28" to 0
+loop start
+inc "local28" by "local&loopcount&"
+set "local26" to "min&local26&,('local&loopcount&')"
+set "local27" to "max&local27&,('local&loopcount&')"
+loop for 9
+set "local29" to "('local28'-'local26'-'local27'/8)"
+set "local30" to "TIME_SECONDS"
+set "local31" to "('local31'+1%10)"
+set "local&local31&" to 0
+goto "l"

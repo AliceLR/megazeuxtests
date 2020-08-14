@@ -1,0 +1,16 @@
+. "@Controller"
+set "mzx_speed" to 1
+send "all" "Start"
+
+set "local0" to 30
+set "local" to "time_seconds"
+: "l"
+cycle 1
+if "local" = "time_seconds" then "l"
+set "local" to "time_seconds"
+dec "local0" by 1
+if "local0" > 0 then "l"
+
+set "mzx_speed" to 4
+send "all" "Stop"
+end
