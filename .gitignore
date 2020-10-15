@@ -1,2 +1,5 @@
 backup*.mzx
 backup/
+src/.build
+farutil
+farutil.exe
