@@ -25,7 +25,10 @@ static const char USAGE[] =
   "determine basic size information about them. The intention\n"
   "is to be able to objectively tell if a M.K. .MOD file is\n"
   "actually a stealth .WOW file (or vice versa).\n\n"
-  "Usage: wowutil [.MOD and/or .WOW files...]\n";
+  "Usage:\n"
+  "  wowutil [.MOD and/or .WOW files...]\n\n"
+  "A list of filenames to check can also be provided via stdin:\n"
+  "  ls -1 *.mod | wowutil -\n";
 
 #define O_(...) do { \
   fprintf(stderr, "WOW: " __VA_ARGS__); \
@@ -36,6 +39,20 @@ template<class T, int N>
 constexpr int arraysize(T (&arr)[N])
 {
   return N;
+}
+
+template<int N>
+static char *fgets_safe(char (&buffer)[N], FILE *fp)
+{
+  char *retval = fgets(buffer, N, fp);
+  if(!retval)
+    return NULL;
+
+  size_t len = strlen(buffer);
+  while(len && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n'))
+    buffer[--len] = '\0';
+
+  return retval;
 }
 
 constexpr bool is_big_endian()
@@ -360,6 +377,7 @@ void check_mod(const char *filename)
 
 int main(int argc, char *argv[])
 {
+  bool has_read_stdin = false;
   int i;
 
   if(!argv || argc < 2)
@@ -369,7 +387,20 @@ int main(int argc, char *argv[])
   }
 
   for(i = 1; i < argc; i++)
+  {
+    if(!strcmp(argv[i], "-"))
+    {
+      if(!has_read_stdin)
+      {
+        char namebuffer[1024];
+        while(fgets_safe(namebuffer, stdin))
+          check_mod(namebuffer);
+        has_read_stdin = true;
+      }
+      continue;
+    }
     check_mod(argv[i]);
+  }
 
   O_("%-18s : %d\n", "Total files", total_files);
   if(total_files_large_diff)
