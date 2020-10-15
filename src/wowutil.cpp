@@ -93,9 +93,10 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 };
 
 static int total_files;
+static int total_files_large_diff;
 static int type_count[NUM_MOD_TYPES];
 
-static uint32_t pattern_size(uint32_t num_channels)
+static constexpr uint32_t pattern_size(uint32_t num_channels)
 {
   return num_channels * 4 * 64;
 }
@@ -292,13 +293,27 @@ int mod_read(struct MOD_data &d, FILE *fp)
     }
   }
 
+  ssize_t difference = d.real_length - d.expected_length;
+
+  // A difference counts as "large" if it's larger than at least 4 channels for every pattern.
+  // (the size difference of a 4 channel .MOD vs. a .WOW). Also report values slightly under
+  // this threshold in the event the value is slightly off (subtract 1 pattern...).
+  ssize_t threshold = (d.pattern_count - 1) * pattern_size(4);
+  if(threshold < pattern_size(4))
+    threshold = pattern_size(4);
+
+  bool large_diff = (difference <= -threshold) || (difference >= threshold);
+
+  if(large_diff)
+    total_files_large_diff++;
+
   O_("Name        : %s\n", d.name);
   O_("Type        : %s %4.4s (%d channels)\n", d.type_source, d.magic, d.type_channels);
   O_("Orders      : %u\n", h.num_orders);
   O_("Patterns    : %d\n", d.pattern_count);
   O_("File length : %zd\n", d.real_length);
   O_("Expected    : %zd\n", d.expected_length);
-  O_("Difference  : %zd\n", d.real_length - d.expected_length);
+  O_("Difference  : %zd%s\n", difference, large_diff ? " (LARGE--CHECK ME)" : "");
   type_count[d.type]++;
 
 /*
@@ -343,6 +358,8 @@ int main(int argc, char *argv[])
     check_mod(argv[i]);
 
   O_("%-16s : %d\n", "Total files", total_files);
+  if(total_files_large_diff)
+    O_("%-16s : %d\n", "With large diff.", total_files_large_diff);
 
   for(int i = 0; i < NUM_MOD_TYPES; i++)
     if(type_count[i])
