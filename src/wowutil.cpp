@@ -54,6 +54,7 @@ enum MOD_type
 {
   MOD_PROTRACKER,       // M.K.
   MOD_PROTRACKER_EXT,   // M!K!
+  MOD_NOISETRACKER_EXT, // M&K!
   MOD_FASTTRACKER_XCHN, // 2CHN, 6CHN, 8CHN, etc.
   MOD_FASTTRACKER_XXCH, // 10CH, 16CH, 32CH, etc.
   MOD_OCTALYSER_CD61,   // CD61
@@ -63,6 +64,7 @@ enum MOD_type
   MOD_STARTREKKER_EXO4, // EXO4
   MOD_STARTREKKER_FLT4, // FLT4
   MOD_STARTREKKER_FLT8, // FLT8
+  MOD_HMN,              // His Master's Noise FEST
   WOW,                  // Mod's Grave M.K.
   MOD_UNKNOWN,          // Probably an ST 15-instrument MOD or ST 2.6 or something.
   NUM_MOD_TYPES
@@ -79,6 +81,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 {
   { "M.K.", "ProTracker",  4  },
   { "M!K!", "ProTracker",  4  },
+  { "M&K!", "NoiseTracker",4  },
   { "xCHN", "FastTracker", 0  },
   { "xxCH", "FastTracker", 0  },
   { "CD61", "Octalyser",   6  },
@@ -88,6 +91,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "EXO4", "StarTrekker", 4  },
   { "FLT4", "StarTrekker", 4  },
   { "FLT8", "StarTrekker", 8  },
+  { "FEST", "HMN",         4  },
   { "M.K.", "Mod's Grave", 8  },
   { "",     "unknown",     -1 },
 };
@@ -146,7 +150,7 @@ struct MOD_header
   char name[20];
   struct MOD_sample samples[31];
   uint8_t num_orders;
-  uint8_t reserved;
+  uint8_t restart_byte;
   uint8_t orders[128];
   unsigned char magic[4];
 };
@@ -167,6 +171,7 @@ struct MOD_data
   int pattern_count;
   ssize_t real_length;
   ssize_t expected_length;
+  ssize_t samples_length;
   struct MOD_sample_data samples[31];
 
   struct MOD_header file_data;
@@ -175,6 +180,7 @@ struct MOD_data
 int mod_read(struct MOD_data &d, FILE *fp)
 {
   struct MOD_header &h = d.file_data;
+  ssize_t samples_length = 0;
   ssize_t running_length;
   int i;
 
@@ -262,6 +268,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
     memcpy(s.name, hs.name, arraysize(hs.name));
     s.name[arraysize(s.name) - 1] = '\0';
     s.real_length = hs.length * 2;
+    samples_length += s.real_length;
     running_length += s.real_length;
   }
 
@@ -276,12 +283,18 @@ int mod_read(struct MOD_data &d, FILE *fp)
 
   // Calculate expected length.
   d.expected_length = running_length + d.pattern_count * pattern_size(d.type_channels);
+  d.samples_length = samples_length;
 
-  // Calculate expected length of a Mod's Grave .WOW to see if a M.K. file
-  // is actually a stealth .WOW. Require exactly the length that the .WOW would
-  // be because apparently some .MOD authors like to append junk to their .MODs
-  // that would otherwise break this (nightshare_-_heaven_hell.mod).
-  if(d.type == MOD_PROTRACKER)
+  /**
+   * Calculate expected length of a Mod's Grave .WOW to see if a M.K. file
+   * is actually a stealth .WOW. .WOW files always have a restart byte of 0x00.
+   *
+   * Also, require exactly the length that the .WOW would be because
+   * 1) when 6692WOW.EXE doesn't make a corrupted .WOW it's always exactly that long;
+   * 2) apparently some .MOD authors like to append junk to their .MODs that are
+   * otherwise regular 4 channel MODs (nightshare_-_heaven_hell.mod).
+   */
+  if(d.type == MOD_PROTRACKER && h.restart_byte == 0x00)
   {
     ssize_t wow_length = running_length + d.pattern_count * pattern_size(8);
     if(d.real_length == wow_length)
@@ -311,6 +324,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
   O_("Type        : %s %4.4s (%d channels)\n", d.type_source, d.magic, d.type_channels);
   O_("Orders      : %u\n", h.num_orders);
   O_("Patterns    : %d\n", d.pattern_count);
+  O_("Samples Len.: %zd\n", d.samples_length);
   O_("File length : %zd\n", d.real_length);
   O_("Expected    : %zd\n", d.expected_length);
   O_("Difference  : %zd%s\n", difference, large_diff ? " (LARGE--CHECK ME)" : "");
@@ -357,13 +371,13 @@ int main(int argc, char *argv[])
   for(i = 1; i < argc; i++)
     check_mod(argv[i]);
 
-  O_("%-16s : %d\n", "Total files", total_files);
+  O_("%-18s : %d\n", "Total files", total_files);
   if(total_files_large_diff)
-    O_("%-16s : %d\n", "With large diff.", total_files_large_diff);
+    O_("%-18s : %d\n", "With large diff.", total_files_large_diff);
 
   for(int i = 0; i < NUM_MOD_TYPES; i++)
     if(type_count[i])
-      O_("%-11s %4.4s : %d\n", TYPES[i].source, TYPES[i].magic, type_count[i]);
+      O_("%-13s %4.4s : %d\n", TYPES[i].source, TYPES[i].magic, type_count[i]);
 
   return 0;
 }
