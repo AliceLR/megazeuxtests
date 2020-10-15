@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,12 +53,13 @@ static void fix_u16(uint16_t &value)
 enum MOD_type
 {
   MOD_PROTRACKER,       // M.K.
-  MOD_FASTTRACKER_6CHN, // 6CHN
-  MOD_FASTTRACKER_8CHN, // 8CHN
-  MOD_FASTTRACKER_10CH, // 10CH
-  MOD_FASTTRACKER_12CH, // 12CH
-  MOD_FASTTRACKER_14CH, // 14CH
-  MOD_FASTTRACKER_16CH, // 16CH
+  MOD_PROTRACKER_EXT,   // M!K!
+  MOD_FASTTRACKER_XCHN, // 2CHN, 6CHN, 8CHN, etc.
+  MOD_FASTTRACKER_XXCH, // 10CH, 16CH, 32CH, etc.
+  MOD_OCTALYSER_CD61,   // CD61
+  MOD_OCTALYSER_CD81,   // CD81
+  MOD_OKTA,             // OKTA (Oktalyzer?)
+  MOD_OCTA,             // OCTA (OctaMED?)
   MOD_STARTREKKER_EXO4, // EXO4
   MOD_STARTREKKER_FLT4, // FLT4
   MOD_STARTREKKER_FLT8, // FLT8
@@ -76,15 +78,16 @@ struct MOD_type_info
 static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 {
   { "M.K.", "ProTracker",  4  },
-  { "6CHN", "FastTracker", 6  },
-  { "8CHN", "FastTracker", 8  },
-  { "10CH", "FastTracker", 10 },
-  { "12CH", "FastTracker", 12 },
-  { "14CH", "FastTracker", 14 },
-  { "16CH", "FastTracker", 16 },
-  { "EXO4", "StarTrekker", -1 },
-  { "FLT4", "StarTrekker", -1 },
-  { "FLT8", "StarTrekker", -1 },
+  { "M!K!", "ProTracker",  4  },
+  { "xCHN", "FastTracker", 0  },
+  { "xxCH", "FastTracker", 0  },
+  { "CD61", "Octalyser",   6  },
+  { "CD81", "Octalyser",   8  },
+  { "OKTA", "Oktalyzer?",  8  },
+  { "OCTA", "OctaMED?",    8  },
+  { "EXO4", "StarTrekker", 4  },
+  { "FLT4", "StarTrekker", 4  },
+  { "FLT8", "StarTrekker", 8  },
   { "M.K.", "Mod's Grave", 8  },
   { "",     "unknown",     -1 },
 };
@@ -144,7 +147,7 @@ struct MOD_header
   uint8_t num_orders;
   uint8_t reserved;
   uint8_t orders[128];
-  char magic[4];
+  unsigned char magic[4];
 };
 
 struct MOD_sample_data
@@ -156,7 +159,7 @@ struct MOD_sample_data
 struct MOD_data
 {
   char name[21];
-  char magic[4];
+  unsigned char magic[4];
   const char *type_source;
   enum MOD_type type;
   int type_channels;
@@ -188,16 +191,52 @@ int mod_read(struct MOD_data &d, FILE *fp)
   if(!fread(&(h), sizeof(struct MOD_header), 1, fp))
     return MOD_READ_ERROR;
 
+  memcpy(d.name, h.name, arraysize(h.name));
+  d.name[arraysize(d.name) - 1] = '\0';
+  memcpy(d.magic, h.magic, 4);
+
   // Determine initial guess for what the mod type is.
   for(i = 0; i < MOD_UNKNOWN; i++)
   {
     if(!memcmp(h.magic, TYPES[i].magic, 4))
       break;
   }
-  if(i >= MOD_UNKNOWN)
+
+  // Check for FastTracker xCHN and xxCH magic formats.
+  if(isdigit(h.magic[0]) && !memcmp(h.magic + 1, "CHN", 3))
   {
+    d.type = MOD_FASTTRACKER_XCHN;
+    d.type_source = TYPES[d.type].source;
+    d.type_channels = h.magic[0] - '0';
+  }
+  else
+
+  if(h.magic[0] >= '1' && h.magic[0] <= '3' && isdigit(h.magic[1]) && h.magic[2] == 'C' && h.magic[3] == 'H')
+  {
+    d.type = MOD_FASTTRACKER_XXCH;
+    d.type_source = TYPES[d.type].source;
+    d.type_channels = (h.magic[0] - '0') * 10 + (h.magic[1] - '0');
+  }
+  else
+
+  if(i < MOD_UNKNOWN)
+  {
+    d.type = static_cast<MOD_type>(i);
+    d.type_source = TYPES[i].source;
+    d.type_channels = TYPES[i].channels;
+  }
+  else
+  {
+    O_("unknown or invalid magic %2x %2x %2x %2x\n", h.magic[0], h.magic[1], h.magic[2], h.magic[3]);
     type_count[MOD_UNKNOWN]++;
     return MOD_INVALID_MAGIC;
+  }
+
+  if(d.type_channels <= 0 || d.type_channels > 32)
+  {
+    O_("unsupported .MOD variant: %s %4.4s.\n", d.type_source, d.magic);
+    type_count[d.type]++;
+    return MOD_IGNORE_MAGIC;
   }
 
   if(!h.num_orders || h.num_orders > 128)
@@ -205,20 +244,6 @@ int mod_read(struct MOD_data &d, FILE *fp)
     O_("valid magic %4.4s but invalid order count %u\n", h.magic, h.num_orders);
     type_count[MOD_UNKNOWN]++;
     return MOD_INVALID_ORDER_COUNT;
-  }
-
-  memcpy(d.name, h.name, arraysize(h.name));
-  d.name[arraysize(d.name) - 1] = '\0';
-
-  d.type = static_cast<MOD_type>(i);
-  memcpy(d.magic, h.magic, 4);
-  d.type_source = TYPES[i].source;
-  d.type_channels = TYPES[i].channels;
-  if(d.type_channels < 0)
-  {
-    O_("unsupported .MOD variant: %s %4.4s.\n", d.type_source, d.magic);
-    type_count[d.type]++;
-    return MOD_IGNORE_MAGIC;
   }
 
   running_length = sizeof(struct MOD_header);
@@ -252,11 +277,13 @@ int mod_read(struct MOD_data &d, FILE *fp)
   d.expected_length = running_length + d.pattern_count * pattern_size(d.type_channels);
 
   // Calculate expected length of a Mod's Grave .WOW to see if a M.K. file
-  // is actually a stealth .WOW.
+  // is actually a stealth .WOW. Require exactly the length that the .WOW would
+  // be because apparently some .MOD authors like to append junk to their .MODs
+  // that would otherwise break this (nightshare_-_heaven_hell.mod).
   if(d.type == MOD_PROTRACKER)
   {
     ssize_t wow_length = running_length + d.pattern_count * pattern_size(8);
-    if(d.real_length >= wow_length)
+    if(d.real_length == wow_length)
     {
       d.type = WOW;
       d.type_channels = TYPES[WOW].channels;
