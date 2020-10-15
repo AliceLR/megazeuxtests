@@ -209,6 +209,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
     return MOD_SEEK_ERROR;
 
   d.real_length = ftell(fp);
+  errno = 0;
   rewind(fp);
   if(errno)
     return MOD_SEEK_ERROR;
