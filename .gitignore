@@ -1,6 +1,8 @@
 backup*.mzx
 backup/
 src/.build
+669util
+669util.exe
 farutil
 farutil.exe
 wowutil
