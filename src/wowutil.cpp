@@ -288,6 +288,7 @@ bool is_ST_mod(ST_header *h)
 int mod_read(struct MOD_data &d, FILE *fp)
 {
   struct MOD_header &h = d.file_data;
+  bool maybe_wow = true;
   ssize_t samples_length = 0;
   ssize_t running_length;
   int i;
@@ -405,6 +406,13 @@ int mod_read(struct MOD_data &d, FILE *fp)
     s.real_length = hs.length * 2;
     samples_length += s.real_length;
     running_length += s.real_length;
+
+    /**
+     * .669s don't have sample volume or finetune, so every .WOW has
+     * 0x00 and 0x40 for these bytes when the sample exists.
+     */
+    if(hs.length && (hs.finetune != 0x00 || hs.volume != 0x40))
+      maybe_wow = false;
   }
 
   /**
@@ -429,6 +437,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
   /**
    * Calculate expected length of a Mod's Grave .WOW to see if a M.K. file
    * is actually a stealth .WOW. .WOW files always have a restart byte of 0x00.
+   * (the .669 restart byte is handled by inserting a pattern break).
    *
    * Also, require exactly the length that the .WOW would be because
    * 1) when 6692WOW.EXE doesn't make a corrupted .WOW it's always exactly that long;
@@ -438,7 +447,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
    * Finally, 6692WOW rarely likes to append an extra byte for some reason, so
    * round the length down.
    */
-  if(d.type == MOD_PROTRACKER && h.restart_byte == 0x00)
+  if(d.type == MOD_PROTRACKER && h.restart_byte == 0x00 && maybe_wow)
   {
     ssize_t wow_length = running_length + d.pattern_count * pattern_size(8);
     if((d.real_length & ~1) == wow_length)
