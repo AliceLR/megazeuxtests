@@ -89,7 +89,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 
 static int total_files;
 static int total_files_nonzero_diff;
-static int total_files_large_diff;
+static int total_files_fp_diff;
 static int type_count[NUM_MOD_TYPES];
 
 static constexpr uint32_t pattern_size(uint32_t num_channels)
@@ -426,17 +426,15 @@ int mod_read(struct MOD_data &d, FILE *fp)
 
   ssize_t difference = d.real_length - d.expected_length;
 
-  // A difference counts as "large" if it's larger than at least 4 channels for every pattern.
-  // (the size difference of a 4 channel .MOD vs. a .WOW). Also report values slightly under
-  // this threshold in the event the value is slightly off (subtract 1 pattern...).
-  ssize_t threshold = (d.pattern_count - 1) * pattern_size(4);
-  if(threshold < pattern_size(4))
-    threshold = pattern_size(4);
+  /**
+   * Check for .MODs with lengths that would be a potential false positive for
+   * .WOW detection.
+   */
+  ssize_t threshold = d.pattern_count * pattern_size(4);
+  bool fp_diff = (difference > 0) && ((difference & ~1) == threshold);
 
-  bool large_diff = (difference <= -threshold) || (difference >= threshold);
-
-  if(large_diff)
-    total_files_large_diff++;
+  if(fp_diff)
+    total_files_fp_diff++;
   if(difference)
     total_files_nonzero_diff++;
 
@@ -450,7 +448,7 @@ int mod_read(struct MOD_data &d, FILE *fp)
   O_("Difference: %zd%s%s\n\n",
     difference,
     difference ? " (!=0)" : "",
-    large_diff ? " (!!!)" : ""
+    fp_diff ? " (!!!)" : ""
   );
   type_count[d.type]++;
 
@@ -510,8 +508,8 @@ int main(int argc, char *argv[])
   O_("%-18s : %d\n", "Total files", total_files);
   if(total_files_nonzero_diff)
     O_("%-18s : %d\n", "Nonzero difference", total_files_nonzero_diff);
-  if(total_files_large_diff)
-    O_("%-18s : %d\n", "Large difference", total_files_large_diff);
+  if(total_files_fp_diff)
+    O_("%-18s : %d\n", "False positive?", total_files_fp_diff);
   O_("\n");
 
   for(int i = 0; i < NUM_MOD_TYPES; i++)
