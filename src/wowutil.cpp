@@ -32,7 +32,7 @@ static const char USAGE[] =
   "  ls -1 *.mod | wowutil -\n";
 
 #define O_(...) do { \
-  fprintf(stderr, "WOW: " __VA_ARGS__); \
+  fprintf(stderr, ": " __VA_ARGS__); \
   fflush(stderr); \
 } while(0)
 
@@ -434,11 +434,14 @@ int mod_read(struct MOD_data &d, FILE *fp)
    * 1) when 6692WOW.EXE doesn't make a corrupted .WOW it's always exactly that long;
    * 2) apparently some .MOD authors like to append junk to their .MODs that are
    * otherwise regular 4 channel MODs (nightshare_-_heaven_hell.mod).
+   *
+   * Finally, 6692WOW rarely likes to append an extra byte for some reason, so
+   * round the length down.
    */
   if(d.type == MOD_PROTRACKER && h.restart_byte == 0x00)
   {
     ssize_t wow_length = running_length + d.pattern_count * pattern_size(8);
-    if(d.real_length == wow_length)
+    if((d.real_length & ~1) == wow_length)
     {
       d.type = WOW;
       d.type_channels = TYPES[WOW].channels;
