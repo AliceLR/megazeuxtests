@@ -293,11 +293,17 @@ int mod_read(struct MOD_data &d, FILE *fp)
     running_length += s.real_length;
   }
 
-  // Determine pattern count.
+  /**
+   * Determine pattern count.
+   * This can be dependent on orders outside of the order count
+   * (observed with converting 'final vision.669' to .WOW). This
+   * is consistent with how libmodplug and libxmp determine the
+   * pattern count as well (including the 0x80 check).
+   */
   uint8_t max_pattern = 0;
-  for(i = 0; i < h.num_orders; i++)
+  for(i = 0; i < 128; i++)
   {
-    if(h.orders[i] > max_pattern)
+    if(h.orders[i] < 0x80 && h.orders[i] > max_pattern)
       max_pattern = h.orders[i];
   }
   d.pattern_count = max_pattern + 1;
