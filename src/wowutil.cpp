@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "common.hpp"
+
 static const char USAGE[] =
   "wowutil, a utility to examine .MOD or .WOW files to\n"
   "determine basic size information about them. The intention\n"
@@ -30,43 +32,6 @@ static const char USAGE[] =
   "  wowutil [.MOD and/or .WOW files...]\n\n"
   "A list of filenames to check can also be provided via stdin:\n"
   "  ls -1 *.mod | wowutil -\n";
-
-#define O_(...) do { \
-  fprintf(stderr, ": " __VA_ARGS__); \
-  fflush(stderr); \
-} while(0)
-
-template<class T, int N>
-constexpr int arraysize(T (&arr)[N])
-{
-  return N;
-}
-
-template<int N>
-static char *fgets_safe(char (&buffer)[N], FILE *fp)
-{
-  char *retval = fgets(buffer, N, fp);
-  if(!retval)
-    return NULL;
-
-  size_t len = strlen(buffer);
-  while(len && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n'))
-    buffer[--len] = '\0';
-
-  return retval;
-}
-
-constexpr bool is_big_endian()
-{
-  const uint32_t t = 0x12345678;
-  return *reinterpret_cast<const uint8_t *>(&t) == 0x12;
-}
-
-static void fix_u16(uint16_t &value)
-{
-  if(!is_big_endian())
-    value = __builtin_bswap16(value);
-}
 
 enum MOD_type
 {
@@ -268,7 +233,7 @@ bool is_ST_mod(ST_header *h)
   for(int i = 0; i < 15; i++)
   {
     uint16_t sample_length = h->samples[i].length;
-    fix_u16(sample_length);
+    fix_u16be(sample_length);
 
     if(h->samples[i].finetune || h->samples[i].volume > 64 ||
      sample_length > 32768)
@@ -397,9 +362,9 @@ int mod_read(struct MOD_data &d, FILE *fp)
     struct MOD_sample &hs = h.samples[i];
     struct MOD_sample_data &s = d.samples[i];
 
-    fix_u16(hs.length);
-    fix_u16(hs.repeat_start);
-    fix_u16(hs.repeat_length);
+    fix_u16be(hs.length);
+    fix_u16be(hs.repeat_start);
+    fix_u16be(hs.repeat_length);
 
     memcpy(s.name, hs.name, arraysize(hs.name));
     s.name[arraysize(s.name) - 1] = '\0';
