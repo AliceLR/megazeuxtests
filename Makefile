@@ -1,9 +1,9 @@
 .PHONY: all clean
 all:
 
-CFLAGS += -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter
-LINKCC := ${CC}
-LINKCXX:= ${CC}
+CFLAGS   += -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter
+CXXFLAGS += -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter
+LINKCXX  := ${CXX}
 
 ifneq (${MSYSTEM},)
 BINEXT := .exe
@@ -33,18 +33,19 @@ ${OBJ}/%.o: ${SRC}/%.c | ${OBJ}
 	${CC} -MD ${CFLAGS} -c $< -o $@
 
 ${OBJ}/%.o: ${SRC}/%.cpp | ${OBJ}
-	${CXX} -MD ${CFLAGS} -c $< -o $@
+	${CXX} -MD ${CXXFLAGS} -c $< -o $@
 
 ${_669_EXE}: ${_669_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
 ${FAR_EXE}: ${FAR_OBJS}
-	${LINKCC} ${LDFLAGS} -o $@ $^ ${LDLIBS}
+	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
 ${WOW_EXE}: ${WOW_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
 clean:
 	rm -rf ${OBJ}
+	rm -f ${_669_EXE}
 	rm -f ${FAR_EXE}
 	rm -f ${WOW_EXE}

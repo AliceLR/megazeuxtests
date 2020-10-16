@@ -19,17 +19,12 @@
  * This really doesn't do much else right now.
  */
 
-// NOTE: this currently breaks on big endian machines.
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define O_(...) do { \
-  fprintf(stderr, "FAR: " __VA_ARGS__); \
-  fflush(stderr); \
-} while(0)
+#include "common.hpp"
 
 enum FAR_err
 {
@@ -124,11 +119,13 @@ int far_read(struct FAR_data *d, FILE *fp)
   if(d->h.version != 0x10)
     return FAR_BAD_VERSION;
 
+  fix_u16le(d->h.text_length);
+
   len = d->h.text_length;
   O_("FAR text length: %u\n", (unsigned int)len);
   if(len)
   {
-    d->text = malloc(len + 1);
+    d->text = (char *)malloc(len + 1);
     if(!d->text)
       return FAR_ALLOC_ERROR;
 
@@ -148,6 +145,7 @@ int far_read(struct FAR_data *d, FILE *fp)
 
   for(i = 0; i < 256; i++)
   {
+    fix_u16le(d->pattern_length[i]);
     if(d->pattern_length[i])
     {
       size_t rows = (d->pattern_length[i] - 2) >> 6;

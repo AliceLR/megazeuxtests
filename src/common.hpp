@@ -51,6 +51,12 @@ static inline constexpr bool is_big_endian()
   return *reinterpret_cast<const uint8_t *>(&t) == 0x12;
 }
 
+static inline void fix_u16le(uint16_t &value)
+{
+  if(is_big_endian())
+    value = __builtin_bswap16(value);
+}
+
 static inline void fix_u16be(uint16_t &value)
 {
   if(!is_big_endian())
