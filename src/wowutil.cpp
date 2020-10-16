@@ -85,7 +85,10 @@ enum MOD_type
   MOD_HMN,              // His Master's Noise FEST
   MOD_LARD,             // Signature found in judgement_day_gvine.mod. It's a normal 4-channel MOD.
   WOW,                  // Mod's Grave M.K.
-  MOD_UNKNOWN,          // Probably an ST 15-instrument MOD or ST 2.6 or something.
+  MOD_SOUNDTRACKER,     // ST 15-instrument .MOD, no signature.
+  MOD_SOUNDTRACKER_26,  // Soundtracker 2.6 MTN\0
+  MOD_ICETRACKER_IT10,  // Icetracker 1.x IT10
+  MOD_UNKNOWN,          // ?
   NUM_MOD_TYPES
 };
 
@@ -113,10 +116,14 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "FEST", "HMN",         4  },
   { "LARD", "Unknown 4ch", 4  },
   { "M.K.", "Mod's Grave", 8  },
+  { "",     "SoundTracker",4  },
+  { "",     "ST 2.6",      -1 },
+  { "",     "IceTracker",  -1 },
   { "",     "unknown",     -1 },
 };
 
 static int total_files;
+static int total_files_nonzero_diff;
 static int total_files_large_diff;
 static int type_count[NUM_MOD_TYPES];
 
@@ -132,6 +139,9 @@ enum MOD_error
   MOD_READ_ERROR,
   MOD_INVALID_MAGIC,
   MOD_INVALID_ORDER_COUNT,
+  MOD_IGNORE_ST,
+  MOD_IGNORE_ST26,
+  MOD_IGNORE_IT10,
   MOD_IGNORE_MAGIC,
 };
 
@@ -142,8 +152,11 @@ static const char *MOD_strerror(int err)
     case MOD_SUCCESS: return "no error";
     case MOD_SEEK_ERROR: return "seek error";
     case MOD_READ_ERROR: return "read error";
-    case MOD_INVALID_MAGIC: return "file is not a 31-channel .MOD";
+    case MOD_INVALID_MAGIC: return "file is not 31-inst .MOD";
     case MOD_INVALID_ORDER_COUNT: return "invalid order count";
+    case MOD_IGNORE_ST: return "ignoring ST 15-inst .MOD";
+    case MOD_IGNORE_ST26: return "ignoring ST 2.6 .MOD";
+    case MOD_IGNORE_IT10: return "ignoring IceTracker .MOD";
     case MOD_IGNORE_MAGIC: return "ignoring unsupported .MOD variant";
   }
   return "unknown error";
@@ -175,6 +188,15 @@ struct MOD_header
   unsigned char magic[4];
 };
 
+struct ST_header
+{
+  char name[20];
+  struct MOD_sample samples[15];
+  uint8_t num_orders;
+  uint8_t song_speed;
+  uint8_t orders[128];
+};
+
 struct MOD_sample_data
 {
   char name[23];
@@ -184,6 +206,7 @@ struct MOD_sample_data
 struct MOD_data
 {
   char name[21];
+  char name_clean[21];
   unsigned char magic[4];
   const char *type_source;
   enum MOD_type type;
@@ -196,6 +219,71 @@ struct MOD_data
 
   struct MOD_header file_data;
 };
+
+bool mod_strip_name(char *dest, size_t dest_len)
+{
+  size_t start = 0;
+  size_t end = strlen(dest);
+
+  if(end > dest_len)
+    return false;
+
+  // Strip non-ASCII chars and whitespace from the start.
+  for(; start < end; start++)
+    if(dest[start] >= 0x21 && dest[start] <= 0x7E)
+      break;
+
+  // Strip non-ASCII chars and whitespace from the end.
+  for(; start < end; end--)
+    if(dest[end - 1] >= 0x21 && dest[end - 1] < 0x7E)
+      break;
+
+  // Move the buffer to the start of the string, stripping non-ASCII
+  // chars and combining spaces.
+  size_t i = 0;
+  size_t j = start;
+  while(i < dest_len - 1 && j < end)
+  {
+    if(dest[j] == ' ')
+    {
+      while(dest[j] == ' ')
+        j++;
+      dest[i++] = ' ';
+    }
+    else
+
+    if(dest[j] >= 0x21 && dest[j] <= 0x7E)
+      dest[i++] = dest[j++];
+
+    else
+      j++;
+  }
+  dest[i] = '\0';
+  return true;
+}
+
+bool is_ST_mod(ST_header *h)
+{
+  // Try to filter out ST mods based on sample data bounding.
+  for(int i = 0; i < 15; i++)
+  {
+    uint16_t sample_length = h->samples[i].length;
+    fix_u16(sample_length);
+
+    if(h->samples[i].finetune || h->samples[i].volume > 64 ||
+     sample_length > 32768)
+      return false;
+  }
+  // Make sure the order count and pattern numbers aren't nonsense.
+  if(!h->num_orders || h->num_orders > 128)
+    return false;
+
+  for(int i = 0; i < 128; i++)
+    if(h->orders[i] >= 0x80)
+      return false;
+
+  return true;
+}
 
 int mod_read(struct MOD_data &d, FILE *fp)
 {
@@ -221,12 +309,15 @@ int mod_read(struct MOD_data &d, FILE *fp)
 
   memcpy(d.name, h.name, arraysize(h.name));
   d.name[arraysize(d.name) - 1] = '\0';
+  memcpy(d.name_clean, d.name, arraysize(d.name));
   memcpy(d.magic, h.magic, 4);
+  if(!mod_strip_name(d.name_clean, arraysize(d.name_clean)))
+    d.name_clean[0] = '\0';
 
   // Determine initial guess for what the mod type is.
   for(i = 0; i < MOD_UNKNOWN; i++)
   {
-    if(!memcmp(h.magic, TYPES[i].magic, 4))
+    if(TYPES[i].magic[0] && !memcmp(h.magic, TYPES[i].magic, 4))
       break;
   }
 
@@ -255,7 +346,30 @@ int mod_read(struct MOD_data &d, FILE *fp)
   }
   else
   {
-    O_("unknown or invalid magic %2x %2x %2x %2x\n", h.magic[0], h.magic[1], h.magic[2], h.magic[3]);
+    if(is_ST_mod(reinterpret_cast<ST_header *>(&h)))
+    {
+      type_count[MOD_SOUNDTRACKER]++;
+      return MOD_IGNORE_ST;
+    }
+
+    // No? Maybe an ST 2.6 mod...
+    if(fseek(fp, 1464, SEEK_SET))
+      return MOD_SEEK_ERROR;
+    uint8_t tmp[4];
+    if(!fread(tmp, 4, 1, fp))
+      return MOD_READ_ERROR;
+    if(!memcmp(tmp, "MTN\x00", 4))
+    {
+      type_count[MOD_SOUNDTRACKER_26]++;
+      return MOD_IGNORE_ST26;
+    }
+    if(!memcmp(tmp, "IT10", 4))
+    {
+      type_count[MOD_ICETRACKER_IT10]++;
+      return MOD_IGNORE_IT10;
+    }
+
+    O_("unknown/invalid magic %2x %2x %2x %2x\n", h.magic[0], h.magic[1], h.magic[2], h.magic[3]);
     type_count[MOD_UNKNOWN]++;
     return MOD_INVALID_MAGIC;
   }
@@ -346,15 +460,21 @@ int mod_read(struct MOD_data &d, FILE *fp)
 
   if(large_diff)
     total_files_large_diff++;
+  if(difference)
+    total_files_nonzero_diff++;
 
-  O_("Name        : %s\n", d.name);
-  O_("Type        : %s %4.4s (%d channels)\n", d.type_source, d.magic, d.type_channels);
-  O_("Orders      : %u\n", h.num_orders);
-  O_("Patterns    : %d\n", d.pattern_count);
-  O_("Samples Len.: %zd\n", d.samples_length);
-  O_("File length : %zd\n", d.real_length);
-  O_("Expected    : %zd\n", d.expected_length);
-  O_("Difference  : %zd%s\n", difference, large_diff ? " (LARGE--CHECK ME)" : "");
+  O_("Name      : %s\n", d.name_clean);
+  O_("Type      : %s %4.4s (%d ch.)\n", d.type_source, d.magic, d.type_channels);
+  O_("Orders    : %u (0x%02x)\n", h.num_orders, h.restart_byte);
+  O_("Patterns  : %d\n", d.pattern_count);
+  O_("Sample sz.: %zd\n", d.samples_length);
+  O_("File size : %zd\n", d.real_length);
+  O_("Expected  : %zd\n", d.expected_length);
+  O_("Difference: %zd%s%s\n\n",
+    difference,
+    difference ? " (!=0)" : "",
+    large_diff ? " (!!!)" : ""
+  );
   type_count[d.type]++;
 
 /*
@@ -371,12 +491,10 @@ void check_mod(const char *filename)
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    O_("Checking '%s'.\n", filename);
+    O_("File '%s'.\n", filename);
     int err = mod_read(d, fp);
-    if(!err)
-      O_("Successfully read file.\n\n");
-    else
-      O_("Failed to read file: %s\n\n", MOD_strerror(err));
+    if(err)
+      O_("Error: %s\n\n", MOD_strerror(err));
 
     fclose(fp);
   }
@@ -413,8 +531,11 @@ int main(int argc, char *argv[])
   }
 
   O_("%-18s : %d\n", "Total files", total_files);
+  if(total_files_nonzero_diff)
+    O_("%-18s : %d\n", "Nonzero difference", total_files_nonzero_diff);
   if(total_files_large_diff)
-    O_("%-18s : %d\n", "With large diff.", total_files_large_diff);
+    O_("%-18s : %d\n", "Large difference", total_files_large_diff);
+  O_("\n");
 
   for(int i = 0; i < NUM_MOD_TYPES; i++)
     if(type_count[i])
