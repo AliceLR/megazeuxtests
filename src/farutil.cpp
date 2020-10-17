@@ -225,6 +225,8 @@ void check_far(const char *filename)
 
 int main(int argc, char *argv[])
 {
+  bool read_stdin = false;
+
   if(!argv || argc < 2)
   {
     fprintf(stdout, "Usage: %s filenames...\n", argv ? argv[0] : "farutil");
@@ -233,6 +235,18 @@ int main(int argc, char *argv[])
 
   for(int i = 1; i < argc; i++)
   {
+    if(!strcmp(argv[i], "-"))
+    {
+      if(!read_stdin)
+      {
+        char buffer[1024];
+        while(fgets_safe(buffer, stdin))
+          check_far(buffer);
+
+        read_stdin = true;
+      }
+      continue;
+    }
     check_far(argv[i]);
   }
 
