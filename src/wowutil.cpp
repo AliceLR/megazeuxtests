@@ -49,6 +49,7 @@ enum MOD_type
   MOD_STARTREKKER_FLT8, // FLT8
   MOD_HMN,              // His Master's Noise FEST
   MOD_LARD,             // Signature found in judgement_day_gvine.mod. It's a normal 4-channel MOD.
+  MOD_NSMS,             // Signature found in kingdomofpleasure.mod. It's a normal 4-channel MOD.
   WOW,                  // Mod's Grave M.K.
   MOD_SOUNDTRACKER,     // ST 15-instrument .MOD, no signature.
   MOD_SOUNDTRACKER_26,  // Soundtracker 2.6 MTN\0
@@ -80,6 +81,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "FLT8", "StarTrekker", 8  },
   { "FEST", "HMN",         4  },
   { "LARD", "Unknown 4ch", 4  },
+  { "NSMS", "Unknown 4ch", 4  },
   { "M.K.", "Mod's Grave", 8  },
   { "",     "SoundTracker",4  },
   { "",     "ST 2.6",      -1 },
