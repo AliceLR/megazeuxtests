@@ -90,6 +90,17 @@ static int read_xm(FILE *fp)
   if(h.magic2 != 0x1a)
     return XM_INVALID_MAGIC;
 
+  fix_u16le(h.version);
+  fix_u32le(h.header_size);
+  fix_u16le(h.num_orders);
+  fix_u16le(h.restart_pos);
+  fix_u16le(h.num_channels);
+  fix_u16le(h.num_patterns);
+  fix_u16le(h.num_instruments);
+  fix_u16le(h.flags);
+  fix_u16le(h.default_tempo);
+  fix_u16le(h.default_bpm);
+
   if(h.num_orders > 256)
     return XM_INVALID_ORDER_COUNT;
 

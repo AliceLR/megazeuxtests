@@ -57,6 +57,12 @@ static inline void fix_u16le(uint16_t &value)
     value = __builtin_bswap16(value);
 }
 
+static inline void fix_u32le(uint32_t &value)
+{
+  if(is_big_endian())
+    value = __builtin_bswap32(value);
+}
+
 static inline void fix_u16be(uint16_t &value)
 {
   if(!is_big_endian())
