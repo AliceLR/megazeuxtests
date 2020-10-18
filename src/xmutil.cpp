@@ -136,7 +136,7 @@ static int read_xm(FILE *fp)
 
   O_("Version : %04x\n", h.version);
   O_("Orders  : %u\n", h.num_orders);
-  O_("Patterns: %u\n", h.num_patterns);
+  O_("Patterns: %u%s\n", h.num_patterns, has_fe ? " (uses 0xFE)" : "");
   O_("Invalid?: %s\n\n",
     invalid ? mpt_extension ? "YES (incl. 0xFE)" : "YES" :
     mpt_extension ? "ModPlug skip" :
