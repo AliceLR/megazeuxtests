@@ -33,6 +33,7 @@ static int num_xms;
 static int num_invalid_orders;
 static int num_without_skip;
 static int num_with_skip;
+static int num_with_pat_fe;
 
 enum XM_error
 {
@@ -80,6 +81,7 @@ static int read_xm(FILE *fp)
   XM_header h;
   bool invalid = false;
   bool mpt_extension = false;
+  bool has_fe = false;
 
   if(!fread(&h, sizeof(XM_header), 1, fp))
     return XM_READ_ERROR;
@@ -116,6 +118,8 @@ static int read_xm(FILE *fp)
       else
         invalid = true;
     }
+    if(h.orders[i] == 0xFE && h.num_patterns > 0xFE)
+      has_fe = true;
   }
 
   if(invalid)
@@ -125,13 +129,16 @@ static int read_xm(FILE *fp)
     num_with_skip++;
   else
     num_without_skip++;
+
+  if(has_fe)
+    num_with_pat_fe++;
   num_xms++;
 
   O_("Version : %04x\n", h.version);
   O_("Orders  : %u\n", h.num_orders);
   O_("Patterns: %u\n", h.num_patterns);
   O_("Invalid?: %s\n\n",
-    invalid ? "YES" :
+    invalid ? mpt_extension ? "YES (incl. 0xFE)" : "YES" :
     mpt_extension ? "ModPlug skip" :
     "NO"
   );
@@ -190,5 +197,7 @@ int main(int argc, char *argv[])
     O_("XMs with skip    : %d\n", num_with_skip);
   if(num_invalid_orders)
     O_("XMs with inval.  : %d\n", num_invalid_orders);
+  if(num_with_pat_fe)
+    O_("XMs with pat. FE : %d\n", num_with_pat_fe);
   return 0;
 }
