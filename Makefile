@@ -24,7 +24,11 @@ WOW_OBJS := ${OBJ}/wowutil.o
 WOW_EXE  := wowutil${BINEXT}
 -include ${WOW_OBJS:.o=.d}
 
-all: ${_669_EXE} ${FAR_EXE} ${WOW_EXE}
+XM_OBJS  := ${OBJ}/xmutil.o
+XM_EXE   := xmutil${BINEXT}
+-include ${XM_OBJS:.o=.d}
+
+all: ${_669_EXE} ${FAR_EXE} ${WOW_EXE} ${XM_EXE}
 
 ${OBJ}:
 	mkdir -p ${OBJ}
@@ -44,8 +48,12 @@ ${FAR_EXE}: ${FAR_OBJS}
 ${WOW_EXE}: ${WOW_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
+${XM_EXE}: ${XM_OBJS}
+	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
+
 clean:
 	rm -rf ${OBJ}
 	rm -f ${_669_EXE}
 	rm -f ${FAR_EXE}
 	rm -f ${WOW_EXE}
+	rm -f ${XM_EXE}
