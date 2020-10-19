@@ -26,6 +26,8 @@
 
 #include "common.hpp"
 
+static bool dump_patterns = false;
+
 enum FAR_err
 {
   FAR_SUCCESS,
@@ -150,7 +152,7 @@ int far_read(struct FAR_data *d, FILE *fp)
     {
       size_t rows = (d->pattern_length[i] - 2) >> 6;
       if(i < num_patterns && rows > 256)
-        O_("warning: pattern %d expects %u rows >256\n", i, (unsigned int)rows);
+        O_("warning: pattern %02x expects %u rows >256\n", i, (unsigned int)rows);
 
       d->p[i].expected_rows = rows;
 
@@ -167,23 +169,56 @@ int far_read(struct FAR_data *d, FILE *fp)
     int break_location;
     if(!pattern_len)
     {
-      O_("pattern %d: length=%u, ignoring.\n", i, pattern_len);
+      O_("pattern %02x: length=%u, ignoring.\n", i, pattern_len);
       continue;
     }
 
     break_location = fgetc(fp);
     if(feof(fp))
     {
-      O_("pattern read error for pattern %d!\n", i);
+      O_("pattern read error for pattern %02x!\n", i);
       return FAR_READ_ERROR;
     }
 
-    O_("pattern %d: length=%u, expected_rows=%u, break byte=%u, difference=%d\n",
+    O_("pattern %02x: length=%u, expected_rows=%u, break byte=%u, difference=%d\n",
       i, pattern_len, expected_rows, break_location, expected_rows - break_location
     );
 
     d->p[i].break_location = break_location;
-    fseek(fp, d->pattern_length[i] - 1, SEEK_CUR);
+
+    if(dump_patterns)
+    {
+      fgetc(fp); // Pattern tempo byte. "DO NOT SUPPORT IT!!".
+
+      for(int j = 0; j < expected_rows; j++)
+      {
+        fprintf(stderr, ":");
+        for(int k = 0; k < 16; k++)
+        {
+          int note = fgetc(fp);
+          int inst = fgetc(fp);
+          int vol  = fgetc(fp);
+          int fx   = fgetc(fp);
+          if(feof(fp))
+          {
+            O_("pattern read error for pattern %02x!\n", i);
+            return FAR_READ_ERROR;
+          }
+
+#define P_PRINT(x) if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   ");
+          P_PRINT(note);
+          P_PRINT(inst);
+          P_PRINT(vol);
+          P_PRINT(fx);
+          fprintf(stderr, ":");
+        }
+        fprintf(stderr, "\n");
+      }
+      fprintf(stderr, "\n");
+      fflush(stderr);
+    }
+    else
+      fseek(fp, d->pattern_length[i] - 1, SEEK_CUR);
   }
   // ignore samples
   return 0;
@@ -235,6 +270,20 @@ int main(int argc, char *argv[])
 
   for(int i = 1; i < argc; i++)
   {
+    if(!strcmp(argv[i], "-d=1") || !strcmp(argv[i], "-d"))
+    {
+      dump_patterns = true;
+      continue;
+    }
+    else
+
+    if(!strcmp(argv[i], "-d=0"))
+    {
+      dump_patterns = false;
+      continue;
+    }
+    else
+
     if(!strcmp(argv[i], "-"))
     {
       if(!read_stdin)
