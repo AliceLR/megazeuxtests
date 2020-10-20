@@ -36,13 +36,15 @@ static const char USAGE[] =
   "Usage:\n"
   "  gdmutil [options] [filenames...]\n\n"
   "Options:\n"
-  "  -s[=N]    Dump sample information. N=1 (optional) enables, N=0 disables.\n"
-  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables.\n"
+  "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
+  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
+  "            N=2 additionally dumps the entire pattern as raw data.\n"
   "  -         Read filenames from stdin. Useful when there are too many files\n"
   "            for argv. Place after any other options if applicable.\n\n";
 
-static bool dump_samples  = false;
-static bool dump_patterns = false;
+static bool dump_samples      = false;
+static bool dump_patterns     = false;
+static bool dump_pattern_rows = false;
 
 enum GDM_err
 {
@@ -53,18 +55,22 @@ enum GDM_err
   GDM_BAD_SIGNATURE,
   GDM_BAD_VERSION,
   GDM_BAD_CHANNEL,
+  GDM_BAD_PATTERN,
+  GDM_TOO_MANY_EFFECTS,
 };
 
 static const char *GDM_strerror(int err)
 {
   switch(err)
   {
-    case GDM_SUCCESS:       return "no error";
-    case GDM_READ_ERROR:    return "read error";
-    case GDM_SEEK_ERROR:    return "seek error";
-    case GDM_BAD_SIGNATURE: return "GDM signature mismatch";
-    case GDM_BAD_VERSION:   return "GDM version invalid";
-    case GDM_BAD_CHANNEL:   return "invalid GDM channel index";
+    case GDM_SUCCESS:          return "no error";
+    case GDM_READ_ERROR:       return "read error";
+    case GDM_SEEK_ERROR:       return "seek error";
+    case GDM_BAD_SIGNATURE:    return "GDM signature mismatch";
+    case GDM_BAD_VERSION:      return "GDM version invalid";
+    case GDM_BAD_CHANNEL:      return "invalid GDM channel index";
+    case GDM_BAD_PATTERN:      return "invalid GDM pattern data";
+    case GDM_TOO_MANY_EFFECTS: return "note has more effects (>4) than allowed";
   }
   return "unknown error";
 }
@@ -123,6 +129,46 @@ enum GDM_sample_flags
   S_STEREO = (1<<5),
 };
 
+enum GDM_effects
+{
+  E_NONE,
+  E_PORTAMENTO_UP,
+  E_PORTAMENTO_DOWN,
+  E_PORTAMENTO_TONE,
+  E_VIBRATO,
+  E_VOLSLIDE_PORTAMENTO,
+  E_VIBRATO_PORTAMENTO,
+  E_TREMOLO,
+  E_TREMOR,
+  E_SAMPLE_OFFSET,
+  E_VOLSLIDE,
+  E_PATTERN_JUMP,
+  E_VOLUME,
+  E_PATTERN_BREAK,
+  E_EXT,
+  E_TEMPO
+};
+
+enum GDM_effects_ext
+{
+  EX_FILTER,
+  EX_FINE_PORTAMENTO_UP,
+  EX_FINE_PORTAMENTO_DOWN,
+  EX_GLISSANDO,
+  EX_VIBRATO_WAVEFORM,
+  EX_C4_TUNING,
+  EX_LOOP,
+  EX_TREMOLO_WAVEFORM,
+  EX_EXTRA_FINE_PORTAMENTO_UP,
+  EX_EXTRA_FINE_PORTAMENTO_DOWN,
+  EX_FINE_VOLSLIDE_UP,
+  EX_FINE_VOLSLIDE_DOWN,
+  EX_NOTE_CUT,
+  EX_NOTE_DELAY,
+  EX_EXTEND_ROW,
+  EX_FUNKREPEAT
+};
+
 template<int N>
 static const char *FLAG_STR(char (&buffer)[N], uint8_t flags)
 {
@@ -169,9 +215,6 @@ struct GDM_header
   uint16_t scrolly_length;
   uint32_t graphic_offset; // ??
   uint16_t graphic_length;
-
-  // Derived values.
-  uint8_t num_channels;
 };
 
 /**
@@ -191,10 +234,24 @@ struct GDM_sample
   uint8_t default_panning;
 };
 
+struct GDM_note
+{
+  uint8_t note;
+  uint8_t sample;
+  struct
+  {
+    uint8_t effect;
+    uint8_t param;
+  } effects[4];
+};
+
 struct GDM_pattern
 {
   // NOTE: this could theoretically be longer but this is probably the maximum.
-  uint8_t rows[256][32];
+  GDM_note rows[256][32];
+  uint8_t max_track_effects[32];
+  uint16_t raw_size;
+  uint16_t num_rows;
 };
 
 struct GDM_data
@@ -204,6 +261,7 @@ struct GDM_data
   GDM_pattern *patterns[256];
   uint8_t orders[256];
   uint8_t buffer[65536];
+  uint8_t num_channels;
 };
 
 void GDM_free(GDM_data &d)
@@ -245,12 +303,12 @@ int GDM_read(GDM_data &d, FILE *fp)
   h.bpm                 = fgetc(fp);
   h.original_format     = fget_u16le(fp);
   h.order_offset        = fget_u32le(fp);
-  h.num_orders          = fgetc(fp);
+  h.num_orders          = fgetc(fp) + 1;
   h.pattern_offset      = fget_u32le(fp);
-  h.num_patterns        = fgetc(fp);
+  h.num_patterns        = fgetc(fp) + 1;
   h.sample_offset       = fget_u32le(fp);
   h.sample_data_offset  = fget_u32le(fp);
-  h.num_samples         = fgetc(fp);
+  h.num_samples         = fgetc(fp) + 1;
   h.message_offset      = fget_u32le(fp);
   h.message_length      = fget_u32le(fp);
   h.scrolly_offset      = fget_u32le(fp);
@@ -262,18 +320,27 @@ int GDM_read(GDM_data &d, FILE *fp)
     return GDM_READ_ERROR;
 
   // Get channel count by checking for 255 in the panning table.
+  bool uses_chpan = false;
+  bool uses_surround = false;
   for(int i = 0; i < 32; i++)
+  {
     if(h.panning[i] != 255)
-      h.num_channels = i + 1;
+      d.num_channels = i + 1;
 
-  O_("Name     : %s\n", h.name);
-  O_("Type     : GDM %u.%u (%s/%s %u.%u)\n",
+    if(h.panning[i] == 16)
+      uses_surround = true;
+    if(h.panning[i] != 8)
+      uses_chpan = true;
+  }
+
+  O_("Name      : %s\n", h.name);
+  O_("Type      : GDM %u.%u (%s/%s %u.%u)\n",
    VER_MAJOR(h.gdm_version), VER_MINOR(h.gdm_version), FORMAT(h.original_format),
    TRACKER(h.tracker_id), VER_MAJOR(h.tracker_version), VER_MINOR(h.tracker_version));
-  O_("Orders   : %u\n", h.num_orders);
-  O_("Patterns : %u\n", h.num_patterns);
-  O_("Tracks   : %u\n", h.num_channels);
-  O_("Samples  : %u\n", h.num_samples);
+  O_("Orders    : %u\n", h.num_orders);
+  O_("Patterns  : %u\n", h.num_patterns);
+  O_("Tracks    : %u\n", d.num_channels);
+  O_("Samples   : %u\n", h.num_samples);
 
   // Order list.
   if(fseek(fp, h.order_offset, SEEK_SET))
@@ -287,9 +354,10 @@ int GDM_read(GDM_data &d, FILE *fp)
     return GDM_SEEK_ERROR;
 
   bool uses_svol = false;
+  bool uses_nosvol = false;
   bool uses_span = false;
   bool uses_lzw = false;
-  bool sample_header = false;
+  bool print_sample_header = true;
   for(size_t i = 0; i < h.num_samples; i++)
   {
     GDM_sample &s = d.samples[i];
@@ -314,20 +382,27 @@ int GDM_read(GDM_data &d, FILE *fp)
     if(dump_samples)
     {
       char tmp[16];
-      if(!sample_header)
+      if(print_sample_header)
       {
-        O_("         : %-32s  %-12s  %-8s %-8s %-8s %-7s %-7s %-5s %-5s\n",
+        O_("          : %-32s  %-12s  %-8s %-8s %-8s %-7s %-7s %-5s %-5s\n",
          "Name", "Filename", "Length", "L. Start", "L. End", "Flags", "C4Rate", "Vol.", "Pan.");
-        sample_header = true;
+        print_sample_header = false;
       }
-      O_("Sample %02x: %-32s  %-12s  %-8u %-8u %-8u %-7s %-7u %-5u %-5u\n",
+      O_("Sample %02x : %-32s  %-12s  %-8u %-8u %-8u %-7s %-7u %-5u %-5u\n",
        (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
        FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning);
     }
-    if(s.flags & S_VOL)
+    if((s.flags & S_VOL) && s.default_volume != 255)
       uses_svol = true;
-    if(s.flags & S_PAN)
+    else
+      uses_nosvol = true;
+    if((s.flags & S_PAN) && s.default_panning != 255)
+    {
+      if(s.default_panning == 16)
+        uses_surround = true;
+
       uses_span = true;
+    }
     if(s.flags & S_LZW)
       uses_lzw = true;
   }
@@ -336,35 +411,189 @@ int GDM_read(GDM_data &d, FILE *fp)
   if(fseek(fp, h.pattern_offset, SEEK_SET))
     return GDM_SEEK_ERROR;
 
+  bool uses_nonote = false;
+  bool uses_noinst = false;
+  bool uses_finevol = false;
+  bool uses_fineport = false;
+  bool uses_fxch3 = false;
+  bool uses_fxch4 = false;
+  bool uses_over64 = false;
   for(size_t i = 0; i < h.num_patterns; i++)
   {
-    // FIXME
+    GDM_pattern *p = (GDM_pattern *)calloc(1, sizeof(GDM_pattern));
+    d.patterns[i] = p;
+    if(!p)
+      return GDM_ALLOC_ERROR;
+
+    p->raw_size = fget_u16le(fp) - 2;
+
+    size_t pos = 0;
+    size_t row = 0;
+    while(pos < p->raw_size && row < (size_t)arraysize(p->rows))
+    {
+      uint8_t t = fgetc(fp);
+      pos++;
+
+      if(t == 0)
+      {
+        row++;
+        if(pos < p->raw_size)
+          continue;
+
+        break;
+      }
+
+      uint8_t track = (t & 0x1F);
+      if(track >= d.num_channels)
+        return GDM_BAD_PATTERN;
+
+      GDM_note &n = p->rows[row][track];
+      if(t & 0x20)
+      {
+        uint8_t note = fgetc(fp);
+        uint8_t inst = fgetc(fp);
+        pos += 2;
+
+        n.note = note;
+        n.sample = inst;
+
+        if(!note)
+          uses_nonote = true;
+        if(!inst)
+          uses_noinst = true;
+      }
+
+      if(t & 0x40)
+      {
+        int j;
+        for(j = 0; j < 3; j++)
+        {
+          uint8_t fx = fgetc(fp);
+          uint8_t fx_param = fgetc(fp);
+          pos += 2;
+
+          uint8_t fx_effect = fx & 0x0F;
+          uint8_t fx_channel = (fx >> 6) & 0x03;
+
+          if(fx_channel + 1 > p->max_track_effects[track])
+            p->max_track_effects[track] = fx_channel + 1;
+
+          n.effects[fx_channel].effect = fx_effect;
+          n.effects[fx_channel].param = fx_param;
+
+          if(fx_channel == 0x02)
+            uses_fxch3 = true;
+          if(fx_channel == 0x03)
+            uses_fxch4 = true;
+
+          if(fx_effect == E_EXT)
+          {
+            uint8_t fx_ext = (fx_param >> 4) & 0x0F;
+            if(fx_ext == EX_FINE_PORTAMENTO_UP ||
+             fx_ext == EX_FINE_PORTAMENTO_DOWN ||
+             fx_ext == EX_EXTRA_FINE_PORTAMENTO_UP ||
+             fx_ext == EX_EXTRA_FINE_PORTAMENTO_DOWN)
+              uses_fineport = true;
+
+            if(fx_ext == EX_FINE_VOLSLIDE_UP || fx_ext == EX_FINE_VOLSLIDE_DOWN)
+              uses_finevol = true;
+          }
+
+          if(!(fx & 0x20))
+            break;
+        }
+        if(j >= 4)
+          return GDM_TOO_MANY_EFFECTS;
+      }
+    }
+    if(feof(fp))
+      return GDM_READ_ERROR;
+
+    p->num_rows = row;
+    if(row > 64)
+      uses_over64 = true;
   }
 
-  if(uses_svol || uses_span || uses_lzw)
+  O_("Uses      :%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+    uses_surround ? " Surround" : "",
+    uses_chpan    ? " ChPan"    : "",
+    uses_svol     ? " SVol"     : "",
+    uses_nosvol   ? " NoSVol"   : "",
+    uses_span     ? " SPan"     : "",
+    uses_lzw      ? " LZW"      : "",
+    uses_nonote   ? " NoNote"   : "",
+    uses_noinst   ? " NoInst"   : "",
+    uses_finevol  ? " FineVol"  : "",
+    uses_fineport ? " FinePort" : "",
+    uses_fxch3    ? " FXCh3"    : "",
+    uses_fxch4    ? " FXCh4"    : "",
+    uses_over64   ? " >64Rows"  : ""
+  );
+
+#define P_PRINT(x)   do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
+#define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %1x%02x", x, y); else fprintf(stderr, "    "); }while(0)
+
+  if(dump_patterns)
   {
-    O_("Uses     :%s%s%s\n",
-      uses_svol ? " SVol" : "",
-      uses_span ? " SPan" : "",
-      uses_lzw  ? " LZW" : ""
-    );
-  }
-  return GDM_SUCCESS;
-}
+    O_("Panning   :");
+    for(unsigned int k = 0; k < d.num_channels; k++)
+    {
+      if(h.panning[k] == 255)
+        continue;
+      fprintf(stderr, " %02x", h.panning[k]);
+    }
+    fprintf(stderr, "\n");
 
-/*
-#define P_PRINT(x) if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   ");
-          P_PRINT(note);
-          P_PRINT(inst);
-          P_PRINT(vol);
-          P_PRINT(fx);
+    O_("Order Tbl.:");
+    for(unsigned int i = 0; i < h.num_orders; i++)
+      fprintf(stderr, " %02x", d.orders[i]);
+    fprintf(stderr, "\n");
+
+    for(unsigned int i = 0; i < h.num_patterns; i++)
+    {
+      if(dump_pattern_rows)
+        fprintf(stderr, "\n");
+
+      GDM_pattern *p = d.patterns[i];
+      O_("Pattern %02x: %u rows\n", i, p->num_rows);
+
+      if(dump_pattern_rows)
+      {
+        O_("          :");
+        for(unsigned int k = 0; k < d.num_channels; k++)
+        {
+          if(h.panning[k] == 255)
+            continue;
+
+          fprintf(stderr, " Ch.%02x", k);
+          for(unsigned int x = 0; x < p->max_track_effects[k]; x++)
+            fprintf(stderr, "    ");
           fprintf(stderr, ":");
         }
         fprintf(stderr, "\n");
+
+        for(unsigned int j = 0; j < p->num_rows; j++)
+        {
+          O_("       %02x :", j);
+          for(unsigned int k = 0; k < d.num_channels; k++)
+          {
+            if(h.panning[k] == 255)
+              continue;
+
+            GDM_note &n = p->rows[j][k];
+            P_PRINT(n.note);
+            P_PRINT(n.sample);
+            for(size_t x = 0; x < p->max_track_effects[k]; x++)
+              E_PRINT(n.effects[x].effect, n.effects[x].param);
+            fprintf(stderr, ":");
+          }
+          fprintf(stderr, "\n");
+        }
       }
-      fprintf(stderr, "\n");
-      fflush(stderr);
-*/
+    }
+  }
+  return GDM_SUCCESS;
+}
 
 void check_gdm(const char *filename)
 {
@@ -374,14 +603,14 @@ void check_gdm(const char *filename)
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    O_("File     : %s\n", filename);
+    O_("File      : %s\n", filename);
 
     // Can't read entire header into a struct so add a buffer instead.
-    setvbuf(fp, NULL, _IOFBF, 1024);
+    setvbuf(fp, NULL, _IOFBF, 4096);
 
     ret = GDM_read(d, fp);
     if(ret)
-      O_("Error: %s\n\n", GDM_strerror(ret));
+      O_("Error     : %s\n\n", GDM_strerror(ret));
     else
       fprintf(stderr, "\n");
 
@@ -424,12 +653,20 @@ int main(int argc, char *argv[])
         case 'p':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
-            dump_patterns=true;
+            dump_patterns = true;
+            dump_pattern_rows = false;
+            continue;
+          }
+          if(!strcmp(arg + 2, "=2"))
+          {
+            dump_patterns = true;
+            dump_pattern_rows = true;
             continue;
           }
           if(!strcmp(arg + 2, "=0"))
           {
-            dump_patterns=true;
+            dump_patterns = false;
+            dump_pattern_rows = false;
             continue;
           }
           break;
@@ -437,12 +674,12 @@ int main(int argc, char *argv[])
         case 's':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
-            dump_samples=true;
+            dump_samples = true;
             continue;
           }
           if(!strcmp(arg + 2, "=0"))
           {
-            dump_samples=false;
+            dump_samples = false;
             continue;
           }
           break;
