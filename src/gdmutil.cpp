@@ -325,12 +325,14 @@ int GDM_read(GDM_data &d, FILE *fp)
   for(int i = 0; i < 32; i++)
   {
     if(h.panning[i] != 255)
+    {
       d.num_channels = i + 1;
 
-    if(h.panning[i] == 16)
-      uses_surround = true;
-    if(h.panning[i] != 8)
-      uses_chpan = true;
+      if(h.panning[i] == 16)
+        uses_surround = true;
+      if(h.panning[i] != 8)
+        uses_chpan = true;
+    }
   }
 
   O_("Name      : %s\n", h.name);
