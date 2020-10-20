@@ -69,4 +69,20 @@ static inline void fix_u16be(uint16_t &value)
     value = __builtin_bswap16(value);
 }
 
+static inline uint16_t fget_u16le(FILE *fp)
+{
+  int a = fgetc(fp);
+  int b = fgetc(fp);
+  return (a) | (b << 8);
+}
+
+static inline uint32_t fget_u32le(FILE *fp)
+{
+  int a = fgetc(fp);
+  int b = fgetc(fp);
+  int c = fgetc(fp);
+  int d = fgetc(fp);
+  return (a) | (b << 8) | (c << 16) | (d << 24);
+}
+
 #endif /* MZXTEST_COMMON_HPP */
