@@ -386,11 +386,11 @@ int GDM_read(GDM_data &d, FILE *fp)
       char tmp[16];
       if(print_sample_header)
       {
-        O_("          : %-32s  %-12s  %-8s %-8s %-8s %-7s %-7s %-5s %-5s\n",
+        O_("          : %-32s  %-12s  %-10s %-10s %-10s %-7s %-7s %-5s %-5s\n",
          "Name", "Filename", "Length", "L. Start", "L. End", "Flags", "C4Rate", "Vol.", "Pan.");
         print_sample_header = false;
       }
-      O_("Sample %02x : %-32s  %-12s  %-8u %-8u %-8u %-7s %-7u %-5u %-5u\n",
+      O_("Sample %02x : %-32s  %-12s  %-10u %-10u %-10u %-7s %-7u %-5u %-5u\n",
        (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
        FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning);
     }
@@ -446,10 +446,8 @@ int GDM_read(GDM_data &d, FILE *fp)
       }
 
       uint8_t track = (t & 0x1F);
-      if(track >= d.num_channels)
-        return GDM_BAD_PATTERN;
-
       GDM_note &n = p->rows[row][track];
+
       if(t & 0x20)
       {
         uint8_t note = fgetc(fp);
@@ -510,6 +508,9 @@ int GDM_read(GDM_data &d, FILE *fp)
     }
     if(feof(fp))
       return GDM_READ_ERROR;
+
+    if(pos != p->raw_size)
+      return GDM_BAD_PATTERN;
 
     p->num_rows = row;
     if(row > 64)
