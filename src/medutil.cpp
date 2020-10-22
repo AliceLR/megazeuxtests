@@ -35,6 +35,10 @@ static int num_mmd0;
 static int num_mmd1;
 static int num_mmd2;
 static int num_mmd3;
+static int num_unknown;
+
+static const int MAX_BLOCKS      = 256;
+static const int MAX_INSTRUMENTS = 63;
 
 enum MED_error
 {
@@ -42,7 +46,9 @@ enum MED_error
   MED_READ_ERROR,
   MED_SEEK_ERROR,
   MED_NOT_A_MED,
-  MED_NOT_IMPLEMENTED
+  MED_NOT_IMPLEMENTED,
+  MED_TOO_MANY_BLOCKS,
+  MED_TOO_MANY_INSTR,
 };
 
 static const char *MED_strerror(int err)
@@ -54,6 +60,8 @@ static const char *MED_strerror(int err)
     case MED_SEEK_ERROR:      return "seek error";
     case MED_NOT_A_MED:       return "not a .MED";
     case MED_NOT_IMPLEMENTED: return "feature not implemented";
+    case MED_TOO_MANY_BLOCKS: return "only <=256 blocks supported";
+    case MED_TOO_MANY_INSTR:  return "only <=63 instruments supported";
   }
   return "unknown error";
 }
@@ -64,7 +72,6 @@ enum MED_features
   FT_CMD_SPEED_HIGH,
   FT_CMD_TEMPO,
   FT_INST_SYNTH,
-  FT_INST_HYBRID,
   NUM_FEATURES
 };
 
@@ -74,7 +81,6 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Cmd9>20",
   "CmdFxx",
   "Synth",
-  "Hyb",
 };
 
 struct MED_handler
@@ -100,15 +106,15 @@ static const MED_handler HANDLERS[] =
 
 enum MMD0instrtype
 {
-  MMD0_HYBRID  = -2,
-  MMD0_SYNTH   = -1,
-  MMD0_SAMPLE  = 0,
-  MMD0_IFF5OCT = 1,
-  MMD0_IFF3OCT = 2,
-  MMD0_IFF2OCT = 3,
-  MMD0_IFF4OCT = 4,
-  MMD0_IFF6OCT = 5,
-  MMD0_IFF7OCT = 6
+  I_HYBRID  = -2,
+  I_SYNTH   = -1,
+  I_SAMPLE  = 0,
+  I_IFF5OCT = 1,
+  I_IFF3OCT = 2,
+  I_IFF2OCT = 3,
+  I_IFF4OCT = 4,
+  I_IFF6OCT = 5,
+  I_IFF7OCT = 6
 };
 
 enum MMD0flags
@@ -195,8 +201,8 @@ struct MMD0synth
   /*   7 */ uint8_t  reserved[3];
   /*  10 */ uint16_t hy_repeat_offset;
   /*  12 */ uint16_t hy_repeat_length;
-  /*  14 */ uint16_t volume_table_len;
-  /*  16 */ uint16_t waveform_table_len;
+  /*  14 */ uint16_t volume_table_length;
+  /*  16 */ uint16_t waveform_table_length;
   /*  18 */ uint8_t  volume_table_speed;
   /*  19 */ uint8_t  waveform_table_speed;
   /*  20 */ uint16_t num_waveforms;
@@ -254,12 +260,13 @@ struct MMD0
 {
   MMD0head   header;
   MMD0song   song;
-  MMD1block  patterns[256];
-  MMD0instr  instruments[255];
-  MMD0note  *pattern_data[256];
-  MMD0synth *synth_data[255];
-  uint32_t   pattern_offsets[256];
-  uint32_t   instrument_offsets[255];
+  MMD1block  patterns[MAX_BLOCKS];
+  MMD0instr  instruments[MAX_INSTRUMENTS];
+  MMD0note  *pattern_data[MAX_BLOCKS];
+  MMD0synth *synth_data[MAX_INSTRUMENTS];
+  uint32_t   pattern_offsets[MAX_BLOCKS];
+  uint32_t   instrument_offsets[MAX_INSTRUMENTS];
+  uint32_t   num_tracks;
   bool       uses[NUM_FEATURES];
 
   ~MMD0()
@@ -267,7 +274,7 @@ struct MMD0
     for(int i = 0; i < arraysize(pattern_data); i++)
       delete[] pattern_data[i];
     for(int i = 0; i < arraysize(synth_data); i++)
-      delete[] synth_data[i];
+      delete synth_data[i];
   }
 };
 
@@ -308,8 +315,6 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   if(feof(fp))
     return MED_READ_ERROR;
 
-  O_("Type      : %4.4s\n", h.magic);
-
   /**
    * Song.
    */
@@ -348,27 +353,11 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   if(feof(fp))
     return MED_READ_ERROR;
 
-  O_("# Blocks  : %u\n", s.num_blocks);
-  O_("# Orders  : %u\n", s.num_orders);
-  O_("# Instr.  : %u\n", s.num_instruments);
-
-  if(s.flags2 & F2_BPM)
-  {
-    O_("BPM       : %u\n", s.default_tempo);
-    O_("Beat rows : %u\n", (s.flags2 & F2_BPM_MASK) + 1);
-    O_("Speed     : %u\n", s.tempo2);
-  }
-  else
-  {
-    O_("Tempo     : %u\n", s.default_tempo);
-    O_("Speed     : %u\n", s.tempo2);
-  }
-
   /**
    * Block array.
    */
-  if(s.num_blocks > 256)
-    return MED_NOT_IMPLEMENTED;
+  if(s.num_blocks > MAX_BLOCKS)
+    return MED_TOO_MANY_BLOCKS;
 
   if(fseek(fp, h.block_array_offset, SEEK_SET))
     return MED_SEEK_ERROR;
@@ -400,6 +389,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       b.num_tracks = fgetc(fp);
       b.num_rows   = fgetc(fp) + 1;
     }
+
+    if(m.num_tracks < b.num_tracks)
+      m.num_tracks = b.num_tracks;
 
     MMD0note *pat = new MMD0note[b.num_tracks * b.num_rows];
     m.pattern_data[i] = pat;
@@ -438,12 +430,84 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   }
 
   /**
+   * Instruments array.
+   */
+  if(s.num_instruments > MAX_INSTRUMENTS)
+    return MED_TOO_MANY_INSTR;
+
+  if(fseek(fp, h.sample_array_offset, SEEK_SET))
+    return MED_SEEK_ERROR;
+
+  for(size_t i = 0; i < s.num_instruments; i++)
+    m.instrument_offsets[i] = fget_u32be(fp);
+
+  if(feof(fp))
+    return MED_READ_ERROR;
+
+  /**
    * Instruments.
    */
+  for(size_t i = 0; i < s.num_instruments; i++)
+  {
+    if(!m.instrument_offsets[i])
+      continue;
+
+    if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
+      return MED_SEEK_ERROR;
+
+    MMD0instr &inst = m.instruments[i];
+    inst.length = fget_u32be(fp);
+    inst.type   = fget_s16be(fp);
+
+    if(inst.type == I_HYBRID || inst.type == I_SYNTH)
+    {
+      MMD0synth *syn = new MMD0synth;
+
+      syn->default_decay         = fgetc(fp);
+      syn->reserved[0]           = fgetc(fp);
+      syn->reserved[1]           = fgetc(fp);
+      syn->reserved[2]           = fgetc(fp);
+      syn->hy_repeat_offset      = fget_u16be(fp);
+      syn->hy_repeat_length      = fget_u16be(fp);
+      syn->volume_table_length   = fget_u16be(fp);
+      syn->waveform_table_length = fget_u16be(fp);
+      syn->volume_table_speed    = fgetc(fp);
+      syn->waveform_table_speed  = fgetc(fp);
+      syn->num_waveforms         = fget_u16be(fp);
+
+      if(!fread(syn->volume_table, 128, 1, fp) ||
+       !fread(syn->waveform_table, 128, 1, fp))
+        return MED_READ_ERROR;
+
+      for(int j = 0; j < 64; j++)
+        syn->waveform_offsets[j] = fget_u32be(fp);
+
+      m.uses[FT_INST_SYNTH] = true;
+    }
+  }
 
   /**
    * Extension data?
    */
+
+  O_("Type      : %4.4s\n", h.magic);
+  O_("Size      : %u\n", h.file_length);
+  O_("# Tracks  : %u\n", m.num_tracks);
+  O_("# Blocks  : %u\n", s.num_blocks);
+  O_("# Orders  : %u\n", s.num_orders);
+  O_("# Instr.  : %u\n", s.num_instruments);
+
+  if(s.flags2 & F2_BPM)
+  {
+    O_("BPM       : %u\n", s.default_tempo);
+    O_("Beat rows : %u\n", (s.flags2 & F2_BPM_MASK) + 1);
+    O_("Speed     : %u\n", s.tempo2);
+  }
+  else
+  {
+    O_("Tempo     : %u\n", s.default_tempo);
+    O_("Speed     : %u\n", s.tempo2);
+  }
 
   O_("Uses      :");
   for(int i = 0; i < NUM_FEATURES; i++)
@@ -494,6 +558,7 @@ static int read_med(FILE *fp)
       return HANDLERS[i].read_fn(fp);
     }
   }
+  num_unknown++;
   return MED_NOT_A_MED;
 }
 
@@ -583,5 +648,17 @@ int main(int argc, char *argv[])
     }
     check_med(arg);
   }
+  if(num_med)
+    O_("Total .MED modules : %d\n", num_med);
+  if(num_mmd0)
+    O_("Total MMD0         : %d\n", num_mmd0);
+  if(num_mmd1)
+    O_("Total MMD1         : %d\n", num_mmd1);
+  if(num_mmd2)
+    O_("Total MMD2         : %d\n", num_mmd2);
+  if(num_mmd3)
+    O_("Total MMD3         : %d\n", num_mmd3);
+  if(num_unknown)
+    O_("Total unknown      : %d\n", num_unknown);
   return 0;
 }
