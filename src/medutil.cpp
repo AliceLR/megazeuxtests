@@ -68,18 +68,56 @@ static const char *MED_strerror(int err)
 
 enum MED_features
 {
+  FT_BEAT_ROWS_NOT_4,
+  FT_CMD_SPEED_DEFAULT,
   FT_CMD_SPEED_LO,
   FT_CMD_SPEED_HIGH,
+  FT_CMD_BREAK,
+  FT_CMD_PLAY_TWICE,
+  FT_CMD_PLAY_DELAY,
+  FT_CMD_PLAY_THREE_TIMES,
+  FT_CMD_SET_PITCH,
+  FT_CMD_STOP_PLAYING,
+  FT_CMD_STOP_NOTE,
   FT_CMD_TEMPO,
+  FT_CMD_FINE_PORTAMENTO,
+  FT_CMD_14,
+  FT_CMD_FINETUNE,
+  FT_CMD_LOOP,
+  FT_CMD_18,
+  FT_CMD_OFFSET,
+  FT_CMD_FINE_VOLUME,
+  FT_CMD_1D,
+  FT_CMD_PATTERN_DELAY,
+  FT_CMD_DELAY_RETRIGGER,
   FT_INST_SYNTH,
   NUM_FEATURES
 };
 
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
-  "Cmd9<20",
-  "Cmd9>20",
-  "CmdFxx",
+  "BRows!=4",
+  "Cm900",
+  "Cm9<20",
+  "Cm9>20",
+  "CmFBrk",
+  "CmFTwice",
+  "CmFDelay",
+  "CmFThree",
+  "CmFPitch",
+  "CmFStop",
+  "CmFOff",
+  "CmFxx",
+  "CmFinePort",
+  "Cm14",
+  "CmFinetune",
+  "CmLoop",
+  "Cm18",
+  "CmOffset",
+  "CmFineVol",
+  "Cm1D",
+  "CmPatDelay",
+  "Cm1F",
   "Synth",
 };
 
@@ -147,6 +185,18 @@ enum MMD0effects
   E_VOLUME_SLIDE     = 0x0D,
   E_SYNTH_JUMP       = 0x0E,
   E_TEMPO            = 0x0F,
+  E_FINE_PORTA_UP    = 0x11,
+  E_FINE_PORTA_DOWN  = 0x12,
+  E_VIBRATO_COMPAT   = 0x14,
+  E_FINETUNE         = 0x15,
+  E_LOOP             = 0x16,
+  E_STOP_NOTE        = 0x18,
+  E_SAMPLE_OFFSET    = 0x19,
+  E_FINE_VOLUME_UP   = 0x1A,
+  E_FINE_VOLUME_DOWN = 0x1B,
+  E_PATTERN_BREAK    = 0x1D,
+  E_PATTERN_DELAY    = 0x1E,
+  E_DELAY_RETRIGGER  = 0x1F,
 };
 
 struct MMD0sample
@@ -414,15 +464,90 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
         else
           current->mmd0(a, b, c);
 
-        if(current->effect == E_SPEED)
+        switch(current->effect)
         {
-          if(current->param > 0x20)
-            m.uses[FT_CMD_SPEED_HIGH] = true;
-          else
-            m.uses[FT_CMD_SPEED_LO] = true;
+          case E_SPEED:
+          {
+            if(current->param > 0x20)
+              m.uses[FT_CMD_SPEED_HIGH] = true;
+            else
+            if(current->param > 0x00)
+              m.uses[FT_CMD_SPEED_LO] = true;
+            else
+              m.uses[FT_CMD_SPEED_DEFAULT] = true;
+            break;
+          }
+
+          case E_TEMPO:
+          {
+            switch(current->param)
+            {
+              case 0x00:
+                m.uses[FT_CMD_BREAK] = true;
+                break;
+              case 0xF1:
+                m.uses[FT_CMD_PLAY_TWICE] = true;
+                break;
+              case 0xF2:
+                m.uses[FT_CMD_PLAY_DELAY] = true;
+                break;
+              case 0xF3:
+                m.uses[FT_CMD_PLAY_THREE_TIMES] = true;
+                break;
+              case 0xF8: // Filter off
+              case 0xF9: // Filter on
+              case 0xFA: // Hold pedal on
+              case 0xFB: // Hold pedal off
+                break;
+              case 0xFD:
+                m.uses[FT_CMD_SET_PITCH] = true;
+                break;
+              case 0xFE:
+                m.uses[FT_CMD_STOP_PLAYING] = true;
+                break;
+              case 0xFF:
+                m.uses[FT_CMD_STOP_NOTE] = true;
+                break;
+              default:
+                m.uses[FT_CMD_TEMPO] = true;
+                break;
+            }
+            break;
+          }
+
+          case E_FINE_PORTA_UP:
+          case E_FINE_PORTA_DOWN:
+            m.uses[FT_CMD_FINE_PORTAMENTO] = true;
+            break;
+          case E_VIBRATO_COMPAT:
+            m.uses[FT_CMD_14] = true;
+            break;
+          case E_FINETUNE:
+            m.uses[FT_CMD_FINETUNE] = true;
+            break;
+          case E_LOOP:
+            m.uses[FT_CMD_LOOP] = true;
+            break;
+          case E_STOP_NOTE:
+            m.uses[FT_CMD_18] = true;
+            break;
+          case E_SAMPLE_OFFSET:
+            m.uses[FT_CMD_OFFSET] = true;
+            break;
+          case E_FINE_VOLUME_UP:
+          case E_FINE_VOLUME_DOWN:
+            m.uses[FT_CMD_FINE_VOLUME] = true;
+            break;
+          case E_PATTERN_BREAK:
+            m.uses[FT_CMD_1D] = true;
+            break;
+          case E_PATTERN_DELAY:
+            m.uses[FT_CMD_PATTERN_DELAY] = true;
+            break;
+          case E_DELAY_RETRIGGER:
+            m.uses[FT_CMD_DELAY_RETRIGGER] = true;
+            break;
         }
-        if(current->effect == E_TEMPO)
-          m.uses[FT_CMD_TEMPO] = true;
 
         current++;
       }
@@ -499,9 +624,14 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
   if(s.flags2 & F2_BPM)
   {
+    uint8_t beat_rows = (s.flags2 & F2_BPM_MASK) + 1;
+
     O_("BPM       : %u\n", s.default_tempo);
-    O_("Beat rows : %u\n", (s.flags2 & F2_BPM_MASK) + 1);
+    O_("Beat rows : %u\n", beat_rows);
     O_("Speed     : %u\n", s.tempo2);
+
+    if(beat_rows != 4)
+      m.uses[FT_BEAT_ROWS_NOT_4] = true;
   }
   else
   {
