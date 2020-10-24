@@ -79,6 +79,8 @@ enum MED_features
   FT_CMD_SET_PITCH,
   FT_CMD_STOP_PLAYING,
   FT_CMD_STOP_NOTE,
+  FT_CMD_TEMPO_COMPAT,
+  FT_CMD_TEMPO_0B_TO_20,
   FT_CMD_TEMPO,
   FT_CMD_FINE_PORTAMENTO,
   FT_CMD_14,
@@ -98,7 +100,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
   "BRows!=4",
   "Cm900",
-  "Cm9<20",
+  "Cm9<=20",
   "Cm9>20",
   "CmFBrk",
   "CmFTwice",
@@ -107,7 +109,9 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "CmFPitch",
   "CmFStop",
   "CmFOff",
-  "CmFxx",
+  "CmF<=0A",
+  "CmF0B-20",
+  "CmF>0A",
   "CmFinePort",
   "Cm14",
   "CmFinetune",
@@ -448,6 +452,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
     MMD0note *current = pat;
 
+    bool is_bpm_mode = (s.flags2 & F2_BPM);
     for(size_t j = 0; j < b.num_rows; j++)
     {
       for(size_t k = 0; k < b.num_tracks; k++)
@@ -509,7 +514,17 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
                 m.uses[FT_CMD_STOP_NOTE] = true;
                 break;
               default:
-                m.uses[FT_CMD_TEMPO] = true;
+                if(current->param <= 0x0A)
+                  m.uses[FT_CMD_TEMPO_COMPAT] = true;
+                else
+                // BPMs in this range have a BPM mode bug in MikMod...
+                if(current->param <= 0x20 && is_bpm_mode)
+                {
+                  m.uses[FT_CMD_TEMPO_0B_TO_20] = true;
+                  m.uses[FT_CMD_TEMPO] = true;
+                }
+                else
+                  m.uses[FT_CMD_TEMPO] = true;
                 break;
             }
             break;
