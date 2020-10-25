@@ -68,6 +68,8 @@ static const char *MED_strerror(int err)
 
 enum MED_features
 {
+  FT_TRANSPOSE_SONG,
+  FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
   FT_INIT_TEMPO_COMPAT,
   FT_BEAT_ROWS_NOT_4,
@@ -96,12 +98,15 @@ enum MED_features
   FT_CMD_1D,
   FT_CMD_PATTERN_DELAY,
   FT_CMD_DELAY_RETRIGGER,
+  FT_INST_IFFOCT,
   FT_INST_SYNTH,
   NUM_FEATURES
 };
 
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
+  "STrans",
+  "ITrans",
   "8ChMode",
   "Tempo<=0A",
   "BRows!=4",
@@ -130,6 +135,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Cm1D",
   "CmPatDelay",
   "Cm1F",
+  "IFFOct",
   "Synth",
 };
 
@@ -393,6 +399,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     sm.midi_preset    = fgetc(fp);
     sm.default_volume = fgetc(fp);
     sm.transpose      = fgetc(fp);
+
+    if(sm.transpose != 0)
+      m.uses[FT_TRANSPOSE_INSTRUMENT] = true;
   }
   s.num_blocks      = fget_u16be(fp);
   s.num_orders      = fget_u16be(fp);
@@ -405,6 +414,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   s.flags           = fgetc(fp);
   s.flags2          = fgetc(fp);
   s.tempo2          = fgetc(fp);
+
+  if(s.transpose != 0)
+    m.uses[FT_TRANSPOSE_SONG] = true;
 
   if(!fread(s.track_volume, 16, 1, fp))
     return MED_READ_ERROR;
@@ -644,6 +656,10 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
       m.uses[FT_INST_SYNTH] = true;
     }
+    else
+
+    if(inst.type > 0)
+      m.uses[FT_INST_IFFOCT] = true;
   }
 
   /**
