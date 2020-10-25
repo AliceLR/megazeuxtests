@@ -5,5 +5,11 @@ src/.build
 669util.exe
 farutil
 farutil.exe
+gdmutil
+gdmutil.exe
+medutil
+medutil.exe
 wowutil
 wowutil.exe
+xmutil
+xmutil.exe
