@@ -68,6 +68,8 @@ static const char *MED_strerror(int err)
 
 enum MED_features
 {
+  FT_8_CHANNEL_MODE,
+  FT_INIT_TEMPO_COMPAT,
   FT_BEAT_ROWS_NOT_4,
   FT_CMD_SPEED_DEFAULT,
   FT_CMD_SPEED_LO,
@@ -98,6 +100,8 @@ enum MED_features
 
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
+  "8ChMode",
+  "Tempo<=0A",
   "BRows!=4",
   "Cm900",
   "Cm9<=20",
@@ -630,6 +634,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
    * Extension data?
    */
 
+  if(s.flags & F_8_CHANNEL)
+    m.uses[FT_8_CHANNEL_MODE] = true;
+
   O_("Type      : %4.4s\n", h.magic);
   O_("Size      : %u\n", h.file_length);
   O_("# Tracks  : %u\n", m.num_tracks);
@@ -653,6 +660,8 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     O_("Tempo     : %u\n", s.default_tempo);
     O_("Speed     : %u\n", s.tempo2);
   }
+  if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
+    m.uses[FT_INIT_TEMPO_COMPAT] = true;
 
   O_("Uses      :");
   for(int i = 0; i < NUM_FEATURES; i++)
