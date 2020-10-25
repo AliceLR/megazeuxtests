@@ -82,8 +82,10 @@ enum MED_features
   FT_CMD_STOP_PLAYING,
   FT_CMD_STOP_NOTE,
   FT_CMD_TEMPO_COMPAT,
-  FT_CMD_TEMPO_0B_TO_20,
   FT_CMD_TEMPO,
+  FT_CMD_BPM_BUGGY,
+  FT_CMD_BPM_LO,
+  FT_CMD_BPM,
   FT_CMD_FINE_PORTAMENTO,
   FT_CMD_14,
   FT_CMD_FINETUNE,
@@ -114,8 +116,10 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "CmFStop",
   "CmFOff",
   "CmF<=0A",
-  "CmF0B-20",
   "CmF>0A",
+  "CmFBPM<=2",
+  "CmFBPM<=20",
+  "CmFBPM",
   "CmFinePort",
   "Cm14",
   "CmFinetune",
@@ -518,17 +522,29 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
                 m.uses[FT_CMD_STOP_NOTE] = true;
                 break;
               default:
-                if(current->param <= 0x0A)
-                  m.uses[FT_CMD_TEMPO_COMPAT] = true;
-                else
-                // BPMs in this range have a BPM mode bug in MikMod...
-                if(current->param <= 0x20 && is_bpm_mode)
+                if(!is_bpm_mode)
                 {
-                  m.uses[FT_CMD_TEMPO_0B_TO_20] = true;
-                  m.uses[FT_CMD_TEMPO] = true;
+                  if(current->param <= 0x0A)
+                    m.uses[FT_CMD_TEMPO_COMPAT] = true;
+                  else
+                    m.uses[FT_CMD_TEMPO] = true;
                 }
                 else
-                  m.uses[FT_CMD_TEMPO] = true;
+                {
+                  /**
+                   * OctaMED has a weird bug with these BPMs where they will
+                   * cause it to play at tempo 33 and ignore the rows per beat.
+                   * Some tracks actually use this and rely on it!
+                   */
+                  if(current->param <= 0x02)
+                    m.uses[FT_CMD_BPM_BUGGY] = true;
+                  else
+                  // BPMs in this range had a BPM mode bug in MikMod...
+                  if(current->param <= 0x20)
+                    m.uses[FT_CMD_BPM_LO] = true;
+                  else
+                    m.uses[FT_CMD_BPM] = true;
+                }
                 break;
             }
             break;
@@ -659,9 +675,10 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   {
     O_("Tempo     : %u\n", s.default_tempo);
     O_("Speed     : %u\n", s.tempo2);
+
+    if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
+      m.uses[FT_INIT_TEMPO_COMPAT] = true;
   }
-  if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
-    m.uses[FT_INIT_TEMPO_COMPAT] = true;
 
   O_("Uses      :");
   for(int i = 0; i < NUM_FEATURES; i++)
