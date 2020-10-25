@@ -68,6 +68,7 @@ static const char *MED_strerror(int err)
 
 enum MED_features
 {
+  FT_MULTIPLE_SONGS,
   FT_TRANSPOSE_SONG,
   FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
@@ -107,6 +108,7 @@ enum MED_features
 
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
+  ">1Songs",
   "STrans",
   "ITrans",
   "8ChMode",
@@ -806,6 +808,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
   if(s.flags & F_8_CHANNEL)
     m.uses[FT_8_CHANNEL_MODE] = true;
+
+  if(h.num_extra_songs && x.nextmod_offset)
+    m.uses[FT_MULTIPLE_SONGS] = true;
 
   O_("Type      : %4.4s\n", h.magic);
   O_("Size      : %u\n", h.file_length);
