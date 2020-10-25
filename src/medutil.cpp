@@ -100,6 +100,8 @@ enum MED_features
   FT_CMD_DELAY_RETRIGGER,
   FT_INST_IFFOCT,
   FT_INST_SYNTH,
+  FT_INST_HOLD_DECAY,
+  FT_INST_DEFAULT_PITCH,
   NUM_FEATURES
 };
 
@@ -137,6 +139,8 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Cm1F",
   "IFFOct",
   "Synth",
+  "HoldDecay",
+  "DefPitch",
 };
 
 struct MED_handler
@@ -279,6 +283,58 @@ struct MMD0synth
   /* 278 */ uint32_t waveform_offsets[64]; /* struct SynthWF * */
 };
 
+/* Extra instrument data. */
+struct MMD3instr_ext
+{
+  /* <V5: 4 bytes */
+
+  /*   0 */ uint8_t    hold;
+  /*   1 */ uint8_t    decay;
+  /*   2 */ uint8_t    suppress_midi_off;
+  /*   3 */ int8_t     finetune;
+
+  /* V5: 8 bytes */
+
+  /*   4 */ uint8_t    default_pitch;
+  /*   5 */ uint8_t    instrument_flags;
+  /*   6 */ uint16_t   long_midi_preset;
+
+  /* V5.02: 10 bytes */
+
+  /*   8 */ uint8_t    output_device;
+  /*   9 */ uint8_t    reserved;
+
+  /* V7: 18 bytes */
+
+  /*  10 */ uint32_t   long_repeat_start;
+  /*  14 */ uint32_t   long_repeat_length;
+};
+
+struct MMD3exp
+{
+  /*   0 */ uint32_t   nextmod_offset; /* struct MMD0 * */
+  /*   4 */ uint32_t   sample_ext_offset; /* struct InstrExt * */
+  /*   8 */ uint16_t   sample_ext_entries;
+  /*  10 */ uint16_t   sample_ext_size;
+  /*  12 */ uint32_t   annotation_offset;
+  /*  16 */ uint32_t   annotation_length;
+  /*  20 */ uint32_t   instr_info_offset; /* struct MMDInstrInfo * */
+  /*  24 */ uint16_t   instr_info_entries;
+  /*  26 */ uint16_t   instr_info_size;
+  /*  28 */ uint32_t   jumpmask; /* ? */
+  /*  32 */ uint32_t   rgbtable_offset;
+  /*  36 */ uint32_t   channel_split;
+  /*  40 */ uint32_t   notation_info_offset; /* struct NotationInfo * */
+  /*  44 */ uint32_t   songname_offset;
+  /*  48 */ uint32_t   songname_length;
+  /*  52 */ uint32_t   dumps_offset; /* struct MMDDumpData * */
+  /*  56 */ uint32_t   mmdinfo_offset; /* struct MMDInfo * */
+  /*  60 */ uint32_t   mmdrexx_offset; /* struct MMDARexx * */
+  /*  64 */ uint32_t   mmdcmd3x_offset; /* struct MMDMIDICmd3x * */
+  /*  68 */ uint32_t   reserved[3];
+  /*  80 */ uint32_t   tag_end; /* ? */
+};
+
 struct MMD0head
 {
   /*  0 */ char     magic[4];
@@ -326,16 +382,18 @@ struct MMD0note
 
 struct MMD0
 {
-  MMD0head   header;
-  MMD0song   song;
-  MMD1block  patterns[MAX_BLOCKS];
-  MMD0instr  instruments[MAX_INSTRUMENTS];
-  MMD0note  *pattern_data[MAX_BLOCKS];
-  MMD0synth *synth_data[MAX_INSTRUMENTS];
-  uint32_t   pattern_offsets[MAX_BLOCKS];
-  uint32_t   instrument_offsets[MAX_INSTRUMENTS];
-  uint32_t   num_tracks;
-  bool       uses[NUM_FEATURES];
+  MMD0head       header;
+  MMD0song       song;
+  MMD3exp        exp;
+  MMD1block      patterns[MAX_BLOCKS];
+  MMD0instr      instruments[MAX_INSTRUMENTS];
+  MMD3instr_ext  instruments_ext[MAX_INSTRUMENTS];
+  MMD0note      *pattern_data[MAX_BLOCKS];
+  MMD0synth     *synth_data[MAX_INSTRUMENTS];
+  uint32_t       pattern_offsets[MAX_BLOCKS];
+  uint32_t       instrument_offsets[MAX_INSTRUMENTS];
+  uint32_t       num_tracks;
+  bool           uses[NUM_FEATURES];
 
   ~MMD0()
   {
@@ -351,6 +409,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   MMD0 m{};
   MMD0head &h = m.header;
   MMD0song &s = m.song;
+  MMD3exp  &x = m.exp;
 
   /**
    * So many of these would need to be byte-reversed that
@@ -662,9 +721,88 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       m.uses[FT_INST_IFFOCT] = true;
   }
 
+  if(feof(fp))
+    return MED_READ_ERROR;
+
   /**
-   * Extension data?
+   * Expansion data.
    */
+  if(h.expansion_offset && !fseek(fp, h.expansion_offset, SEEK_SET))
+  {
+    x.nextmod_offset       = fget_u32be(fp);
+    x.sample_ext_offset    = fget_u32be(fp);
+    x.sample_ext_entries   = fget_u16be(fp);
+    x.sample_ext_size      = fget_u16be(fp);
+    x.annotation_offset    = fget_u32be(fp);
+    x.annotation_length    = fget_u32be(fp);
+    x.instr_info_offset    = fget_u32be(fp);
+    x.instr_info_entries   = fget_u16be(fp);
+    x.instr_info_size      = fget_u16be(fp);
+    x.jumpmask             = fget_u32be(fp);
+    x.rgbtable_offset      = fget_u32be(fp);
+    x.channel_split        = fget_u32be(fp);
+    x.notation_info_offset = fget_u32be(fp);
+    x.songname_offset      = fget_u32be(fp);
+    x.songname_length      = fget_u32be(fp);
+    x.dumps_offset         = fget_u32be(fp);
+    x.mmdinfo_offset       = fget_u32be(fp);
+    x.mmdrexx_offset       = fget_u32be(fp);
+    x.reserved[0]          = fget_u32be(fp);
+    x.reserved[1]          = fget_u32be(fp);
+    x.reserved[2]          = fget_u32be(fp);
+    x.tag_end              = fget_u32be(fp);
+
+    if(feof(fp))
+      return MED_READ_ERROR;
+
+    if(x.sample_ext_entries > MAX_INSTRUMENTS)
+      return MED_TOO_MANY_INSTR;
+
+    if(fseek(fp, x.sample_ext_offset, SEEK_SET))
+      return MED_SEEK_ERROR;
+
+    for(size_t i = 0; i < x.sample_ext_entries; i++)
+    {
+      MMD3instr_ext &sx = m.instruments_ext[i];
+      int skip = x.sample_ext_size;
+
+      if(x.sample_ext_size >= 4)
+      {
+        sx.hold               = fgetc(fp);
+        sx.decay              = fgetc(fp);
+        sx.suppress_midi_off  = fgetc(fp);
+        sx.finetune           = fgetc(fp);
+        skip -= 4;
+      }
+      if(x.sample_ext_size >= 8)
+      {
+        sx.default_pitch      = fgetc(fp);
+        sx.instrument_flags   = fgetc(fp);
+        sx.long_midi_preset   = fget_u16be(fp);
+        skip -= 4;
+      }
+      if(x.sample_ext_size >= 10)
+      {
+        sx.output_device      = fgetc(fp);
+        sx.reserved           = fgetc(fp);
+        skip -= 2;
+      }
+      if(x.sample_ext_size >= 18)
+      {
+        sx.long_repeat_start  = fget_u32be(fp);
+        sx.long_repeat_length = fget_u32be(fp);
+        skip -= 8;
+      }
+
+      if(skip && fseek(fp, skip, SEEK_CUR))
+        return MED_SEEK_ERROR;
+
+      if(sx.hold)
+        m.uses[FT_INST_HOLD_DECAY] = true;
+      if(sx.default_pitch)
+        m.uses[FT_INST_DEFAULT_PITCH] = true;
+    }
+  }
 
   if(s.flags & F_8_CHANNEL)
     m.uses[FT_8_CHANNEL_MODE] = true;
