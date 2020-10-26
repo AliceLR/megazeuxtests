@@ -69,6 +69,7 @@ static const char *MED_strerror(int err)
 enum MED_features
 {
   FT_MULTIPLE_SONGS,
+  FT_VARIABLE_TRACKS,
   FT_TRANSPOSE_SONG,
   FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
@@ -109,6 +110,7 @@ enum MED_features
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
   ">1Songs",
+  "VarTracks",
   "STrans",
   "ITrans",
   "8ChMode",
@@ -659,6 +661,16 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
         current++;
       }
+    }
+  }
+
+  /* Do a quick check for blocks with fewer tracks than the maximum track count. */
+  for(size_t i = 0; i < s.num_blocks; i++)
+  {
+    if(m.patterns[i].num_tracks < m.num_tracks)
+    {
+      m.uses[FT_VARIABLE_TRACKS] = true;
+      break;
     }
   }
 
