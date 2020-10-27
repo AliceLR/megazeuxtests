@@ -75,6 +75,10 @@ enum MED_features
   FT_8_CHANNEL_MODE,
   FT_INIT_TEMPO_COMPAT,
   FT_BEAT_ROWS_NOT_4,
+  FT_CMD_PORTAMENTO_VOLSLIDE,
+  FT_CMD_VIBRATO_VOLSLIDE,
+  FT_CMD_TREMOLO,
+  FT_CMD_HOLD_DECAY,
   FT_CMD_SPEED_DEFAULT,
   FT_CMD_SPEED_LO,
   FT_CMD_SPEED_HIGH,
@@ -91,15 +95,20 @@ enum MED_features
   FT_CMD_BPM_LO,
   FT_CMD_BPM,
   FT_CMD_FINE_PORTAMENTO,
-  FT_CMD_14,
+  FT_CMD_PT_VIBRATO,
   FT_CMD_FINETUNE,
   FT_CMD_LOOP,
-  FT_CMD_18,
+  FT_CMD_LOOP_OVER_0F,
+  FT_CMD_18_STOP,
+  FT_CMD_18_STOP_OVER_0F,
   FT_CMD_OFFSET,
   FT_CMD_FINE_VOLUME,
-  FT_CMD_1D,
+  FT_CMD_1D_BREAK,
   FT_CMD_PATTERN_DELAY,
-  FT_CMD_DELAY_RETRIGGER,
+  FT_CMD_PATTERN_DELAY_OVER_0F,
+  FT_CMD_1F_DELAY,
+  FT_CMD_1F_RETRIGGER,
+  FT_CMD_1F_DELAY_RETRIGGER,
   FT_INST_IFFOCT,
   FT_INST_SYNTH,
   FT_INST_HOLD_DECAY,
@@ -116,6 +125,10 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "8ChMode",
   "Tempo<=0A",
   "BRows!=4",
+  "CmPortVol",
+  "CmVibVol",
+  "CmTremolo",
+  "CmHoldDecay",
   "Cm900",
   "Cm9<=20",
   "Cm9>20",
@@ -132,15 +145,20 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "CmFBPM<=20",
   "CmFBPM",
   "CmFinePort",
-  "Cm14",
+  "CmPTVib",
   "CmFinetune",
   "CmLoop",
-  "Cm18",
+  "CmLoop>0F",
+  "Cm18Stop",
+  "Cm18Stop>0F",
   "CmOffset",
   "CmFineVol",
-  "Cm1D",
+  "Cm1DBrk",
   "CmPatDelay",
-  "Cm1F",
+  "CmPatDelay>0F",
+  "Cm1FDelay",
+  "Cm1FRetrg",
+  "Cm1FBoth",
   "IFFOct",
   "Synth",
   "HoldDecay",
@@ -202,7 +220,9 @@ enum MMD0effects
   E_PORTAMENTO_DOWN  = 0x02,
   E_TONE_PORTAMENTO  = 0x03,
   E_VIBRATO          = 0x04,
-  E_VIBRATO_OLD      = 0x05,
+  E_PORTA_VOLSLIDE   = 0x05,
+  E_VIBRATO_VOLSLIDE = 0x06,
+  E_TREMOLO          = 0x07,
   E_SET_HOLD_DECAY   = 0x08,
   E_SPEED            = 0x09,
   E_VOLUME_SLIDE_MOD = 0x0A,
@@ -554,6 +574,19 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
         switch(current->effect)
         {
+          case E_PORTA_VOLSLIDE:
+            m.uses[FT_CMD_PORTAMENTO_VOLSLIDE] = true;
+            break;
+          case E_VIBRATO_VOLSLIDE:
+            m.uses[FT_CMD_VIBRATO_VOLSLIDE] = true;
+            break;
+          case E_TREMOLO:
+            m.uses[FT_CMD_TREMOLO] = true;
+            break;
+          case E_SET_HOLD_DECAY:
+            m.uses[FT_CMD_HOLD_DECAY] = true;
+            break;
+
           case E_SPEED:
           {
             if(current->param > 0x20)
@@ -630,16 +663,20 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
             m.uses[FT_CMD_FINE_PORTAMENTO] = true;
             break;
           case E_VIBRATO_COMPAT:
-            m.uses[FT_CMD_14] = true;
+            m.uses[FT_CMD_PT_VIBRATO] = true;
             break;
           case E_FINETUNE:
             m.uses[FT_CMD_FINETUNE] = true;
             break;
           case E_LOOP:
+            if(current->param > 0x0F)
+              m.uses[FT_CMD_LOOP_OVER_0F] = true;
             m.uses[FT_CMD_LOOP] = true;
             break;
           case E_STOP_NOTE:
-            m.uses[FT_CMD_18] = true;
+            if(current->param > 0x0F)
+              m.uses[FT_CMD_18_STOP_OVER_0F] = true;
+            m.uses[FT_CMD_18_STOP] = true;
             break;
           case E_SAMPLE_OFFSET:
             m.uses[FT_CMD_OFFSET] = true;
@@ -649,13 +686,24 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
             m.uses[FT_CMD_FINE_VOLUME] = true;
             break;
           case E_PATTERN_BREAK:
-            m.uses[FT_CMD_1D] = true;
+            m.uses[FT_CMD_1D_BREAK] = true;
             break;
           case E_PATTERN_DELAY:
+            if(current->param > 0x0F)
+              m.uses[FT_CMD_PATTERN_DELAY_OVER_0F] = true;
             m.uses[FT_CMD_PATTERN_DELAY] = true;
             break;
           case E_DELAY_RETRIGGER:
-            m.uses[FT_CMD_DELAY_RETRIGGER] = true;
+            bool uses_delay     = !!(current->param & 0xF0);
+            bool uses_retrigger = !!(current->param & 0x0F);
+            if(uses_delay && uses_retrigger)
+              m.uses[FT_CMD_1F_DELAY_RETRIGGER] = true;
+            else
+            if(uses_delay)
+              m.uses[FT_CMD_1F_DELAY] = true;
+            else
+            if(uses_retrigger)
+              m.uses[FT_CMD_1F_RETRIGGER] = true;
             break;
         }
 
