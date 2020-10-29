@@ -28,15 +28,15 @@ MED_OBJS := ${OBJ}/medutil.o
 MED_EXE  := medutil${BINEXT}
 -include ${MED_OBJS:.o=.d}
 
-WOW_OBJS := ${OBJ}/wowutil.o
-WOW_EXE  := wowutil${BINEXT}
--include ${WOW_OBJS:.o=.d}
+MOD_OBJS := ${OBJ}/modutil.o
+MOD_EXE  := modutil${BINEXT}
+-include ${MOD_OBJS:.o=.d}
 
 XM_OBJS  := ${OBJ}/xmutil.o
 XM_EXE   := xmutil${BINEXT}
 -include ${XM_OBJS:.o=.d}
 
-all: ${_669_EXE} ${FAR_EXE} ${GDM_EXE} ${MED_EXE} ${WOW_EXE} ${XM_EXE}
+all: ${_669_EXE} ${FAR_EXE} ${GDM_EXE} ${MED_EXE} ${MOD_EXE} ${XM_EXE}
 
 ${OBJ}:
 	mkdir -p ${OBJ}
@@ -59,7 +59,7 @@ ${GDM_EXE}: ${GDM_OBJS}
 ${MED_EXE}: ${MED_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
-${WOW_EXE}: ${WOW_OBJS}
+${MOD_EXE}: ${MOD_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
 ${XM_EXE}: ${XM_OBJS}
@@ -71,5 +71,5 @@ clean:
 	rm -f ${FAR_EXE}
 	rm -f ${GDM_EXE}
 	rm -f ${MED_EXE}
-	rm -f ${WOW_EXE}
+	rm -f ${MOD_EXE}
 	rm -f ${XM_EXE}

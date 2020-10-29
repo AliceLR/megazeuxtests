@@ -24,14 +24,12 @@
 #include "common.hpp"
 
 static const char USAGE[] =
-  "wowutil, a utility to examine .MOD or .WOW files to\n"
-  "determine basic size information about them. The intention\n"
-  "is to be able to objectively tell if a M.K. .MOD file is\n"
-  "actually a stealth .WOW file (or vice versa).\n\n"
+  "modutil, a utility to examine .MOD or .WOW files to\n"
+  "determine basic size information about them.\n\n"
   "Usage:\n"
-  "  wowutil [.MOD and/or .WOW files...]\n\n"
+  "  modutil [.MOD and/or .WOW files...]\n\n"
   "A list of filenames to check can also be provided via stdin:\n"
-  "  ls -1 *.mod | wowutil -\n";
+  "  ls -1 *.mod | modutil -\n";
 
 enum MOD_type
 {
