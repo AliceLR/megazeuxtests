@@ -84,8 +84,10 @@ enum MED_features
   FT_CMD_SPEED_HIGH,
   FT_CMD_BREAK,
   FT_CMD_PLAY_TWICE,
+  FT_CMD_PLAY_TWICE_NO_NOTE,
   FT_CMD_PLAY_DELAY,
   FT_CMD_PLAY_THREE_TIMES,
+  FT_CMD_PLAY_THREE_TIMES_NO_NOTE,
   FT_CMD_SET_PITCH,
   FT_CMD_STOP_PLAYING,
   FT_CMD_STOP_NOTE,
@@ -134,8 +136,10 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Cm9>20",
   "CmFBrk",
   "CmFTwice",
+  "CmFF1NoNote",
   "CmFDelay",
   "CmFThree",
+  "CmFF3NoNote",
   "CmFPitch",
   "CmFStop",
   "CmFOff",
@@ -607,12 +611,16 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
                 m.uses[FT_CMD_BREAK] = true;
                 break;
               case 0xF1:
+                if(!current->note)
+                  m.uses[FT_CMD_PLAY_TWICE_NO_NOTE] = true;
                 m.uses[FT_CMD_PLAY_TWICE] = true;
                 break;
               case 0xF2:
                 m.uses[FT_CMD_PLAY_DELAY] = true;
                 break;
               case 0xF3:
+                if(!current->note)
+                  m.uses[FT_CMD_PLAY_THREE_TIMES_NO_NOTE] = true;
                 m.uses[FT_CMD_PLAY_THREE_TIMES] = true;
                 break;
               case 0xF8: // Filter off
