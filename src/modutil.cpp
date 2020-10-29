@@ -61,30 +61,31 @@ struct MOD_type_info
   const char magic[5];
   const char * const source;
   int channels; // -1=ignore this type ;-(
+  bool print_channel_count;
 };
 
 static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 {
-  { "M.K.", "ProTracker",  4  },
-  { "M!K!", "ProTracker",  4  },
-  { "M&K!", "NoiseTracker",4  },
-  { "xCHN", "FastTracker", 0  },
-  { "xxCH", "FastTracker", 0  },
-  { "CD61", "Octalyser",   6  },
-  { "CD81", "Octalyser",   8  },
-  { "OKTA", "Oktalyzer?",  8  },
-  { "OCTA", "OctaMED?",    8  },
-  { "EXO4", "StarTrekker", 4  },
-  { "FLT4", "StarTrekker", 4  },
-  { "FLT8", "StarTrekker", 8  },
-  { "FEST", "HMN",         4  },
-  { "LARD", "Unknown 4ch", 4  },
-  { "NSMS", "Unknown 4ch", 4  },
-  { "M.K.", "Mod's Grave", 8  },
-  { "",     "SoundTracker",4  },
-  { "",     "ST 2.6",      -1 },
-  { "",     "IceTracker",  -1 },
-  { "",     "unknown",     -1 },
+  { "M.K.", "ProTracker",   4,  false },
+  { "M!K!", "ProTracker",   4,  false },
+  { "M&K!", "NoiseTracker", 4,  false },
+  { "xCHN", "FastTracker",  0,  false },
+  { "xxCH", "FastTracker",  0,  false },
+  { "CD61", "Octalyser",    6,  false },
+  { "CD81", "Octalyser",    8,  false },
+  { "OKTA", "Oktalyzer?",   8,  true  },
+  { "OCTA", "OctaMED?",     8,  true  },
+  { "EXO4", "StarTrekker",  4,  false },
+  { "FLT4", "StarTrekker",  4,  false },
+  { "FLT8", "StarTrekker",  8,  false },
+  { "FEST", "HMN",          4,  true  },
+  { "LARD", "Unknown 4ch",  4,  false },
+  { "NSMS", "Unknown 4ch",  4,  false },
+  { "M.K.", "Mod's Grave",  8,  true  },
+  { "",     "SoundTracker", 4,  false },
+  { "",     "ST 2.6",       -1, false },
+  { "",     "IceTracker",   -1, false },
+  { "",     "unknown",      -1, false },
 };
 
 static int total_files;
@@ -552,16 +553,19 @@ int MOD_read(MOD_data &d, FILE *fp)
     MOD_read_pattern(d, i, fp);
 
   if(strlen(d.name_clean))
-    O_("Name      : %s\n", d.name_clean);
-  O_("Type      : %s %4.4s (%d ch.)\n", d.type_source, d.magic, d.type_channels);
-  O_("Length    : %u (0x%02x) / %up\n", h.num_orders, h.restart_byte, d.pattern_count);
+    O_("Name     : %s\n", d.name_clean);
+  if(TYPES[d.type].print_channel_count)
+    O_("Type     : %s %4.4s %d ch.\n", d.type_source, d.magic, d.type_channels);
+  else
+    O_("Type     : %s %4.4s\n", d.type_source, d.magic);
+  O_("Length   : %u (0x%02x), %up\n", h.num_orders, h.restart_byte, d.pattern_count);
   if(difference)
-    O_("Sample sz.: %zd\n", d.samples_length);
-  O_("File size : %zd\n", d.real_length);
+    O_("Sample sz: %zd\n", d.samples_length);
+  O_("Filesize : %zd\n", d.real_length);
   if(difference)
   {
-    O_("Expected  : %zd\n", d.expected_length);
-    O_("Difference: %zd%s%s\n",
+    O_("Expected : %zd\n", d.expected_length);
+    O_("Diff.    : %zd%s%s\n",
       difference,
       difference ? " (!=0)" : "",
       fp_diff ? " (!!!)" : ""
@@ -576,7 +580,7 @@ int MOD_read(MOD_data &d, FILE *fp)
     {
       if(!print_uses)
       {
-        O_("Uses      :");
+        O_("Uses     :");
         print_uses = true;
       }
       fprintf(stderr, " %s", feature_str[i]);
@@ -589,7 +593,7 @@ int MOD_read(MOD_data &d, FILE *fp)
 
 /*
   for(i = 0; i < 31; i++)
-    O_("Sample %2d   : %6u : %s\n", i, d.samples[i].real_length, d.samples[i].name);
+    O_("Sample %2d: %6u : %s\n", i, d.samples[i].real_length, d.samples[i].name);
 */
   return MOD_SUCCESS;
 }
@@ -603,10 +607,10 @@ void check_mod(const char *filename)
   {
     setvbuf(fp, NULL, _IOFBF, 8192);
 
-    O_("File      : %s\n", filename);
+    O_("File     : %s\n", filename);
     int err = MOD_read(d, fp);
     if(err)
-      O_("Error     : %s\n", MOD_strerror(err));
+      O_("Error    : %s\n", MOD_strerror(err));
 
     fprintf(stderr, "\n");
     fclose(fp);
