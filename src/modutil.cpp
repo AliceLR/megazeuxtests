@@ -127,6 +127,54 @@ static const char *MOD_strerror(int err)
   return "unknown error";
 }
 
+enum MOD_features
+{
+  FT_RETRIGGER_NO_NOTE,
+  FT_RETRIGGER_ZERO,
+  NUM_FEATURES
+};
+
+static const char *feature_str[NUM_FEATURES] =
+{
+  "RetrigNoNote",
+  "Retrig0",
+};
+
+enum MOD_effects
+{
+  E_ARPEGGIO,
+  E_PORTAMENTO_UP,
+  E_PORTAMENTO_DOWN,
+  E_TONE_PORTAMENTO,
+  E_VIBRATO,
+  E_TONE_PORTAMENTO_VOLSLIDE,
+  E_VIBRATO_VOLSLIDE,
+  E_TREMOLO,
+  E_SET_PANNING,
+  E_OFFSET,
+  E_VOLSLIDE,
+  E_POSITION_JUMP,
+  E_SET_VOLUME,
+  E_PATTERN_BREAK,
+  E_EXTENDED,
+  E_SPEED,
+  EX_SET_FILTER           = 0x00,
+  EX_FINE_PORTAMENTO_UP   = 0x10,
+  EX_FINE_PORTAMENTO_DOWN = 0x20,
+  EX_GLISSANDO_CONTROL    = 0x30,
+  EX_SET_VIBRATO_WAVEFORM = 0x40,
+  EX_SET_FINETUNE         = 0x50,
+  EX_LOOP                 = 0x60,
+  EX_SET_TREMOLO_WAVEFORM = 0x70,
+  EX_RETRIGGER_NOTE       = 0x90,
+  EX_FINE_VOLSLIDE_UP     = 0xA0,
+  EX_FINE_VOLSLIDE_DOWN   = 0xB0,
+  EX_NOTE_CUT             = 0xC0,
+  EX_NOTE_DELAY           = 0xD0,
+  EX_PATTERN_DELAY        = 0xE0,
+  EX_INVERT_LOOP          = 0xF0
+};
+
 
 /**
  * Structs for raw data as provided in the files.
@@ -146,7 +194,7 @@ struct MOD_header
 {
   // NOTE: space-padded, not null-terminated.
   char name[20];
-  struct MOD_sample samples[31];
+  MOD_sample samples[31];
   uint8_t num_orders;
   uint8_t restart_byte;
   uint8_t orders[128];
@@ -156,7 +204,7 @@ struct MOD_header
 struct ST_header
 {
   char name[20];
-  struct MOD_sample samples[15];
+  MOD_sample samples[15];
   uint8_t num_orders;
   uint8_t song_speed;
   uint8_t orders[128];
@@ -166,6 +214,14 @@ struct MOD_sample_data
 {
   char name[23];
   uint32_t real_length;
+};
+
+struct MOD_note
+{
+  uint16_t note;
+  uint8_t sample;
+  uint8_t effect;
+  uint8_t param;
 };
 
 struct MOD_data
@@ -180,12 +236,29 @@ struct MOD_data
   ssize_t real_length;
   ssize_t expected_length;
   ssize_t samples_length;
-  struct MOD_sample_data samples[31];
+  MOD_sample_data samples[31];
 
-  struct MOD_header file_data;
+  MOD_header file_data;
+  MOD_note *patterns[256];
+  uint8_t *pattern_buffer;
+
+  uint8_t uses[NUM_FEATURES];
+
+  ~MOD_data()
+  {
+    for(int i = 0; i < arraysize(patterns); i++)
+      delete[] patterns[i];
+    delete[] pattern_buffer;
+  }
+
+  void use(enum MOD_features f)
+  {
+    if(uses[f] < 255)
+      uses[f]++;
+  }
 };
 
-bool mod_strip_name(char *dest, size_t dest_len)
+bool MOD_strip_name(char *dest, size_t dest_len)
 {
   size_t start = 0;
   size_t end = strlen(dest);
@@ -250,15 +323,51 @@ bool is_ST_mod(ST_header *h)
   return true;
 }
 
-int mod_read(struct MOD_data &d, FILE *fp)
+int MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp)
 {
-  struct MOD_header &h = d.file_data;
+  if(!m.pattern_buffer)
+    m.pattern_buffer = new uint8_t[m.type_channels * 64 * 4];
+
+  if(!fread(m.pattern_buffer, m.type_channels * 64 * 4, 1, fp))
+    return MOD_READ_ERROR;
+
+  m.patterns[pattern_num] = new MOD_note[m.type_channels * 64]{};
+
+  MOD_note *note = m.patterns[pattern_num];
+  uint8_t *current = m.pattern_buffer;
+  for(int row = 0; row < 64; row++)
+  {
+    for(int ch = 0; ch < m.type_channels; ch++)
+    {
+      note->note   = ((current[0] & 0x0F) << 8) | current[1];
+      note->sample = (current[0] & 0xF0) | ((current[2] & 0xF0) >> 4);
+      note->effect = (current[2] & 0x0F);
+      note->param  = current[3];
+
+      if(note->effect == E_EXTENDED &&
+       (note->param & 0xF0) == EX_RETRIGGER_NOTE)
+      {
+        if(!note->note && (note->param & 0x0F))
+          m.use(FT_RETRIGGER_NO_NOTE);
+        if(!(note->param & 0xF))
+          m.use(FT_RETRIGGER_ZERO);
+      }
+
+      current += 4;
+      note++;
+    }
+  }
+  return MOD_SUCCESS;
+}
+
+int MOD_read(MOD_data &d, FILE *fp)
+{
+  MOD_header &h = d.file_data;
   bool maybe_wow = true;
   ssize_t samples_length = 0;
   ssize_t running_length;
   int i;
 
-  memset(&d, 0, sizeof(struct MOD_data));
   total_files++;
 
   if(fseek(fp, 0, SEEK_END))
@@ -270,14 +379,14 @@ int mod_read(struct MOD_data &d, FILE *fp)
   if(errno)
     return MOD_SEEK_ERROR;
 
-  if(!fread(&(h), sizeof(struct MOD_header), 1, fp))
+  if(!fread(&(h), sizeof(MOD_header), 1, fp))
     return MOD_READ_ERROR;
 
   memcpy(d.name, h.name, arraysize(h.name));
   d.name[arraysize(d.name) - 1] = '\0';
   memcpy(d.name_clean, d.name, arraysize(d.name));
   memcpy(d.magic, h.magic, 4);
-  if(!mod_strip_name(d.name_clean, arraysize(d.name_clean)))
+  if(!MOD_strip_name(d.name_clean, arraysize(d.name_clean)))
     d.name_clean[0] = '\0';
 
   // Determine initial guess for what the mod type is.
@@ -354,13 +463,13 @@ int mod_read(struct MOD_data &d, FILE *fp)
     return MOD_INVALID_ORDER_COUNT;
   }
 
-  running_length = sizeof(struct MOD_header);
+  running_length = sizeof(MOD_header);
 
   // Get sample info.
   for(i = 0; i < 31; i++)
   {
-    struct MOD_sample &hs = h.samples[i];
-    struct MOD_sample_data &s = d.samples[i];
+    MOD_sample &hs = h.samples[i];
+    MOD_sample_data &s = d.samples[i];
 
     fix_u16be(hs.length);
     fix_u16be(hs.repeat_start);
@@ -438,19 +547,45 @@ int mod_read(struct MOD_data &d, FILE *fp)
   if(difference)
     total_files_nonzero_diff++;
 
-  O_("Name      : %s\n", d.name_clean);
+  /* Load patterns. */
+  for(i = 0; i < d.pattern_count; i++)
+    MOD_read_pattern(d, i, fp);
+
+  if(strlen(d.name_clean))
+    O_("Name      : %s\n", d.name_clean);
   O_("Type      : %s %4.4s (%d ch.)\n", d.type_source, d.magic, d.type_channels);
-  O_("Orders    : %u (0x%02x)\n", h.num_orders, h.restart_byte);
-  O_("Patterns  : %d\n", d.pattern_count);
-  O_("Sample sz.: %zd\n", d.samples_length);
+  O_("Length    : %u (0x%02x) / %up\n", h.num_orders, h.restart_byte, d.pattern_count);
+  if(difference)
+    O_("Sample sz.: %zd\n", d.samples_length);
   O_("File size : %zd\n", d.real_length);
-  O_("Expected  : %zd\n", d.expected_length);
-  O_("Difference: %zd%s%s\n\n",
-    difference,
-    difference ? " (!=0)" : "",
-    fp_diff ? " (!!!)" : ""
-  );
+  if(difference)
+  {
+    O_("Expected  : %zd\n", d.expected_length);
+    O_("Difference: %zd%s%s\n",
+      difference,
+      difference ? " (!=0)" : "",
+      fp_diff ? " (!!!)" : ""
+    );
+  }
   type_count[d.type]++;
+
+  bool print_uses = false;
+  for(int i = 0; i < arraysize(d.uses); i++)
+  {
+    if(d.uses[i])
+    {
+      if(!print_uses)
+      {
+        O_("Uses      :");
+        print_uses = true;
+      }
+      fprintf(stderr, " %s", feature_str[i]);
+      if(d.uses[i] >= 10)
+        fprintf(stderr, "!");
+    }
+  }
+  if(print_uses)
+    fprintf(stderr, "\n");
 
 /*
   for(i = 0; i < 31; i++)
@@ -461,16 +596,19 @@ int mod_read(struct MOD_data &d, FILE *fp)
 
 void check_mod(const char *filename)
 {
-  struct MOD_data d;
+  MOD_data d{};
 
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    O_("File '%s'.\n", filename);
-    int err = mod_read(d, fp);
-    if(err)
-      O_("Error: %s\n\n", MOD_strerror(err));
+    setvbuf(fp, NULL, _IOFBF, 8192);
 
+    O_("File      : %s\n", filename);
+    int err = MOD_read(d, fp);
+    if(err)
+      O_("Error     : %s\n", MOD_strerror(err));
+
+    fprintf(stderr, "\n");
     fclose(fp);
   }
   else
