@@ -1061,7 +1061,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   if(dump_patterns)
   {
     O_("          :\n");
-    O_(" Sequence :");
+    O_("Sequence  :");
     for(size_t i = 0; i < s.num_orders; i++)
       fprintf(stderr, " %02x", s.orders[i]);
     fprintf(stderr, "\n");
@@ -1071,7 +1071,10 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       MMD1block &b = m.patterns[i];
       MMD0note *data = m.pattern_data[i];
 
-      fprintf(stderr, "\n: Pattern %02x (%u rows, %u tracks)\n", i, b.num_rows, b.num_tracks);
+      if(dump_pattern_rows)
+        fprintf(stderr, "\n");
+
+      O_("Block %02x  : %u rows, %u tracks\n", i, b.num_rows, b.num_tracks);
 
       if(!dump_pattern_rows)
         continue;
@@ -1088,9 +1091,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       {
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
         {
-          p_note[track] |= current->note != 0;
-          p_inst[track] |= current->instrument != 0;
           p_eff[track]  |= (current->effect != 0) || (current->param != 0);
+          p_inst[track] |= current->instrument != 0 || p_eff[track];
+          p_note[track] |= current->note != 0 || p_inst[track];
 
           p_sz[track] = (p_note[track] * 3) + (p_inst[track] * 3) + (p_eff[track] * 6);
           print_pattern |= (p_sz[track] > 0);
@@ -1118,19 +1121,22 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       current = data;
       for(unsigned int row = 0; row < b.num_rows; row++)
       {
-        fprintf(stderr, m.highlight(i, row) ? "X" : ":");
+        fprintf(stderr, m.highlight(i, row) ? "X " : ": ");
 
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
         {
           if(!p_sz[track])
             continue;
 
+#define P_PRINT(x) do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
+#define P_PRINT2(x,y) do{ if(x || y) fprintf(stderr, " %02x %02x", x, y); else fprintf(stderr, "      "); }while(0)
+
           if(p_note[track])
-            fprintf(stderr, " %02x", current->note);
+            P_PRINT(current->note);
           if(p_inst[track])
-            fprintf(stderr, " %02x", current->instrument);
+            P_PRINT(current->instrument);
           if(p_eff[track])
-            fprintf(stderr, " %02x %02x", current->effect, current->param);
+            P_PRINT2(current->effect, current->param);
           fprintf(stderr, " :");
         }
         fprintf(stderr, "\n");
