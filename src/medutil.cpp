@@ -30,6 +30,10 @@ static const char MAGIC_MMD1[] = "MMD1";
 static const char MAGIC_MMD2[] = "MMD2";
 static const char MAGIC_MMD3[] = "MMD3";
 
+static bool dump_samples;
+static bool dump_patterns;
+static bool dump_pattern_rows;
+
 static int num_med;
 static int num_mmd0;
 static int num_mmd1;
@@ -70,6 +74,7 @@ enum MED_features
 {
   FT_MULTIPLE_SONGS,
   FT_VARIABLE_TRACKS,
+  FT_OCTAVES_8_AND_9,
   FT_TRANSPOSE_SONG,
   FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
@@ -111,8 +116,11 @@ enum MED_features
   FT_CMD_1F_DELAY,
   FT_CMD_1F_RETRIGGER,
   FT_CMD_1F_DELAY_RETRIGGER,
+  FT_INST_MIDI,
   FT_INST_IFFOCT,
   FT_INST_SYNTH,
+  FT_INST_SYNTH_HYBRID,
+  FT_INST_EXT,
   FT_INST_HOLD_DECAY,
   FT_INST_DEFAULT_PITCH,
   NUM_FEATURES
@@ -122,6 +130,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
   ">1Songs",
   "VarTracks",
+  "Oct8/9",
   "STrans",
   "ITrans",
   "8ChMode",
@@ -163,8 +172,11 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Cm1FDelay",
   "Cm1FRetrg",
   "Cm1FBoth",
+  "MIDI",
   "IFFOct",
   "Synth",
+  "Hybrid",
+  "ExtSample",
   "HoldDecay",
   "DefPitch",
 };
@@ -200,8 +212,27 @@ enum MMD0instrtype
   I_IFF2OCT = 3,
   I_IFF4OCT = 4,
   I_IFF6OCT = 5,
-  I_IFF7OCT = 6
+  I_IFF7OCT = 6,
+  I_EXT     = 7
 };
+
+static const char *MED_insttype_str(int t)
+{
+  switch(t)
+  {
+    case I_HYBRID:  return "Hyb";
+    case I_SYNTH:   return "Syn";
+    case I_SAMPLE:  return "Smp";
+    case I_IFF5OCT: return "IO5";
+    case I_IFF3OCT: return "IO3";
+    case I_IFF2OCT: return "IO2";
+    case I_IFF4OCT: return "IO4";
+    case I_IFF6OCT: return "IO6";
+    case I_IFF7OCT: return "IO7";
+    case I_EXT:     return "Ext";
+  }
+  return "???";
+}
 
 enum MMD0flags
 {
@@ -338,6 +369,12 @@ struct MMD3instr_ext
   /*  14 */ uint32_t   long_repeat_length;
 };
 
+/* Instrument names. */
+struct MMD3instr_info
+{
+  char name[41]; /* Is stored as 40. */
+};
+
 struct MMD3exp
 {
   /*   0 */ uint32_t   nextmod_offset; /* struct MMD0 * */
@@ -416,6 +453,7 @@ struct MMD0
   MMD1block      patterns[MAX_BLOCKS];
   MMD0instr      instruments[MAX_INSTRUMENTS];
   MMD3instr_ext  instruments_ext[MAX_INSTRUMENTS];
+  MMD3instr_info instruments_info[MAX_INSTRUMENTS];
   MMD0note      *pattern_data[MAX_BLOCKS];
   MMD0synth     *synth_data[MAX_INSTRUMENTS];
   uint32_t       pattern_offsets[MAX_BLOCKS];
@@ -486,6 +524,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     sm.midi_preset    = fgetc(fp);
     sm.default_volume = fgetc(fp);
     sm.transpose      = fgetc(fp);
+
+    if(sm.midi_channel > 0)
+      m.uses[FT_INST_MIDI] = true;
 
     if(sm.transpose != 0)
       m.uses[FT_TRANSPOSE_INSTRUMENT] = true;
@@ -575,6 +616,14 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
         }
         else
           current->mmd0(a, b, c);
+
+        /**
+         * C-1=1, C#1=2... + 7 octaves.
+         * Some songs actually rely on these high octaves playing very
+         * low tones (see "childplay.med" by Blockhead).
+         */
+        if(current->note >= (1 + 12 * 7))
+          m.uses[FT_OCTAVES_8_AND_9] = true;
 
         switch(current->effect)
         {
@@ -783,7 +832,10 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       for(int j = 0; j < 64; j++)
         syn->waveform_offsets[j] = fget_u32be(fp);
 
-      m.uses[FT_INST_SYNTH] = true;
+      if(inst.type == I_HYBRID)
+        m.uses[FT_INST_SYNTH_HYBRID] = true;
+      else
+        m.uses[FT_INST_SYNTH] = true;
     }
     else
 
@@ -828,7 +880,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     if(x.sample_ext_entries > MAX_INSTRUMENTS)
       return MED_TOO_MANY_INSTR;
 
-    if(fseek(fp, x.sample_ext_offset, SEEK_SET))
+    if(x.sample_ext_entries && fseek(fp, x.sample_ext_offset, SEEK_SET))
       return MED_SEEK_ERROR;
 
     for(size_t i = 0; i < x.sample_ext_entries; i++)
@@ -872,6 +924,27 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       if(sx.default_pitch)
         m.uses[FT_INST_DEFAULT_PITCH] = true;
     }
+
+    if(x.instr_info_entries > MAX_INSTRUMENTS)
+      return MED_TOO_MANY_INSTR;
+
+    if(x.instr_info_entries && fseek(fp, x.instr_info_offset, SEEK_SET))
+      return MED_SEEK_ERROR;
+
+    for(size_t i = 0; i < x.instr_info_entries; i++)
+    {
+      MMD3instr_info &sxi = m.instruments_info[i];
+      int skip = x.instr_info_size;
+
+      if(x.instr_info_size >= 40)
+      {
+        fread(sxi.name, 40, 1, fp);
+        sxi.name[40] = '\0';
+        skip -= 40;
+      }
+      if(skip && fseek(fp, skip, SEEK_CUR))
+        return MED_SEEK_ERROR;
+    }
   }
 
   if(s.flags & F_8_CHANNEL)
@@ -912,6 +985,117 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_DESC[i]);
   fprintf(stderr, "\n");
+
+  if(dump_samples)
+  {
+    O_("          :\n");
+    O_("          : Type  Length      Loop Start  Loop Len.  : MIDI       : Vol  Tr. : Hold/Decay Fine : Name\n");
+    O_("          : ----  ----------  ----------  ---------- : ---  ----- : ---  --- : ---  ---   ---  : ----\n");
+    for(unsigned int i = 0; i < s.num_instruments; i++)
+    {
+      MMD0sample     &sm = s.samples[i];
+      MMD0instr      &si = m.instruments[i];
+      //MMD0synth      *ss = m.synths[i];
+      MMD3instr_ext  &sx = m.instruments_ext[i];
+      MMD3instr_info &sxi = m.instruments_info[i];
+
+      unsigned int length         = si.length;
+      unsigned int repeat_start   = sx.long_repeat_start ? sx.long_repeat_start : sm.repeat_start * 2;
+      unsigned int repeat_length  = sx.long_repeat_length ? sx.long_repeat_length : sm.repeat_length * 2;
+      unsigned int midi_preset    = sx.long_midi_preset ? sx.long_midi_preset : sm.midi_preset;
+      unsigned int midi_channel   = sm.midi_channel;
+      unsigned int default_volume = sm.default_volume;
+      int transpose = sm.transpose;
+
+      unsigned int hold  = sx.hold;
+      unsigned int decay = sx.decay;
+      int finetune = sx.finetune;
+
+      O_("Sample %02x : %-4.4s  %-10u  %-10u  %-10u : %-3u  %-5u : %-3u  %-3d : %-3u  %-3u   %-3d  : %s\n",
+        i, MED_insttype_str(si.type), length, repeat_start, repeat_length,
+        midi_channel, midi_preset, default_volume, transpose, hold, decay, finetune, sxi.name
+      );
+    }
+  }
+
+  if(dump_patterns)
+  {
+    O_("          :\n");
+    O_(" Sequence :");
+    for(size_t i = 0; i < s.num_orders; i++)
+      fprintf(stderr, " %02x", s.orders[i]);
+    fprintf(stderr, "\n");
+
+    for(unsigned int i = 0; i < s.num_blocks; i++)
+    {
+      MMD1block &b = m.patterns[i];
+      MMD0note *data = m.pattern_data[i];
+
+      fprintf(stderr, "\n: Pattern %02x (%u rows, %u tracks)\n", i, b.num_rows, b.num_tracks);
+
+      if(!dump_pattern_rows)
+        continue;
+
+      uint8_t p_note[256]{};
+      uint8_t p_inst[256]{};
+      uint8_t p_eff[256]{};
+      int p_sz[256]{};
+      bool print_pattern = false;
+
+      /* Do a quick scan of the block to see how much info to print... */
+      MMD0note *current = data;
+      for(unsigned int row = 0; row < b.num_rows; row++)
+      {
+        for(unsigned int track = 0; track < b.num_tracks; track++, current++)
+        {
+          p_note[track] |= current->note != 0;
+          p_inst[track] |= current->instrument != 0;
+          p_eff[track]  |= (current->effect != 0) || (current->param != 0);
+
+          p_sz[track] = (p_note[track] * 3) + (p_inst[track] * 3) + (p_eff[track] * 6);
+          print_pattern |= (p_sz[track] > 0);
+        }
+      }
+
+      if(!print_pattern)
+      {
+        O_("Pattern is blank.\n");
+        continue;
+      }
+
+      O_("");
+      for(unsigned int track = 0; track < b.num_tracks; track++)
+        if(p_sz[track])
+          fprintf(stderr, " %02x%*s:", track, p_sz[track] - 2, "");
+      fprintf(stderr, "\n");
+
+      O_("");
+      for(unsigned int track = 0; track < b.num_tracks; track++)
+        if(p_sz[track])
+          fprintf(stderr, "%.*s:", p_sz[track] + 1, "-------------");
+      fprintf(stderr, "\n");
+
+      current = data;
+      for(unsigned int row = 0; row < b.num_rows; row++)
+      {
+        O_("");
+        for(unsigned int track = 0; track < b.num_tracks; track++, current++)
+        {
+          if(!p_sz[track])
+            continue;
+
+          if(p_note[track])
+            fprintf(stderr, " %02x", current->note);
+          if(p_inst[track])
+            fprintf(stderr, " %02x", current->instrument);
+          if(p_eff[track])
+            fprintf(stderr, " %02x %02x", current->effect, current->param);
+          fprintf(stderr, " :");
+        }
+        fprintf(stderr, "\n");
+      }
+    }
+  }
 
   return MED_SUCCESS;
 }
@@ -1009,7 +1193,7 @@ int main(int argc, char *argv[])
           }
           continue;
 
-/*        case 'p':
+        case 'p':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
             dump_patterns = true;
@@ -1041,7 +1225,7 @@ int main(int argc, char *argv[])
             dump_samples = false;
             continue;
           }
-          break;*/
+          break;
       }
     }
     check_med(arg);
