@@ -456,6 +456,7 @@ struct MMD0
   MMD3instr_info instruments_info[MAX_INSTRUMENTS];
   MMD0note      *pattern_data[MAX_BLOCKS];
   MMD0synth     *synth_data[MAX_INSTRUMENTS];
+  uint32_t      *pattern_highlight[MAX_BLOCKS];
   uint32_t       pattern_offsets[MAX_BLOCKS];
   uint32_t       instrument_offsets[MAX_INSTRUMENTS];
   uint32_t       num_tracks;
@@ -464,9 +465,23 @@ struct MMD0
   ~MMD0()
   {
     for(int i = 0; i < arraysize(pattern_data); i++)
+    {
       delete[] pattern_data[i];
+      delete[] pattern_highlight[i];
+    }
     for(int i = 0; i < arraysize(synth_data); i++)
       delete synth_data[i];
+  }
+
+  bool highlight(int pattern, int row)
+  {
+    if(pattern_highlight[pattern])
+    {
+      uint32_t t = pattern_highlight[pattern][row / 32];
+      uint32_t m = 1 << (row & 31);
+      return (t & m) != 0;
+    }
+    return false;
   }
 };
 
@@ -584,7 +599,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     {
       b.num_tracks       = fget_u16be(fp);
       b.num_rows         = fget_u16be(fp) + 1;
-      b.blockinfo_offset = fget_u32be(fp); // TODO handle this.
+      b.blockinfo_offset = fget_u32be(fp);
     }
     else
     {
@@ -765,6 +780,31 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
         }
 
         current++;
+      }
+    }
+
+    /* Dumping patterns? Might as well get the highlighting too. */
+    if(dump_pattern_rows && b.blockinfo_offset)
+    {
+      if(fseek(fp, b.blockinfo_offset, SEEK_SET))
+        return MED_SEEK_ERROR;
+
+      b.highlight_offset  = fget_u32be(fp);
+      b.block_name_offset = fget_u32be(fp);
+      b.block_name_length = fget_u32be(fp);
+      /* Several reserved words here... */
+
+      if(b.highlight_offset)
+      {
+        if(fseek(fp, b.highlight_offset, SEEK_SET))
+          return MED_SEEK_ERROR;
+
+        uint32_t highlight_len = (b.num_rows + 31)/32;
+        uint32_t *highlight = new uint32_t[highlight_len];
+        m.pattern_highlight[i] = highlight;
+
+        for(size_t j = 0; j < highlight_len; j++)
+          highlight[j] = fget_u32be(fp);
       }
     }
   }
@@ -1078,7 +1118,8 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       current = data;
       for(unsigned int row = 0; row < b.num_rows; row++)
       {
-        O_("");
+        fprintf(stderr, m.highlight(i, row) ? "X" : ":");
+
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
         {
           if(!p_sz[track])
