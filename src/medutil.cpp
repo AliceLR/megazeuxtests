@@ -74,12 +74,14 @@ enum MED_features
 {
   FT_MULTIPLE_SONGS,
   FT_VARIABLE_TRACKS,
+  FT_OVER_256_ROWS,
   FT_OCTAVES_8_AND_9,
   FT_TRANSPOSE_SONG,
   FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
   FT_INIT_TEMPO_COMPAT,
   FT_BEAT_ROWS_NOT_4,
+  FT_FILTER_ON,
   FT_CMD_PORTAMENTO_VOLSLIDE,
   FT_CMD_VIBRATO_VOLSLIDE,
   FT_CMD_TREMOLO,
@@ -93,6 +95,9 @@ enum MED_features
   FT_CMD_PLAY_DELAY,
   FT_CMD_PLAY_THREE_TIMES,
   FT_CMD_PLAY_THREE_TIMES_NO_NOTE,
+  FT_CMD_DELAY_ONE_THIRD,
+  FT_CMD_DELAY_TWO_THIRDS,
+  FT_CMD_FILTER,
   FT_CMD_SET_PITCH,
   FT_CMD_STOP_PLAYING,
   FT_CMD_STOP_NOTE,
@@ -130,12 +135,14 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
   ">1Songs",
   "VarTracks",
+  ">256Rows",
   "Oct8/9",
   "STrans",
   "ITrans",
   "8ChMode",
   "Tempo<=0A",
   "BRows!=4",
+  "FilterOn",
   "CmPortVol",
   "CmVibVol",
   "CmTremolo",
@@ -149,6 +156,9 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "CmFDelay",
   "CmFThree",
   "CmFF3NoNote",
+  "CmFF4",
+  "CmFF5",
+  "CmFFilter",
   "CmFPitch",
   "CmFStop",
   "CmFOff",
@@ -610,6 +620,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     if(m.num_tracks < b.num_tracks)
       m.num_tracks = b.num_tracks;
 
+    if(b.num_rows > 256)
+      m.uses[FT_OVER_256_ROWS] = true;
+
     MMD0note *pat = new MMD0note[b.num_tracks * b.num_rows];
     m.pattern_data[i] = pat;
 
@@ -687,8 +700,16 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
                   m.uses[FT_CMD_PLAY_THREE_TIMES_NO_NOTE] = true;
                 m.uses[FT_CMD_PLAY_THREE_TIMES] = true;
                 break;
+              case 0xF4:
+                m.uses[FT_CMD_DELAY_ONE_THIRD] = true;
+                break;
+              case 0xF5:
+                m.uses[FT_CMD_DELAY_TWO_THIRDS] = true;
+                break;
               case 0xF8: // Filter off
               case 0xF9: // Filter on
+                m.uses[FT_CMD_FILTER] = true;
+                break;
               case 0xFA: // Hold pedal on
               case 0xFB: // Hold pedal off
                 break;
@@ -987,6 +1008,9 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
     }
   }
 
+  if(s.flags & F_FILTER_ON)
+    m.uses[FT_FILTER_ON] = true;
+
   if(s.flags & F_8_CHANNEL)
     m.uses[FT_8_CHANNEL_MODE] = true;
 
@@ -1052,7 +1076,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       int finetune = sx.finetune;
 
       O_("Sample %02x : %-4.4s  %-10u  %-10u  %-10u : %-3u  %-5u : %-3u  %-3d : %-3u  %-3u   %-3d  : %s\n",
-        i, MED_insttype_str(si.type), length, repeat_start, repeat_length,
+        i + 1, MED_insttype_str(si.type), length, repeat_start, repeat_length,
         midi_channel, midi_preset, default_volume, transpose, hold, decay, finetune, sxi.name
       );
     }
