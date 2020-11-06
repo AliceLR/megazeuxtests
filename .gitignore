@@ -3,6 +3,8 @@ backup/
 src/.build
 669util
 669util.exe
+dbmutil
+dbmutil.exe
 farutil
 farutil.exe
 gdmutil
@@ -11,5 +13,7 @@ medutil
 medutil.exe
 modutil
 modutil.exe
+stmutil
+stmutil.exe
 xmutil
 xmutil.exe

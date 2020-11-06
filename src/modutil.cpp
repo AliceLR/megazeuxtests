@@ -259,48 +259,6 @@ struct MOD_data
   }
 };
 
-bool MOD_strip_name(char *dest, size_t dest_len)
-{
-  size_t start = 0;
-  size_t end = strlen(dest);
-
-  if(end > dest_len)
-    return false;
-
-  // Strip non-ASCII chars and whitespace from the start.
-  for(; start < end; start++)
-    if(dest[start] >= 0x21 && dest[start] <= 0x7E)
-      break;
-
-  // Strip non-ASCII chars and whitespace from the end.
-  for(; start < end; end--)
-    if(dest[end - 1] >= 0x21 && dest[end - 1] < 0x7E)
-      break;
-
-  // Move the buffer to the start of the string, stripping non-ASCII
-  // chars and combining spaces.
-  size_t i = 0;
-  size_t j = start;
-  while(i < dest_len - 1 && j < end)
-  {
-    if(dest[j] == ' ')
-    {
-      while(dest[j] == ' ')
-        j++;
-      dest[i++] = ' ';
-    }
-    else
-
-    if(dest[j] >= 0x21 && dest[j] <= 0x7E)
-      dest[i++] = dest[j++];
-
-    else
-      j++;
-  }
-  dest[i] = '\0';
-  return true;
-}
-
 bool is_ST_mod(ST_header *h)
 {
   // Try to filter out ST mods based on sample data bounding.
@@ -387,7 +345,7 @@ int MOD_read(MOD_data &d, FILE *fp)
   d.name[arraysize(d.name) - 1] = '\0';
   memcpy(d.name_clean, d.name, arraysize(d.name));
   memcpy(d.magic, h.magic, 4);
-  if(!MOD_strip_name(d.name_clean, arraysize(d.name_clean)))
+  if(!strip_module_name(d.name_clean, arraysize(d.name_clean)))
     d.name_clean[0] = '\0';
 
   // Determine initial guess for what the mod type is.
