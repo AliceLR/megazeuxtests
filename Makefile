@@ -32,6 +32,11 @@ GDM_EXE  := gdmutil${BINEXT}
 -include ${GDM_OBJS:.o=.d}
 ${GDM_EXE}: ${GDM_OBJS}
 
+MASI_OBJS:= ${OBJ}/masiutil.o ${OBJ}/IFF.o
+MASI_EXE := masiutil${BINEXT}
+-include ${MASI_OBJS:.o=.d}
+${MASI_EXE}: ${MASI_OBJS}
+
 MED_OBJS := ${OBJ}/medutil.o
 MED_EXE  := medutil${BINEXT}
 -include ${MED_OBJS:.o=.d}
@@ -62,6 +67,7 @@ ALL_EXES := \
   ${DBM_EXE}  \
   ${FAR_EXE}  \
   ${GDM_EXE}  \
+  ${MASI_EXE} \
   ${MED_EXE}  \
   ${MOD_EXE}  \
   ${OKT_EXE}  \
