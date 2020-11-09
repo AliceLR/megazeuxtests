@@ -1,0 +1,472 @@
+/**
+ * Copyright (C) 2020 Lachesis <petrifiedrowan@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "IFF.hpp"
+#include "common.hpp"
+
+static const char USAGE[] =
+  "A utility to dump Amiga Oktalyzer .OKT metadata and patterns.\n"
+  "Usage:\n"
+  "  oktutil [options] [filenames...]\n\n"
+  "Options:\n"
+  "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
+  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
+  "            N=2 additionally dumps the entire pattern as raw data.\n"
+  "  -         Read filenames from stdin. Useful when there are too many files\n"
+  "            for argv. Place after any other options if applicable.\n\n";
+
+static bool dump_samples      = false;
+static bool dump_patterns     = false;
+static bool dump_pattern_rows = false;
+
+enum OKT_error
+{
+  OKT_SUCCESS,
+  OKT_READ_ERROR,
+  OKT_SEEK_ERROR,
+  OKT_NOT_AN_OKT,
+  OKT_INVALID,
+};
+
+static const char *OKT_strerror(int err)
+{
+  switch(err)
+  {
+    case OKT_SUCCESS:           return "no error";
+    case OKT_READ_ERROR:        return "read error";
+    case OKT_SEEK_ERROR:        return "seek error";
+    case OKT_NOT_AN_OKT:        return "not an Amiga Oktalyzer module";
+    case OKT_INVALID:           return "invalid OKT";
+  }
+  return IFF_strerror(err);
+}
+
+enum OKT_features
+{
+  FT_ROWS_OVER_64,
+  FT_ROWS_OVER_128,
+  FT_CHUNK_OVER_4_MIB,
+  NUM_FEATURES
+};
+
+static const char *FEATURE_STR[NUM_FEATURES] =
+{
+  ">64Rows",
+  ">128Rows",
+  ">4MBChunk",
+};
+
+static const int MAX_SAMPLES  = 256;
+static const int MAX_PATTERNS = 256;
+static const int MAX_ORDERS   = 256;
+
+struct OKT_sample
+{
+  char name[21]; /* stored as 20. */
+  uint32_t length;
+  uint16_t repeat_start;
+  uint16_t repeat_length;
+  /* u8 pad */
+  uint8_t  volume;
+  /* u16 pad */
+};
+
+struct OKT_pattern
+{
+  uint16_t num_rows;
+  // TODO: pattern data.
+};
+
+struct OKT_data
+{
+  /* Header (8) */
+
+  char magic[8]; /* OKTASONG */
+
+  /* CMOD (8) */
+
+  uint16_t chan_flags[4];
+  int num_channels = 0;
+
+  /* SAMP (number of samples * 32) */
+
+  int num_samples;
+  OKT_sample samples[MAX_SAMPLES];
+
+  /* SPEE (2) */
+
+  uint16_t initial_tempo;
+
+  /* SLEN (2) */
+
+  uint16_t num_patterns;
+
+  /* PLEN (2) */
+
+  uint16_t num_orders;
+
+  /* PATT (128) */
+
+  uint8_t orders[MAX_ORDERS];
+
+  /* PBOD (2 + channel count * line count * 4) */
+
+  uint16_t current_patt = 0;
+  OKT_pattern patterns[MAX_PATTERNS];
+
+  bool uses[NUM_FEATURES];
+};
+
+static const class OKT_CMOD_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_CMOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    for(int i = 0; i < 4; i++)
+    {
+      uint16_t v = fget_u16be(fp);
+      m.chan_flags[i] = v;
+
+      if(v & 0x01)
+        m.num_channels += 2;
+      else
+        m.num_channels++;
+    }
+
+    if(feof(fp))
+      return OKT_READ_ERROR;
+
+    return 0;
+  }
+} CMOD_handler("CMOD", false);
+
+static const class OKT_SAMP_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_SAMP_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    int num_samples = len / 32;
+    m.num_samples = num_samples;
+
+    for(int i = 0; i < num_samples; i++)
+    {
+      OKT_sample &s = m.samples[i];
+
+      if(!fread(s.name, 20, 1, fp))
+        return OKT_READ_ERROR;
+      s.name[20] = '\0';
+
+      s.length        = fget_u32be(fp);
+      s.repeat_start  = fget_u16be(fp);
+      s.repeat_length = fget_u16be(fp);
+      fgetc(fp);
+      s.volume        = fgetc(fp);
+      fget_u16be(fp);
+    }
+    if(feof(fp))
+      return OKT_READ_ERROR;
+
+    return 0;
+  }
+} SAMP_handler("SAMP", false);
+
+static const class OKT_SPEE_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_SPEE_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    m.initial_tempo = fget_u16be(fp);
+    if(feof(fp))
+      return OKT_READ_ERROR;
+    return 0;
+  }
+} SPEE_handler("SPEE", false);
+
+static const class OKT_SLEN_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_SLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    m.num_patterns = fget_u16be(fp);
+    if(feof(fp))
+      return OKT_READ_ERROR;
+
+    if(m.num_patterns > MAX_PATTERNS)
+    {
+      O_("Error     : too many patterns in SLEN (%u)\n", m.num_patterns);
+      return OKT_INVALID;
+    }
+    return 0;
+  }
+} SLEN_handler("SLEN", false);
+
+static const class OKT_PLEN_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_PLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    m.num_orders = fget_u16be(fp);
+    if(feof(fp))
+      return OKT_READ_ERROR;
+
+    if(m.num_orders > MAX_ORDERS)
+    {
+      O_("Error     : too many orders in PLEN (%u)\n", m.num_orders);
+      return OKT_INVALID;
+    }
+    return 0;
+  }
+} PLEN_handler("PLEN", false);
+
+static const class OKT_PATT_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    if(len < m.num_orders)
+    {
+      O_("Error     : expected %u orders in PATT but found %zu\n", m.num_orders, len);
+      return OKT_INVALID;
+    }
+
+    if(len > MAX_ORDERS)
+    {
+      O_("Error     : PATT chunk too long (%zu)\n", len);
+      return OKT_INVALID;
+    }
+
+    if(!fread(m.orders, len, 1, fp))
+      return OKT_READ_ERROR;
+
+    return OKT_SUCCESS;
+  }
+} PATT_handler("PATT", false);
+
+static const class OKT_PBOD_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_PBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    if(len < 18) /* 2 line count + 1 row, 4 channels */
+    {
+      O_("Error     : PBOD chunk length < 18.\n");
+      return OKT_INVALID;
+    }
+    if(m.current_patt >= MAX_PATTERNS)
+    {
+      O_("Warning   : ignoring pattern %u.\n", m.current_patt);
+      return OKT_SUCCESS;
+    }
+
+    OKT_pattern &p = m.patterns[m.current_patt++];
+
+    p.num_rows         = fget_u16be(fp);
+
+    if(p.num_rows > 128)
+      m.uses[FT_ROWS_OVER_128] = true;
+    else
+    if(p.num_rows > 64)
+      m.uses[FT_ROWS_OVER_64] = true;
+
+    /* TODO: pattern contents. */
+
+    return 0;
+  }
+} PBOD_handler("PBOD", false);
+
+static const class OKT_SBOD_Handler final: public IFFHandler<OKT_data>
+{
+public:
+  OKT_SBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  {
+    /* Ignore. */
+    return 0;
+  }
+} SBOD_handler("SBOD", false);
+
+
+static const IFF<OKT_data> OKT_parser({
+  &CMOD_handler,
+  &SAMP_handler,
+  &SPEE_handler,
+  &SLEN_handler,
+  &PLEN_handler,
+  &PATT_handler,
+  &PBOD_handler,
+  &SBOD_handler
+});
+
+int OKT_read(FILE *fp)
+{
+  OKT_data m{};
+  OKT_parser.max_chunk_length = 0;
+
+  if(!fread(m.magic, 8, 1, fp))
+    return OKT_READ_ERROR;
+
+  if(strncmp(m.magic, "OKTASONG", 8))
+    return OKT_NOT_AN_OKT;
+
+  int err = OKT_parser.parse_iff(fp, 0, m);
+  if(err)
+    return err;
+
+  if(OKT_parser.max_chunk_length > 4*1024*1024)
+    m.uses[FT_CHUNK_OVER_4_MIB] = true;
+
+//  O_("Name      : %s\n",  m.name);
+  O_("Samples   : %u\n",  m.num_samples);
+  O_("Channels  : %u\n",  m.num_channels);
+  O_("Patterns  : %u\n",  m.num_patterns);
+  O_("Max Chunk : %zu\n", OKT_parser.max_chunk_length);
+
+  O_("Uses      :");
+  for(int i = 0; i < NUM_FEATURES; i++)
+    if(m.uses[i])
+      fprintf(stderr, " %s", FEATURE_STR[i]);
+  fprintf(stderr, "\n");
+
+  if(dump_samples)
+  {
+    // FIXME
+  }
+
+  if(dump_patterns)
+  {
+    O_("          :\n");
+
+    for(unsigned int i = 0; i < m.num_patterns; i++)
+    {
+      if(i >= MAX_PATTERNS)
+        break;
+
+      OKT_pattern &p = m.patterns[i];
+
+      O_("Pattern %02x: %u rows\n", i, p.num_rows);
+    }
+
+    // FIXME dump_pattern_rows
+  }
+  return OKT_SUCCESS;
+}
+
+void check_okt(const char *filename)
+{
+  FILE *fp = fopen(filename, "rb");
+  if(fp)
+  {
+    O_("File      : %s\n", filename);
+
+    int err = OKT_read(fp);
+    if(err)
+      O_("Error     : %s\n\n", OKT_strerror(err));
+    else
+      fprintf(stderr, "\n");
+
+    fclose(fp);
+  }
+  else
+    O_("Error     : failed to open '%s'.\n", filename);
+}
+
+int main(int argc, char *argv[])
+{
+  bool read_stdin = false;
+
+  if(!argv || argc < 2)
+  {
+    fprintf(stdout, "%s", USAGE);
+    return 0;
+  }
+
+  for(int i = 1; i < argc; i++)
+  {
+    char *arg = argv[i];
+    if(arg[0] == '-')
+    {
+      switch(arg[1])
+      {
+        case '\0':
+          if(!read_stdin)
+          {
+            char buffer[1024];
+            while(fgets_safe(buffer, stdin))
+              check_okt(buffer);
+
+            read_stdin = true;
+          }
+          continue;
+
+        case 'p':
+          if(!arg[2] || !strcmp(arg + 2, "=1"))
+          {
+            dump_patterns = true;
+            dump_pattern_rows = false;
+            continue;
+          }
+          if(!strcmp(arg + 2, "=2"))
+          {
+            dump_patterns = true;
+            dump_pattern_rows = true;
+            continue;
+          }
+          if(!strcmp(arg + 2, "=0"))
+          {
+            dump_patterns = false;
+            dump_pattern_rows = false;
+            continue;
+          }
+          break;
+
+        case 's':
+          if(!arg[2] || !strcmp(arg + 2, "=1"))
+          {
+            dump_samples = true;
+            continue;
+          }
+          if(!strcmp(arg + 2, "=0"))
+          {
+            dump_samples = false;
+            continue;
+          }
+          break;
+      }
+    }
+    check_okt(arg);
+  }
+
+  return 0;
+}
