@@ -75,7 +75,8 @@ enum MED_features
   FT_MULTIPLE_SONGS,
   FT_VARIABLE_TRACKS,
   FT_OVER_256_ROWS,
-  FT_OCTAVES_8_AND_9,
+  FT_OCTAVE_4,
+  FT_OCTAVE_8,
   FT_TRANSPOSE_SONG,
   FT_TRANSPOSE_INSTRUMENT,
   FT_8_CHANNEL_MODE,
@@ -136,7 +137,8 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   ">1Songs",
   "VarTracks",
   ">256Rows",
-  "Oct8/9",
+  "Oct4-7",
+  "Oct8-A",
   "STrans",
   "ITrans",
   "8ChMode",
@@ -651,7 +653,10 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
          * low tones (see "childplay.med" by Blockhead).
          */
         if(current->note >= (1 + 12 * 7))
-          m.uses[FT_OCTAVES_8_AND_9] = true;
+          m.uses[FT_OCTAVE_8] = true;
+        else
+        if(current->note >= (1 + 12 * 3))
+          m.uses[FT_OCTAVE_4] = true;
 
         switch(current->effect)
         {
