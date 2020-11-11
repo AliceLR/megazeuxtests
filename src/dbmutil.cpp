@@ -110,7 +110,7 @@ struct DBM_instrument
   uint32_t finetune_hz;
   uint32_t repeat_start; /* in samples(?) */
   uint32_t repeat_length; /* in samples(?) */
-  uint16_t panning;
+  int16_t panning;
   uint16_t flags;
 };
 
@@ -122,6 +122,17 @@ struct DBM_sample
     S_16_BIT = (1 << 1),
     S_32_BIT = (1 << 2),
   };
+
+  const char *type_str() const
+  {
+    if(flags & S_8_BIT)
+      return "8-bit";
+    if(flags & S_16_BIT)
+      return "16-bit";
+    if(flags & S_32_BIT)
+      return "32-bit";
+    return "?";
+  }
 
   uint32_t flags;
   uint32_t length; /* in samples. */
@@ -169,10 +180,10 @@ struct DBM_envelope
 
   enum flags
   {
-    ENVELOPE_ON  = (1 << 0),
-    SUSTAIN_1_ON = (1 << 1),
-    LOOP_ON      = (1 << 2),
-    SUSTAIN_2_ON = (1 << 3),
+    ENABLED   = (1 << 0),
+    SUSTAIN_1 = (1 << 1),
+    LOOP      = (1 << 2),
+    SUSTAIN_2 = (1 << 3),
   };
 
   struct point
@@ -181,13 +192,13 @@ struct DBM_envelope
     uint16_t volume;
   };
 
+  uint16_t instrument_id;
   uint8_t flags;
   uint8_t num_points;
   uint8_t sustain_1_point;
   uint8_t loop_start_point;
   uint8_t loop_end_point;
   uint8_t sustain_2_point;
-  uint16_t reserved;
   DBM_envelope::point points[32];
 };
 
@@ -232,12 +243,12 @@ struct DBM_data
   /* VENV */
 
   uint16_t num_volume_envelopes;
-  DBM_envelope volume_envelopes[MAX_INSTRUMENTS];
+  DBM_envelope *volume_envelopes;
 
   /* PENV */
 
   uint16_t num_pan_envelopes;
-  DBM_envelope pan_envelopes[MAX_INSTRUMENTS];
+  DBM_envelope *pan_envelopes;
 
   /* DSPE */
 
@@ -252,6 +263,8 @@ struct DBM_data
 
   ~DBM_data()
   {
+    delete[] volume_envelopes;
+    delete[] pan_envelopes;
     delete[] dspe_mask;
   }
 };
@@ -530,7 +543,7 @@ public:
       is.finetune_hz   = fget_u32be(fp);
       is.repeat_start  = fget_u32be(fp);
       is.repeat_length = fget_u32be(fp);
-      is.panning       = fget_u16be(fp);
+      is.panning       = fget_s16be(fp);
       is.flags         = fget_u16be(fp);
     }
 
@@ -582,19 +595,20 @@ public:
   }
 } SMPL_handler("SMPL", false);
 
-static int read_envelope(DBM_envelope &env, size_t inst_num, FILE *fp)
+static int read_envelope(DBM_envelope &env, size_t env_num, FILE *fp)
 {
+  env.instrument_id    = fget_u16be(fp);
   env.flags            = fgetc(fp);
-  env.num_points       = fgetc(fp);
+  env.num_points       = fgetc(fp) + 1;
   env.sustain_1_point  = fgetc(fp);
   env.loop_start_point = fgetc(fp);
   env.loop_end_point   = fgetc(fp);
-  env.reserved         = fget_u16be(fp);
+  env.sustain_2_point  = fgetc(fp);
 
   if(env.num_points > DBM_envelope::MAX_POINTS)
   {
-    O_("Error     : envelope for instrument %zu contains too many points (%zu)\n",
-      inst_num, (size_t)env.num_points);
+    O_("Error     : envelope %zu for instrument %u contains too many points (%zu)\n",
+      env_num, env.instrument_id, (size_t)env.num_points);
     return DBM_INVALID;
   }
 
@@ -634,6 +648,7 @@ public:
       return DBM_SUCCESS;
 
     m.num_volume_envelopes = num_envelopes;
+    m.volume_envelopes = new DBM_envelope[num_envelopes];
 
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
@@ -676,6 +691,8 @@ public:
       return DBM_SUCCESS;
 
     m.num_pan_envelopes = num_envelopes;
+    m.pan_envelopes = new DBM_envelope[num_envelopes];
+
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
       O_("Error     : PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
@@ -741,7 +758,47 @@ static const IFF<DBM_data> DBM_parser({
   &DSPE_handler,
 });
 
-int DBM_read(FILE *fp)
+static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
+{
+  O_("          :\n");
+  O_("          : Instr. #  Enabled : (...)=Loop  [S]=Sustain\n");
+  O_("          : --------  ------- : -------------------------\n");
+  for(unsigned int i = 0; i < num; i++)
+  {
+    DBM_envelope &env = envs[i];
+    size_t loop_start = (env.flags & DBM_envelope::LOOP)      ? env.loop_start_point : -1;
+    size_t loop_end   = (env.flags & DBM_envelope::LOOP)      ? env.loop_end_point   : -1;
+    size_t sustain_1  = (env.flags & DBM_envelope::SUSTAIN_1) ? env.sustain_1_point  : -1;
+    size_t sustain_2  = (env.flags & DBM_envelope::SUSTAIN_2) ? env.sustain_2_point  : -1;
+
+    O_("%-6s %02x : %-8u  %-7s : ",
+      name, i + 1, env.instrument_id, (env.flags & DBM_envelope::ENABLED) ? "Yes" : "No"
+    );
+    for(size_t j = 0; j < env.num_points; j++)
+    {
+      fprintf(stderr, "%1s%-5u%1s ",
+        (j == loop_start) ? "(" : "",
+        env.points[j].time,
+        (j == loop_end) ? ")" : ""
+      );
+    }
+    fprintf(stderr, "\n");
+
+    O_("          : %8s  %7s : ", "", "");
+    for(size_t j = 0; j < env.num_points; j++)
+    {
+      fprintf(stderr, "%1s%-2u%3s%1s ",
+        (j == loop_start) ? "(" : "",
+        env.points[j].volume,
+        (j == sustain_1 || j == sustain_2) ? "[S]" : "",
+        (j == loop_end) ? ")" : ""
+      );
+    }
+    fprintf(stderr, "\n");
+  }
+}
+
+static int DBM_read(FILE *fp)
 {
   DBM_data m{};
   DBM_parser.max_chunk_length = 0;
@@ -778,7 +835,42 @@ int DBM_read(FILE *fp)
 
   if(dump_samples)
   {
-    // FIXME
+    if(m.num_samples)
+    {
+      O_("          :\n");
+      O_("          : Type    Length (samples)\n");
+      O_("          : ------  ----------------\n");
+      for(unsigned int i = 0; i < m.num_samples; i++)
+      {
+        DBM_sample &s = m.samples[i];
+        O_("Sample %02x : %-.6s  %-u\n", i + 1, s.type_str(), s.length);
+      }
+    }
+
+    if(m.num_instruments)
+    {
+      O_("          :\n");
+      O_("          : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
+      O_("          : --------  -----  -----  ---------- : ----------  ---------- \n");
+      for(unsigned int i = 0; i < m.num_instruments; i++)
+      {
+        DBM_instrument &is = m.instruments[i];
+        O_("Instr. %02x : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
+          i + 1, is.sample_id, is.volume, is.panning, is.finetune_hz,
+          is.repeat_start, is.repeat_length
+        );
+      }
+    }
+
+    if(m.num_volume_envelopes)
+    {
+      print_envelopes("V.Env.", m.num_volume_envelopes, m.volume_envelopes);
+    }
+
+    if(m.num_pan_envelopes)
+    {
+      print_envelopes("P.Env.", m.num_pan_envelopes, m.pan_envelopes);
+    }
   }
 
   if(dump_patterns)
