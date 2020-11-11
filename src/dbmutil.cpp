@@ -63,6 +63,9 @@ enum DBM_features
   FT_MULTIPLE_SONGS,
   FT_ROWS_OVER_256,
   FT_CHUNK_OVER_4_MIB,
+  FT_VENV_CHUNK,
+  FT_PENV_CHUNK,
+  FT_DSPE_CHUNK,
   NUM_FEATURES
 };
 
@@ -71,6 +74,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   ">1Song",
   ">256Rows",
   ">4MBChunk",
+  "VENV",
+  "PENV",
+  "DSPE",
 };
 
 static const int MAX_SONGS = 2;
@@ -82,37 +88,107 @@ struct DBM_song
 {
   char name[45];
   uint16_t num_orders;
-  uint16_t *order_list = nullptr;
+  uint16_t *orders = nullptr;
 
   ~DBM_song()
   {
-    delete[] order_list;
+    delete[] orders;
   }
 };
 
 struct DBM_instrument
 {
-  char name[33];
+  enum flags
+  {
+    FORWARD_LOOP = (1 << 0),
+    BIDI_LOOP    = (1 << 1),
+  };
+
+  char name[31];
   uint16_t sample_id;
   uint16_t volume;
   uint32_t finetune_hz;
-  uint32_t repeat_start;
-  uint32_t repeat_length;
+  uint32_t repeat_start; /* in samples(?) */
+  uint32_t repeat_length; /* in samples(?) */
   uint16_t panning;
   uint16_t flags;
 };
 
 struct DBM_sample
 {
+  enum flags
+  {
+    S_8_BIT  = (1 << 0),
+    S_16_BIT = (1 << 1),
+    S_32_BIT = (1 << 2),
+  };
+
   uint32_t flags;
-  uint32_t length;
+  uint32_t length; /* in samples. */
 };
 
 struct DBM_pattern
 {
+  enum flags
+  {
+    NOTE       = (1 << 0),
+    INSTRUMENT = (1 << 1),
+    EFFECT_1   = (1 << 2),
+    PARAM_1    = (1 << 3),
+    EFFECT_2   = (1 << 4),
+    PARAM_2    = (1 << 5)
+  };
+
+  struct note
+  {
+    uint8_t note;
+    uint8_t instrument;
+    uint8_t effect_1;
+    uint8_t param_1;
+    uint8_t effect_2;
+    uint8_t param_2;
+  };
+
   uint16_t num_rows;
   uint32_t packed_data_size;
-  // TODO: pattern data.
+  note *data;
+
+  /* From PNAM. */
+  char *name;
+
+  ~DBM_pattern()
+  {
+    delete[] data;
+    delete[] name;
+  }
+};
+
+struct DBM_envelope
+{
+  static const size_t MAX_POINTS = 32;
+
+  enum flags
+  {
+    ENVELOPE_ON  = (1 << 0),
+    SUSTAIN_1_ON = (1 << 1),
+    LOOP_ON      = (1 << 2),
+    SUSTAIN_2_ON = (1 << 3),
+  };
+
+  struct point
+  {
+    uint16_t time;
+    uint16_t volume;
+  };
+
+  uint8_t flags;
+  uint8_t num_points;
+  uint8_t sustain_1_point;
+  uint8_t loop_start_point;
+  uint8_t loop_end_point;
+  uint8_t sustain_2_point;
+  uint16_t reserved;
+  DBM_envelope::point points[32];
 };
 
 struct DBM_data
@@ -139,27 +215,45 @@ struct DBM_data
 
   /* SONG */
 
-  size_t current_song = 0;
   DBM_song songs[MAX_SONGS];
+
+  /* PATT and PNAM */
+
+  DBM_pattern patterns[MAX_PATTERNS];
 
   /* INST */
 
-  size_t current_inst = 0;
   DBM_instrument instruments[MAX_INSTRUMENTS];
 
   /* SMPL */
 
-  size_t current_smpl = 0;
   DBM_sample samples[MAX_SAMPLES];
 
-  /* PATT */
+  /* VENV */
 
-  size_t current_patt = 0;
-  DBM_pattern patterns[MAX_PATTERNS];
+  uint16_t num_volume_envelopes;
+  DBM_envelope volume_envelopes[MAX_INSTRUMENTS];
 
-  /* VENV - TODO */
+  /* PENV */
+
+  uint16_t num_pan_envelopes;
+  DBM_envelope pan_envelopes[MAX_INSTRUMENTS];
+
+  /* DSPE */
+
+  uint16_t dspe_mask_length;
+  uint8_t *dspe_mask;
+  uint16_t dspe_global_echo_delay;
+  uint16_t dspe_global_echo_feedback;
+  uint16_t dspe_global_echo_mix;
+  uint16_t dspe_cross_channel_echo;
 
   bool uses[NUM_FEATURES];
+
+  ~DBM_data()
+  {
+    delete[] dspe_mask;
+  }
 };
 
 static const class DBM_NAME_Handler final: public IFFHandler<DBM_data>
@@ -227,22 +321,41 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
-    // FIXME
+    if(len < 46 * m.num_songs)
+    {
+      O_("Error     : SONG chunk length < %u\n", 46 * m.num_songs);
+      return DBM_INVALID;
+    }
+
+    for(size_t i = 0; i < m.num_songs; i++)
+    {
+      if(i >= MAX_SONGS)
+      {
+        O_("Warning   : ignoring SONG %zu.\n", i);
+        continue;
+      }
+
+      DBM_song &sng = m.songs[i];
+
+      if(!fread(sng.name, 44, 1, fp))
+        return DBM_READ_ERROR;
+      sng.name[44] = '\0';
+
+      sng.num_orders = fget_u16be(fp);
+      if(feof(fp))
+        return DBM_READ_ERROR;
+
+      sng.orders = new uint16_t[sng.num_orders];
+
+      for(size_t i = 0; i < sng.num_orders; i++)
+        sng.orders[i] = fget_u16be(fp);
+
+      if(feof(fp))
+        return DBM_READ_ERROR;
+    }
     return 0;
   }
 } SONG_handler("SONG", false);
-
-static const class DBM_INST_Handler final: public IFFHandler<DBM_data>
-{
-public:
-  DBM_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
-
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
-  {
-    // FIXME
-    return 0;
-  }
-} INST_handler("INST", false);
 
 static const class DBM_PATT_Handler final: public IFFHandler<DBM_data>
 {
@@ -251,31 +364,182 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
-    if(len < 7)
+    for(size_t i = 0; i < m.num_patterns; i++)
     {
-      O_("Error     : PATT chunk length < 7.\n");
+      if(i >= MAX_PATTERNS)
+      {
+        O_("Warning   : ignoring pattern %zu.\n", i);
+        continue;
+      }
+      if(len < 6)
+      {
+        O_("Error     : pattern %zu header truncated.\n", i);
+        return DBM_READ_ERROR;
+      }
+
+      DBM_pattern &p = m.patterns[i];
+
+      p.num_rows         = fget_u16be(fp);
+      p.packed_data_size = fget_u32be(fp);
+      len -= 6;
+
+      if(p.num_rows > 256)
+        m.uses[FT_ROWS_OVER_256] = true;
+
+      if(feof(fp))
+        return DBM_READ_ERROR;
+
+      if(len < p.packed_data_size)
+      {
+        O_("Error     : pattern %zu truncated (left=%zu, expected>=%u).\n",
+          i, len, p.packed_data_size);
+        return DBM_READ_ERROR;
+      }
+
+      if(!p.num_rows)
+      {
+        if(p.packed_data_size)
+          if(fseek(fp, p.packed_data_size, SEEK_CUR))
+            return DBM_SEEK_ERROR;
+        continue;
+      }
+
+      size_t num_notes = m.num_channels * p.num_rows;
+      p.data = new DBM_pattern::note[num_notes]{};
+
+      DBM_pattern::note *row = p.data;
+      DBM_pattern::note *end = p.data + num_notes;
+      ssize_t left = p.packed_data_size;
+
+      while(left > 0 && row < end)
+      {
+        uint8_t channel = fgetc(fp);
+        left--;
+
+        if(!channel)
+        {
+          row += m.num_channels;
+          continue;
+        }
+
+        uint8_t flags = fgetc(fp);
+        left--;
+
+        channel--;
+        if(channel >= m.num_channels)
+        {
+          O_("Error     : invalid pattern data.\n");
+          return DBM_INVALID;
+        }
+
+        if(flags & DBM_pattern::NOTE)
+          row[channel].note = fgetc(fp), left--;
+        if(flags & DBM_pattern::INSTRUMENT)
+          row[channel].instrument = fgetc(fp), left--;
+        if(flags & DBM_pattern::EFFECT_1)
+          row[channel].effect_1 = fgetc(fp), left--;
+        if(flags & DBM_pattern::PARAM_1)
+          row[channel].param_1 = fgetc(fp), left--;
+        if(flags & DBM_pattern::EFFECT_2)
+          row[channel].effect_2 = fgetc(fp), left--;
+        if(flags & DBM_pattern::PARAM_2)
+          row[channel].param_2 = fgetc(fp), left--;
+
+        if(feof(fp))
+          return DBM_READ_ERROR;
+      }
+      if(left)
+      {
+        if(left < 0)
+          O_("Warning   : read %zd past end of packed data for pattern %zu.\n", -left, i);
+        /* Don't print for 1 byte, this seems to be common... */
+        if(left > 1)
+          O_("Warning   : %zd of packed data remaining for pattern %zu.\n", left, i);
+        if(fseek(fp, left, SEEK_CUR))
+          return DBM_SEEK_ERROR;
+      }
+
+      len -= p.packed_data_size;
+    }
+    return DBM_SUCCESS;
+  }
+} PATT_handler("PATT", false);
+
+static const class DBM_PNAM_Handler final: public IFFHandler<DBM_data>
+{
+public:
+  DBM_PNAM_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  {
+    fgetc(fp); /* ??? */
+
+    ssize_t left = len;
+    for(size_t i = 0; i < m.num_patterns; i++)
+    {
+      if(left < 2)
+        break;
+
+      uint16_t length = fget_u16be(fp);
+      left -= 2;
+
+      if(left < length)
+        break;
+
+      DBM_pattern &p = m.patterns[i];
+
+      p.name = new char[length + 1];
+      if(!fread(p.name, length, 1, fp))
+        return DBM_READ_ERROR;
+      p.name[length] = '\0';
+      left -= length;
+    }
+    return DBM_SUCCESS;
+  }
+} PNAM_handler("PNAM", false);
+
+static const class DBM_INST_Handler final: public IFFHandler<DBM_data>
+{
+public:
+  DBM_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
+
+  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  {
+    if(len < 50 * m.num_instruments)
+    {
+      O_("Error     : INST chunk length < %u\n", 50 * m.num_instruments);
       return DBM_INVALID;
     }
-    if(m.current_patt >= MAX_PATTERNS)
+
+    for(size_t i = 0; i < m.num_instruments; i++)
     {
-      O_("Warning   : ignoring pattern %zu.\n", m.current_patt);
-      return DBM_SUCCESS;
+      if(i > MAX_INSTRUMENTS)
+      {
+        O_("Warning   : ignoring instrument %zu.\n", i);
+        continue;
+      }
+
+      DBM_instrument &is = m.instruments[i];
+
+      if(!fread(is.name, 30, 1, fp))
+        return DBM_READ_ERROR;
+      is.name[30] = '\0';
+
+      is.sample_id     = fget_u16be(fp);
+      is.volume        = fget_u16be(fp);
+      is.finetune_hz   = fget_u32be(fp);
+      is.repeat_start  = fget_u32be(fp);
+      is.repeat_length = fget_u32be(fp);
+      is.panning       = fget_u16be(fp);
+      is.flags         = fget_u16be(fp);
     }
-
-    DBM_pattern &p = m.patterns[m.current_patt++];
-
-    p.num_rows         = fget_u16be(fp);
-    p.packed_data_size = fget_u32be(fp);
-
-    if(p.num_rows > 256)
-      m.uses[FT_ROWS_OVER_256] = true;
 
     if(feof(fp))
       return DBM_READ_ERROR;
 
-    return DBM_SUCCESS;
+    return 0;
   }
-} PATT_handler("PATT", false);
+} INST_handler("INST", false);
 
 static const class DBM_SMPL_Handler final: public IFFHandler<DBM_data>
 {
@@ -284,10 +548,68 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
-    // FIXME
-   return 0;
+    if(len < 8 * m.num_samples)
+    {
+      O_("Error     : SMPL chunk length < %u.\n", 8 * m.num_samples);
+      return DBM_INVALID;
+    }
+
+    for(size_t i = 0; i < m.num_samples; i++)
+    {
+      if(i >= MAX_SAMPLES)
+      {
+        O_("Warning   : ignoring sample %zu.\n", i);
+        continue;
+      }
+
+      DBM_sample &s = m.samples[i];
+
+      s.flags  = fget_u32be(fp);
+      s.length = fget_u32be(fp);
+
+      size_t byte_length = s.length;
+      if(s.flags & DBM_sample::S_16_BIT)
+        byte_length <<= 1;
+      else
+      if(s.flags & DBM_sample::S_32_BIT)
+        byte_length <<= 2;
+
+      /* Ignore the sample data... */
+      if(fseek(fp, byte_length, SEEK_CUR))
+        return DBM_SEEK_ERROR;
+    }
+    return 0;
   }
 } SMPL_handler("SMPL", false);
+
+static int read_envelope(DBM_envelope &env, size_t inst_num, FILE *fp)
+{
+  env.flags            = fgetc(fp);
+  env.num_points       = fgetc(fp);
+  env.sustain_1_point  = fgetc(fp);
+  env.loop_start_point = fgetc(fp);
+  env.loop_end_point   = fgetc(fp);
+  env.reserved         = fget_u16be(fp);
+
+  if(env.num_points > DBM_envelope::MAX_POINTS)
+  {
+    O_("Error     : envelope for instrument %zu contains too many points (%zu)\n",
+      inst_num, (size_t)env.num_points);
+    return DBM_INVALID;
+  }
+
+  for(size_t i = 0; i < DBM_envelope::MAX_POINTS; i++)
+  {
+    DBM_envelope::point &p = env.points[i];
+    p.time   = fget_u16be(fp);
+    p.volume = fget_u16be(fp);
+  }
+
+  if(feof(fp))
+    return DBM_READ_ERROR;
+
+  return DBM_SUCCESS;
+}
 
 static const class DBM_VENV_Handler final: public IFFHandler<DBM_data>
 {
@@ -296,19 +618,127 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
-    // FIXME
+    m.uses[FT_VENV_CHUNK] = true;
+
+    if(len < 4)
+    {
+      O_("Error     : VENV chunk length < 4.\n");
+      return DBM_INVALID;
+    }
+
+    uint16_t num_envelopes = fget_u16be(fp);
+    if(feof(fp))
+      return DBM_READ_ERROR;
+
+    if(!num_envelopes)
+      return DBM_SUCCESS;
+
+    m.num_volume_envelopes = num_envelopes;
+
+    if(len < (size_t)(num_envelopes * 136 + 2))
+    {
+      O_("Error     : VENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+        num_envelopes, len, (size_t)(2 + num_envelopes * 136));
+      return DBM_SUCCESS;
+    }
+
+    for(size_t i = 0; i < num_envelopes; i++)
+    {
+      DBM_envelope &env = m.volume_envelopes[i];
+      int result = read_envelope(env, i, fp);
+      if(result)
+        return result;
+    }
     return 0;
   }
 } VENV_handler("VENV", false);
+
+static const class DBM_PENV_Handler final: public IFFHandler<DBM_data>
+{
+public:
+  DBM_PENV_Handler(const char *n, bool c): IFFHandler(n,c) {}
+
+  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  {
+    m.uses[FT_PENV_CHUNK] = true;
+
+    if(len < 4)
+    {
+      O_("Error     : PENV chunk length < 4.\n");
+      return DBM_INVALID;
+    }
+
+    uint16_t num_envelopes = fget_u16be(fp);
+    if(feof(fp))
+      return DBM_READ_ERROR;
+
+    if(!num_envelopes)
+      return DBM_SUCCESS;
+
+    m.num_pan_envelopes = num_envelopes;
+    if(len < (size_t)(num_envelopes * 136 + 2))
+    {
+      O_("Error     : PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+        num_envelopes, len, (size_t)(2 + num_envelopes * 136));
+      return DBM_SUCCESS;
+    }
+
+    for(size_t i = 0; i < num_envelopes; i++)
+    {
+      DBM_envelope &env = m.pan_envelopes[i];
+      int result = read_envelope(env, i, fp);
+      if(result)
+        return result;
+    }
+    return DBM_SUCCESS;
+  }
+} PENV_handler("PENV", false);
+
+static const class DBM_DSPE_Handler final: public IFFHandler<DBM_data>
+{
+public:
+  DBM_DSPE_Handler(const char *n, bool c): IFFHandler(n,c) {}
+
+  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  {
+    m.uses[FT_DSPE_CHUNK] = true;
+
+    if(len < 10)
+    {
+      O_("Error     : DSPE chunk length < 10.\n");
+      return DBM_INVALID;
+    }
+
+    m.dspe_mask_length = fget_u16be(fp);
+    if(feof(fp))
+      return DBM_READ_ERROR;
+
+    m.dspe_mask = new uint8_t[m.dspe_mask_length];
+    if(!fread(m.dspe_mask, m.dspe_mask_length, 1, fp))
+      return DBM_READ_ERROR;
+
+    m.dspe_global_echo_delay    = fget_u16be(fp);
+    m.dspe_global_echo_feedback = fget_u16be(fp);
+    m.dspe_global_echo_mix      = fget_u16be(fp);
+    m.dspe_cross_channel_echo   = fget_u16be(fp);
+    if(feof(fp))
+      return DBM_READ_ERROR;
+
+    return DBM_SUCCESS;
+  }
+} DSPE_handler("DSPE", false);
 
 static const IFF<DBM_data> DBM_parser({
   &NAME_handler,
   &INFO_handler,
   &SONG_handler,
-  &INST_handler,
   &PATT_handler,
+  &PNAM_handler,
+  &INST_handler,
   &SMPL_handler,
-  &VENV_handler
+  &VENV_handler,
+  &PENV_handler,
+  &DSPE_handler,
 });
 
 int DBM_read(FILE *fp)
@@ -319,7 +749,7 @@ int DBM_read(FILE *fp)
   if(!fread(m.magic, 4, 1, fp))
     return DBM_READ_ERROR;
 
-  if(!strncmp(m.magic, "DBMO", 4))
+  if(strncmp(m.magic, "DBM0", 4))
     return DBM_NOT_A_DBM;
 
   m.tracker_version = fget_u16be(fp);
