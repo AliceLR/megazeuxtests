@@ -66,6 +66,8 @@ enum DBM_features
   FT_VENV_CHUNK,
   FT_PENV_CHUNK,
   FT_DSPE_CHUNK,
+  FT_BAD_VOLUME_ENVELOPE,
+  FT_BAD_PAN_ENVELOPE,
   NUM_FEATURES
 };
 
@@ -77,6 +79,8 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "VENV",
   "PENV",
   "DSPE",
+  "BadVolEnv",
+  "BadPanEnv",
 };
 
 static const int MAX_SONGS = 2;
@@ -595,7 +599,7 @@ public:
   }
 } SMPL_handler("SMPL", false);
 
-static int read_envelope(DBM_envelope &env, size_t env_num, FILE *fp)
+static int read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *fp)
 {
   env.instrument_id    = fget_u16be(fp);
   env.flags            = fgetc(fp);
@@ -604,13 +608,6 @@ static int read_envelope(DBM_envelope &env, size_t env_num, FILE *fp)
   env.loop_start_point = fgetc(fp);
   env.loop_end_point   = fgetc(fp);
   env.sustain_2_point  = fgetc(fp);
-
-  if(env.num_points > DBM_envelope::MAX_POINTS)
-  {
-    O_("Error     : envelope %zu for instrument %u contains too many points (%zu)\n",
-      env_num, env.instrument_id, (size_t)env.num_points);
-    return DBM_INVALID;
-  }
 
   for(size_t i = 0; i < DBM_envelope::MAX_POINTS; i++)
   {
@@ -621,6 +618,48 @@ static int read_envelope(DBM_envelope &env, size_t env_num, FILE *fp)
 
   if(feof(fp))
     return DBM_READ_ERROR;
+
+  if(env.instrument_id > m.num_instruments)
+  {
+    O_("Warning   : envelope %zu for invalid instrument %u\n",
+      env_num, env.instrument_id);
+    return DBM_INVALID;
+  }
+
+  if(env.num_points > DBM_envelope::MAX_POINTS)
+  {
+    O_("Warning   : envelope %zu for instrument %u contains too many points (%zu)\n",
+      env_num, env.instrument_id, (size_t)env.num_points);
+    return DBM_INVALID;
+  }
+
+  if(env.sustain_1_point >= DBM_envelope::MAX_POINTS)
+  {
+    O_("Warning   : envelope %zu sustain 1 (%u) >= max points (32)\n",
+      env_num, env.sustain_1_point);
+    return DBM_INVALID;
+  }
+
+  if(env.sustain_2_point >= DBM_envelope::MAX_POINTS)
+  {
+    O_("Warning   : envelope %zu sustain 2 (%u) >= max points (32)\n",
+      env_num, env.sustain_2_point);
+    return DBM_INVALID;
+  }
+
+  if(env.loop_start_point >= DBM_envelope::MAX_POINTS)
+  {
+    O_("Warning   : envelope %zu loop start (%u) >= max points (32)\n",
+      env_num, env.loop_start_point);
+    return DBM_INVALID;
+  }
+
+  if(env.loop_end_point >= DBM_envelope::MAX_POINTS)
+  {
+    O_("Warning   : envelope %zu loop end (%u) >= max points (32)\n",
+      env_num, env.loop_end_point);
+    return DBM_INVALID;
+  }
 
   return DBM_SUCCESS;
 }
@@ -660,7 +699,13 @@ public:
     for(size_t i = 0; i < num_envelopes; i++)
     {
       DBM_envelope &env = m.volume_envelopes[i];
-      int result = read_envelope(env, i, fp);
+      int result = read_envelope(m, env, i, fp);
+      if(result == DBM_INVALID)
+      {
+        m.uses[FT_BAD_VOLUME_ENVELOPE] = true;
+      }
+      else
+
       if(result)
         return result;
     }
@@ -703,7 +748,13 @@ public:
     for(size_t i = 0; i < num_envelopes; i++)
     {
       DBM_envelope &env = m.pan_envelopes[i];
-      int result = read_envelope(env, i, fp);
+      int result = read_envelope(m, env, i, fp);
+      if(result == DBM_INVALID)
+      {
+        m.uses[FT_BAD_PAN_ENVELOPE] = true;
+      }
+      else
+
       if(result)
         return result;
     }
@@ -821,8 +872,14 @@ static int DBM_read(FILE *fp)
 
   O_("Name      : %s\n",  m.name);
   O_("Songs     : %u\n",  m.num_songs);
-  O_("Instr.    : %u\n",  m.num_instruments);
-  O_("Samples   : %u\n",  m.num_samples);
+  if(m.num_samples)
+    O_("Samples   : %u\n",  m.num_samples);
+  if(m.num_instruments)
+    O_("Instr.    : %u\n",  m.num_instruments);
+  if(m.num_volume_envelopes)
+    O_("V.Envs.   : %u\n", m.num_volume_envelopes);
+  if(m.num_pan_envelopes)
+    O_("P.Envs.   : %u\n", m.num_pan_envelopes);
   O_("Channels  : %u\n",  m.num_channels);
   O_("Patterns  : %u\n",  m.num_patterns);
   O_("Max Chunk : %zu\n", DBM_parser.max_chunk_length);
