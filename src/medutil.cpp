@@ -83,6 +83,8 @@ enum MED_features
   FT_INIT_TEMPO_COMPAT,
   FT_BEAT_ROWS_NOT_4,
   FT_FILTER_ON,
+  FT_MOD_SLIDES,
+  FT_TICK_0_SLIDES,
   FT_CMD_PORTAMENTO_VOLSLIDE,
   FT_CMD_VIBRATO_VOLSLIDE,
   FT_CMD_TREMOLO,
@@ -145,6 +147,8 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Tempo<=0A",
   "BRows!=4",
   "FilterOn",
+  "ModSlide",
+  "Tick0Slide",
   "CmPortVol",
   "CmVibVol",
   "CmTremolo",
@@ -597,6 +601,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   /**
    * "Blocks" (aka patterns).
    */
+  bool has_full_slides = false;
   for(size_t i = 0; i < s.num_blocks; i++)
   {
     if(!m.pattern_offsets[i])
@@ -660,6 +665,15 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
         switch(current->effect)
         {
+          case E_PORTAMENTO_UP:
+          case E_PORTAMENTO_DOWN:
+          case E_TONE_PORTAMENTO:
+          case E_VOLUME_SLIDE_MOD:
+          case E_VOLUME_SLIDE:
+            if(current->param)
+              has_full_slides = true;
+            break;
+
           case E_PORTA_VOLSLIDE:
             m.uses[FT_CMD_PORTAMENTO_VOLSLIDE] = true;
             break;
@@ -1011,6 +1025,14 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       if(skip && fseek(fp, skip, SEEK_CUR))
         return MED_SEEK_ERROR;
     }
+  }
+
+  if(has_full_slides)
+  {
+    if(s.flags & F_MOD_SLIDES)
+      m.uses[FT_MOD_SLIDES] = true;
+    else
+      m.uses[FT_TICK_0_SLIDES] = true;
   }
 
   if(s.flags & F_FILTER_ON)
