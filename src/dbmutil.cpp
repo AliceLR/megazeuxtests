@@ -83,7 +83,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "BadPanEnv",
 };
 
-static const int MAX_SONGS = 2;
+static const int MAX_SONGS = 16;
 static const int MAX_INSTRUMENTS = 256;
 static const int MAX_SAMPLES = 256;
 static const int MAX_PATTERNS = 256;
@@ -154,6 +154,11 @@ struct DBM_pattern
     PARAM_2    = (1 << 5)
   };
 
+  static const uint8_t NOTE_SIZE       = 2;
+  static const uint8_t INSTRUMENT_SIZE = NOTE_SIZE + 3;
+  static const uint8_t EFFECT_1_SIZE   = INSTRUMENT_SIZE + 5;
+  static const uint8_t EFFECT_2_SIZE   = EFFECT_1_SIZE + 5;
+
   struct note
   {
     uint8_t note;
@@ -166,13 +171,13 @@ struct DBM_pattern
 
   uint16_t num_rows;
   uint32_t packed_data_size;
-  note *data;
-
-  /* From PNAM. */
-  char *name;
+  uint8_t  *channel_size;
+  note     *data;
+  char     *name; /* From PNAM. */
 
   ~DBM_pattern()
   {
+    delete[] channel_size;
     delete[] data;
     delete[] name;
   }
@@ -423,6 +428,7 @@ public:
 
       size_t num_notes = m.num_channels * p.num_rows;
       p.data = new DBM_pattern::note[num_notes]{};
+      p.channel_size = new uint8_t[m.num_channels]{};
 
       DBM_pattern::note *row = p.data;
       DBM_pattern::note *end = p.data + num_notes;
@@ -449,18 +455,44 @@ public:
           return DBM_INVALID;
         }
 
+        uint8_t &sz = p.channel_size[channel];
+
         if(flags & DBM_pattern::NOTE)
-          row[channel].note = fgetc(fp), left--;
+        {
+          row[channel].note = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::NOTE_SIZE);
+          left--;
+        }
         if(flags & DBM_pattern::INSTRUMENT)
-          row[channel].instrument = fgetc(fp), left--;
+        {
+          row[channel].instrument = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::INSTRUMENT_SIZE);
+          left--;
+        }
         if(flags & DBM_pattern::EFFECT_1)
-          row[channel].effect_1 = fgetc(fp), left--;
+        {
+          row[channel].effect_1 = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::EFFECT_1_SIZE);
+          left--;
+        }
         if(flags & DBM_pattern::PARAM_1)
-          row[channel].param_1 = fgetc(fp), left--;
+        {
+          row[channel].param_1 = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::EFFECT_1_SIZE);
+          left--;
+        }
         if(flags & DBM_pattern::EFFECT_2)
-          row[channel].effect_2 = fgetc(fp), left--;
+        {
+          row[channel].effect_2 = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::EFFECT_2_SIZE);
+          left--;
+        }
         if(flags & DBM_pattern::PARAM_2)
-          row[channel].param_2 = fgetc(fp), left--;
+        {
+          row[channel].param_2 = fgetc(fp);
+          sz = MAX(sz, DBM_pattern::EFFECT_2_SIZE);
+          left--;
+        }
 
         if(feof(fp))
           return DBM_READ_ERROR;
@@ -849,6 +881,72 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
   }
 }
 
+static void print_pattern_head(DBM_data &m, DBM_pattern &p)
+{
+  fprintf(stderr, "\n");
+  O_("");
+  for(unsigned int i = 0; i < m.num_channels; i++)
+  {
+    int size = p.channel_size[i];
+    if(size)
+      fprintf(stderr, " %02x%*s :", i, size - 2, "");
+  }
+  fprintf(stderr, "\n");
+  O_("");
+  for(size_t i = 0; i < m.num_channels; i++)
+  {
+    int size = p.channel_size[i];
+    if(size)
+      fprintf(stderr, " %.*s :", size, "--------------------");
+  }
+  fprintf(stderr, "\n");
+}
+
+static void print_pattern_notes(DBM_data &m, DBM_pattern &p)
+{
+  DBM_pattern::note *current = p.data;
+
+  for(size_t i = 0; i < p.num_rows; i++)
+  {
+    O_("");
+    for(size_t j = 0; j < m.num_channels; j++, current++)
+    {
+      uint8_t size = p.channel_size[j];
+      if(size >= DBM_pattern::NOTE_SIZE)
+      {
+        if(current->note)
+          fprintf(stderr, " %02x", current->note);
+        else
+          fprintf(stderr, "   ");
+      }
+      if(size >= DBM_pattern::INSTRUMENT_SIZE)
+      {
+        if(current->instrument)
+          fprintf(stderr, " %02x", current->instrument);
+        else
+          fprintf(stderr, "   ");
+      }
+      if(size >= DBM_pattern::EFFECT_1_SIZE)
+      {
+        if(current->effect_1 || current->param_1)
+          fprintf(stderr, " %2x%02x", current->effect_1, current->param_1);
+        else
+          fprintf(stderr, "     ");
+      }
+      if(size >= DBM_pattern::EFFECT_2_SIZE)
+      {
+        if(current->effect_2 || current->param_2)
+          fprintf(stderr, " %2x%02x", current->effect_2, current->param_2);
+        else
+          fprintf(stderr, "     ");
+      }
+      if(size)
+        fprintf(stderr, " :");
+    }
+    fprintf(stderr, "\n");
+  }
+}
+
 static int DBM_read(FILE *fp)
 {
   DBM_data m{};
@@ -900,7 +998,7 @@ static int DBM_read(FILE *fp)
       for(unsigned int i = 0; i < m.num_samples; i++)
       {
         DBM_sample &s = m.samples[i];
-        O_("Sample %02x : %-.6s  %-u\n", i + 1, s.type_str(), s.length);
+        O_("Sample %02x : %-6s  %-u\n", i + 1, s.type_str(), s.length);
       }
     }
 
@@ -934,6 +1032,22 @@ static int DBM_read(FILE *fp)
   {
     O_("          :\n");
 
+    /* Print each song + order list. */
+    for(unsigned int i = 0; i < m.num_songs; i++)
+    {
+      if(i >= MAX_SONGS)
+        break;
+
+      DBM_song &sng = m.songs[i];
+
+      O_("Song %02x   : '%s' (%u orders)\n", i + 1, sng.name, sng.num_orders);
+      O_("          :");
+      for(size_t j = 0; j < sng.num_orders; j++)
+        fprintf(stderr, " %02x", sng.orders[j]);
+      fprintf(stderr, "\n");
+      O_("          :\n");
+    }
+
     for(unsigned int i = 0; i < m.num_patterns; i++)
     {
       if(i >= MAX_PATTERNS)
@@ -941,10 +1055,17 @@ static int DBM_read(FILE *fp)
 
       DBM_pattern &p = m.patterns[i];
 
-      O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
-    }
+      if(dump_pattern_rows)
+        fprintf(stderr, "\n");
 
-    // FIXME dump_pattern_rows
+      O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
+
+      if(dump_pattern_rows)
+      {
+        print_pattern_head(m, p);
+        print_pattern_notes(m, p);
+      }
+    }
   }
   return DBM_SUCCESS;
 }

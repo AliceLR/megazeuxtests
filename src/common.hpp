@@ -26,6 +26,18 @@
   fflush(stderr); \
 } while(0)
 
+template<class T>
+constexpr T MAX(T a, T b)
+{
+  return a > b ? a : b;
+}
+
+template<class T>
+constexpr T MIN(T a, T b)
+{
+  return a < b ? a : b;
+}
+
 template<class T, int N>
 constexpr int arraysize(T (&arr)[N])
 {
