@@ -472,7 +472,7 @@ int GDM_read(GDM_data &d, FILE *fp)
           uint8_t fx_param = fgetc(fp);
           pos += 2;
 
-          uint8_t fx_effect = fx & 0x0F;
+          uint8_t fx_effect = fx & 0x1F;
           uint8_t fx_channel = (fx >> 6) & 0x03;
 
           if(fx_channel + 1 > p->max_track_effects[track])
@@ -534,7 +534,7 @@ int GDM_read(GDM_data &d, FILE *fp)
   );
 
 #define P_PRINT(x)   do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %1x%02x", x, y); else fprintf(stderr, "    "); }while(0)
+#define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %2x%02x", x, y); else fprintf(stderr, "     "); }while(0)
 
   if(dump_patterns)
   {
@@ -570,7 +570,7 @@ int GDM_read(GDM_data &d, FILE *fp)
 
           fprintf(stderr, " Ch.%02x", k);
           for(unsigned int x = 0; x < p->max_track_effects[k]; x++)
-            fprintf(stderr, "    ");
+            fprintf(stderr, "     ");
           fprintf(stderr, ":");
         }
         fprintf(stderr, "\n");
