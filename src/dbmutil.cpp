@@ -244,6 +244,8 @@ struct DBM_data
   /* PATT and PNAM */
 
   DBM_pattern patterns[MAX_PATTERNS];
+  uint16_t pattern_name_encoding;
+  bool pattern_names;
 
   /* INST */
 
@@ -525,16 +527,17 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
-    fgetc(fp); /* ??? */
+    m.pattern_names = true;
+    m.pattern_name_encoding = fget_u16be(fp);
 
     ssize_t left = len;
     for(size_t i = 0; i < m.num_patterns; i++)
     {
-      if(left < 2)
+      if(!left)
         break;
 
-      uint16_t length = fget_u16be(fp);
-      left -= 2;
+      uint8_t length = fgetc(fp);
+      left--;
 
       if(left < length)
         break;
@@ -1067,7 +1070,10 @@ static int DBM_read(FILE *fp)
       if(dump_pattern_rows)
         fprintf(stderr, "\n");
 
-      O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
+      if(m.pattern_names)
+        O_("Pattern %02x: %u rows, %u bytes ('%s')\n", i, p.num_rows, p.packed_data_size, p.name);
+      else
+        O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
 
       if(dump_pattern_rows)
       {
