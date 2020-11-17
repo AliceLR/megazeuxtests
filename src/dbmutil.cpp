@@ -68,6 +68,8 @@ enum DBM_features
   FT_DSPE_CHUNK,
   FT_BAD_VOLUME_ENVELOPE,
   FT_BAD_PAN_ENVELOPE,
+  FT_NEGATIVE_ENVELOPE_VALUE,
+  FT_HIGH_ENVELOPE_VALUE,
   NUM_FEATURES
 };
 
@@ -81,6 +83,8 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "DSPE",
   "BadVolEnv",
   "BadPanEnv",
+  "EnvPt<0",
+  "EnvPt>64",
 };
 
 static const int MAX_SONGS = 16;
@@ -198,7 +202,7 @@ struct DBM_envelope
   struct point
   {
     uint16_t time;
-    uint16_t volume;
+    int16_t value;
   };
 
   uint16_t instrument_id;
@@ -644,8 +648,12 @@ static int read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *f
   for(size_t i = 0; i < DBM_envelope::MAX_POINTS; i++)
   {
     DBM_envelope::point &p = env.points[i];
-    p.time   = fget_u16be(fp);
-    p.volume = fget_u16be(fp);
+    p.time  = fget_u16be(fp);
+    p.value = fget_s16be(fp);
+    if(p.value < 0)
+      m.uses[FT_NEGATIVE_ENVELOPE_VALUE] = true;
+    if(p.value > 64)
+      m.uses[FT_HIGH_ENVELOPE_VALUE] = true;
   }
 
   if(feof(fp))
@@ -844,7 +852,7 @@ static const IFF<DBM_data> DBM_parser({
 static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 {
   O_("          :\n");
-  O_("          : Instr. #  Enabled : (...)=Loop  [S]=Sustain\n");
+  O_("          : Instr. #  Enabled : (...)=Loop  S=Sustain\n");
   O_("          : --------  ------- : -------------------------\n");
   for(unsigned int i = 0; i < num; i++)
   {
@@ -870,10 +878,10 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
     O_("          : %8s  %7s : ", "", "");
     for(size_t j = 0; j < env.num_points; j++)
     {
-      fprintf(stderr, "%1s%-2u%3s%1s ",
+      fprintf(stderr, "%1s%-4d%1s%1s ",
         (j == loop_start) ? "(" : "",
-        env.points[j].volume,
-        (j == sustain_1 || j == sustain_2) ? "[S]" : "",
+        env.points[j].value,
+        (j == sustain_1 || j == sustain_2) ? "S" : "",
         (j == loop_end) ? ")" : ""
       );
     }
@@ -969,6 +977,7 @@ static int DBM_read(FILE *fp)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
   O_("Name      : %s\n",  m.name);
+  O_("Version   : %d.%02x\n", m.tracker_version >> 8, m.tracker_version & 0xFF);
   O_("Songs     : %u\n",  m.num_songs);
   if(m.num_samples)
     O_("Samples   : %u\n",  m.num_samples);
