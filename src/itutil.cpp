@@ -19,13 +19,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "common.hpp"
 
 static const char USAGE[] =
-  "Check for usage of sample volume/vibrato in IT modules.\n"
-  "That's all this currently does.\n\n"
+  "Dump various information from IT module(s).\n\n"
   "Usage:\n"
-  "  itutil [it files...]  -or-  itutil -\n\n";
+  "  itutil [options] [it files...]\n\n";
 
 static int num_its;
 //static int num_it_instrument_mode;
@@ -319,6 +319,37 @@ static int IT_read(FILE *fp)
       fprintf(stderr, " %s", FEATURE_STR[i]);
   fprintf(stderr, "\n");
 
+  if(Config.dump_samples)
+  {
+    static const char PAD[] =
+      "---------------------------------------------------------------------";
+
+    O_("        :\n");
+    O_("        : %-25s  %-13s : %-10s %-10s %-10s %-10s %-10s : %-10s GV  DV  DP  FL : VSp VDp VWf VRt :\n",
+      "Name", "Filename",
+      "Length", "LoopStart", "LoopEnd", "Sus.Start", "Sus.End",
+      "C5 Speed"
+    );
+    O_("        : %.40s : %.54s : %.25s : %.15s :\n", PAD, PAD, PAD, PAD);
+
+    for(unsigned int i = 0; i < h.num_samples; i++)
+    {
+      IT_sample &s = m.samples[i];
+      O_("Sam. %-3x: %-25s  %-13.13s : %-10u %-10u %-10u %-10u %-10u :"
+        " %-10u %-2x  %-2x  %-2x  %-2x : %-2x  %-2x  %-2x  %-2x  :\n",
+        i, s.name, s.filename,
+        s.length, s.loop_start, s.loop_end, s.sustain_loop_start, s.sustain_loop_end,
+        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, s.flags,
+        s.vibrato_speed, s.vibrato_depth, s.vibrato_waveform, s.vibrato_rate
+      );
+    }
+  }
+
+  if(Config.dump_patterns)
+  {
+    // FIXME
+  }
+
   return IT_SUCCESS;
 }
 
@@ -348,9 +379,12 @@ int main(int argc, char *argv[])
 {
   if(!argv || argc < 2)
   {
-    fprintf(stderr, "%s", USAGE);
+    fprintf(stderr, "%s%s", USAGE, Config.COMMON_FLAGS);
     return 0;
   }
+
+  if(!Config.init(&argc, argv))
+    return -1;
 
   bool read_stdin = false;
   for(int i = 1; i < argc; i++)
