@@ -24,9 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "common.hpp"
-
-static bool dump_patterns = false;
 
 enum FAR_err
 {
@@ -180,13 +179,16 @@ int far_read(struct FAR_data *d, FILE *fp)
       return FAR_READ_ERROR;
     }
 
-    O_("pattern %02x: length=%u, expected_rows=%u, break byte=%u, difference=%d\n",
-      i, pattern_len, expected_rows, break_location, expected_rows - break_location
-    );
-
     d->p[i].break_location = break_location;
 
-    if(dump_patterns)
+    if(Config.dump_patterns)
+    {
+      O_("pattern %02x: length=%u, expected_rows=%u, break byte=%u, difference=%d\n",
+        i, pattern_len, expected_rows, break_location, expected_rows - break_location
+      );
+    }
+
+    if(Config.dump_pattern_rows)
     {
       fgetc(fp); // Pattern tempo byte. "DO NOT SUPPORT IT!!".
 
@@ -264,26 +266,15 @@ int main(int argc, char *argv[])
 
   if(!argv || argc < 2)
   {
-    fprintf(stdout, "Usage: %s filenames...\n", argv ? argv[0] : "farutil");
+    fprintf(stdout, "Usage: farutil [options] [filenames...]\n%s", Config.COMMON_FLAGS);
     return 0;
   }
 
+  if(!Config.init(&argc, argv))
+    return -1;
+
   for(int i = 1; i < argc; i++)
   {
-    if(!strcmp(argv[i], "-d=1") || !strcmp(argv[i], "-d"))
-    {
-      dump_patterns = true;
-      continue;
-    }
-    else
-
-    if(!strcmp(argv[i], "-d=0"))
-    {
-      dump_patterns = false;
-      continue;
-    }
-    else
-
     if(!strcmp(argv[i], "-"))
     {
       if(!read_stdin)

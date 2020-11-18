@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "common.hpp"
 
 static const char USAGE[] =
@@ -34,17 +35,7 @@ static const char USAGE[] =
   "* Uses of GDM empty note values to retrigger instruments.\n"
   "* Pattern dumps (with the -d option).\n\n"
   "Usage:\n"
-  "  gdmutil [options] [filenames...]\n\n"
-  "Options:\n"
-  "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
-  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
-  "            N=2 additionally dumps the entire pattern as raw data.\n"
-  "  -         Read filenames from stdin. Useful when there are too many files\n"
-  "            for argv. Place after any other options if applicable.\n\n";
-
-static bool dump_samples      = false;
-static bool dump_patterns     = false;
-static bool dump_pattern_rows = false;
+  "  gdmutil [options] [filenames...]\n\n";
 
 enum GDM_err
 {
@@ -381,7 +372,7 @@ int GDM_read(GDM_data &d, FILE *fp)
     if(feof(fp))
       return GDM_READ_ERROR;
 
-    if(dump_samples)
+    if(Config.dump_samples)
     {
       char tmp[16];
       if(print_sample_header)
@@ -536,7 +527,7 @@ int GDM_read(GDM_data &d, FILE *fp)
 #define P_PRINT(x)   do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
 #define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %2x%02x", x, y); else fprintf(stderr, "     "); }while(0)
 
-  if(dump_patterns)
+  if(Config.dump_patterns)
   {
     O_("Panning   :");
     for(unsigned int k = 0; k < d.num_channels; k++)
@@ -554,13 +545,13 @@ int GDM_read(GDM_data &d, FILE *fp)
 
     for(unsigned int i = 0; i < h.num_patterns; i++)
     {
-      if(dump_pattern_rows)
+      if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
       GDM_pattern *p = d.patterns[i];
       O_("Pattern %02x: %u rows\n", i, p->num_rows);
 
-      if(dump_pattern_rows)
+      if(Config.dump_pattern_rows)
       {
         O_("          :");
         for(unsigned int k = 0; k < d.num_channels; k++)
@@ -631,62 +622,27 @@ int main(int argc, char *argv[])
 
   if(!argv || argc < 2)
   {
-    fprintf(stdout, "%s", USAGE);
+    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
     return 0;
   }
+
+  if(!Config.init(&argc, argv))
+    return -1;
 
   for(int i = 1; i < argc; i++)
   {
     char *arg = argv[i];
-    if(arg[0] == '-')
+    if(arg[0] == '-' && arg[1] == '\0')
     {
-      switch(arg[1])
+      if(!read_stdin)
       {
-        case '\0':
-          if(!read_stdin)
-          {
-            char buffer[1024];
-            while(fgets_safe(buffer, stdin))
-              check_gdm(buffer);
+        char buffer[1024];
+        while(fgets_safe(buffer, stdin))
+          check_gdm(buffer);
 
-            read_stdin = true;
-          }
-          continue;
-
-        case 'p':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=2"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_patterns = false;
-            dump_pattern_rows = false;
-            continue;
-          }
-          break;
-
-        case 's':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_samples = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_samples = false;
-            continue;
-          }
-          break;
+        read_stdin = true;
       }
+      continue;
     }
     check_gdm(arg);
   }

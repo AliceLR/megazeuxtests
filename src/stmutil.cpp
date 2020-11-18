@@ -18,16 +18,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "common.hpp"
 
 static const char USAGE[] =
   "Dump information about STM files.\n\n"
   "Usage:\n"
-  "  stmutil [filename.ext...]\n\n";
-
-static bool dump_samples;
-static bool dump_patterns;
-static bool dump_pattern_rows;
+  "  stmutil [options] [filename.ext...]\n\n";
 
 enum STM_error
 {
@@ -116,7 +113,7 @@ static int STM_read(FILE *fp)
   fprintf(stderr, "\n");
 
 /*
-  if(dump_samples)
+  if(Config.dump_samples)
   {
     O_("          :\n");
     O_("          : Type  Length      Loop Start  Loop Len.  : MIDI       : Vol  Tr. : Hold/Decay Fine : Name\n");
@@ -148,7 +145,7 @@ static int STM_read(FILE *fp)
     }
   }
 
-  if(dump_patterns)
+  if(Config.dump_patterns)
   {
     O_("          :\n");
     O_("Sequence  :");
@@ -161,12 +158,12 @@ static int STM_read(FILE *fp)
       MMD1block &b = m.patterns[i];
       MMD0note *data = m.pattern_data[i];
 
-      if(dump_pattern_rows)
+      if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
       O_("Block %02x  : %u rows, %u tracks\n", i, b.num_rows, b.num_tracks);
 
-      if(!dump_pattern_rows)
+      if(!Config.dump_pattern_rows)
         continue;
 
       uint8_t p_note[256]{};
@@ -264,62 +261,27 @@ int main(int argc, char *argv[])
 
   if(!argv || argc < 2)
   {
-    fprintf(stdout, "%s", USAGE);
+    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
     return 0;
   }
+
+  if(!Config.init(&argc, argv))
+    return -1;
 
   for(int i = 1; i < argc; i++)
   {
     char *arg = argv[i];
-    if(arg[0] == '-')
+    if(arg[0] == '-' && arg[1] == '\0')
     {
-      switch(arg[1])
+      if(!read_stdin)
       {
-        case '\0':
-          if(!read_stdin)
-          {
-            char buffer[1024];
-            while(fgets_safe(buffer, stdin))
-              STM_check(buffer);
+        char buffer[1024];
+        while(fgets_safe(buffer, stdin))
+          STM_check(buffer);
 
-            read_stdin = true;
-          }
-          continue;
-
-        case 'p':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=2"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_patterns = false;
-            dump_pattern_rows = false;
-            continue;
-          }
-          break;
-
-        case 's':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_samples = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_samples = false;
-            continue;
-          }
-          break;
+        read_stdin = true;
       }
+      continue;
     }
     STM_check(arg);
   }

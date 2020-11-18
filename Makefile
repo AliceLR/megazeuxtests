@@ -12,6 +12,8 @@ endif
 SRC  = src
 OBJ  = src/.build
 
+COMMON_OBJS := ${OBJ}/Config.o
+
 _669_OBJS:= ${OBJ}/669util.o
 _669_EXE := 669util${BINEXT}
 -include ${_669_OBJS:.o=.d}
@@ -91,7 +93,7 @@ ${OBJ}/%.o: ${SRC}/%.c | ${OBJ}
 ${OBJ}/%.o: ${SRC}/%.cpp | ${OBJ}
 	${CXX} -MD ${CXXFLAGS} -c $< -o $@
 
-${ALL_EXES}:
+${ALL_EXES}: ${COMMON_OBJS}
 	${LINKCXX} ${LDFLAGS} -o $@ $^ ${LDLIBS}
 
 clean:

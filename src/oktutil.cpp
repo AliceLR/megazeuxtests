@@ -18,23 +18,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
 
 static const char USAGE[] =
   "A utility to dump Amiga Oktalyzer .OKT metadata and patterns.\n"
   "Usage:\n"
-  "  oktutil [options] [filenames...]\n\n"
-  "Options:\n"
-  "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
-  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
-  "            N=2 additionally dumps the entire pattern as raw data.\n"
-  "  -         Read filenames from stdin. Useful when there are too many files\n"
-  "            for argv. Place after any other options if applicable.\n\n";
-
-static bool dump_samples      = false;
-static bool dump_patterns     = false;
-static bool dump_pattern_rows = false;
+  "  oktutil [options] [filenames...]\n\n";
 
 enum OKT_error
 {
@@ -359,12 +350,12 @@ int OKT_read(FILE *fp)
       fprintf(stderr, " %s", FEATURE_STR[i]);
   fprintf(stderr, "\n");
 
-  if(dump_samples)
+  if(Config.dump_samples)
   {
     // FIXME
   }
 
-  if(dump_patterns)
+  if(Config.dump_patterns)
   {
     O_("          :\n");
 
@@ -378,7 +369,7 @@ int OKT_read(FILE *fp)
       O_("Pattern %02x: %u rows\n", i, p.num_rows);
     }
 
-    // FIXME dump_pattern_rows
+    // FIXME Config.dump_pattern_rows
   }
   return OKT_SUCCESS;
 }
@@ -408,62 +399,27 @@ int main(int argc, char *argv[])
 
   if(!argv || argc < 2)
   {
-    fprintf(stdout, "%s", USAGE);
+    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
     return 0;
   }
+
+  if(!Config.init(&argc, argv))
+    return -1;
 
   for(int i = 1; i < argc; i++)
   {
     char *arg = argv[i];
-    if(arg[0] == '-')
+    if(arg[0] == '-' && arg[1] == '\0')
     {
-      switch(arg[1])
+      if(!read_stdin)
       {
-        case '\0':
-          if(!read_stdin)
-          {
-            char buffer[1024];
-            while(fgets_safe(buffer, stdin))
-              check_okt(buffer);
+        char buffer[1024];
+        while(fgets_safe(buffer, stdin))
+          check_okt(buffer);
 
-            read_stdin = true;
-          }
-          continue;
-
-        case 'p':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=2"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_patterns = false;
-            dump_pattern_rows = false;
-            continue;
-          }
-          break;
-
-        case 's':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_samples = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_samples = false;
-            continue;
-          }
-          break;
+        read_stdin = true;
       }
+      continue;
     }
     check_okt(arg);
   }

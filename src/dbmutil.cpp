@@ -18,23 +18,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
 
 static const char USAGE[] =
   "A utility to dump DBM metadata and patterns.\n"
   "Usage:\n"
-  "  dbmutil [options] [filenames...]\n\n"
-  "Options:\n"
-  "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
-  "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
-  "            N=2 additionally dumps the entire pattern as raw data.\n"
-  "  -         Read filenames from stdin. Useful when there are too many files\n"
-  "            for argv. Place after any other options if applicable.\n\n";
-
-static bool dump_samples      = false;
-static bool dump_patterns     = false;
-static bool dump_pattern_rows = false;
+  "  dbmutil [options] [filenames...]\n\n";
 
 enum DBM_error
 {
@@ -1000,7 +991,7 @@ static int DBM_read(FILE *fp)
       fprintf(stderr, " %s", FEATURE_STR[i]);
   fprintf(stderr, "\n");
 
-  if(dump_samples)
+  if(Config.dump_samples)
   {
     if(m.num_samples)
     {
@@ -1040,7 +1031,7 @@ static int DBM_read(FILE *fp)
     }
   }
 
-  if(dump_patterns)
+  if(Config.dump_patterns)
   {
     O_("          :\n");
 
@@ -1067,7 +1058,7 @@ static int DBM_read(FILE *fp)
 
       DBM_pattern &p = m.patterns[i];
 
-      if(dump_pattern_rows)
+      if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
       if(m.pattern_names)
@@ -1075,7 +1066,7 @@ static int DBM_read(FILE *fp)
       else
         O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
 
-      if(dump_pattern_rows)
+      if(Config.dump_pattern_rows)
       {
         print_pattern_head(m, p);
         print_pattern_notes(m, p);
@@ -1110,62 +1101,27 @@ int main(int argc, char *argv[])
 
   if(!argv || argc < 2)
   {
-    fprintf(stdout, "%s", USAGE);
+    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
     return 0;
   }
+
+  if(!Config.init(&argc, argv))
+    return -1;
 
   for(int i = 1; i < argc; i++)
   {
     char *arg = argv[i];
-    if(arg[0] == '-')
+    if(arg[0] == '-' && arg[1] == '\0')
     {
-      switch(arg[1])
+      if(!read_stdin)
       {
-        case '\0':
-          if(!read_stdin)
-          {
-            char buffer[1024];
-            while(fgets_safe(buffer, stdin))
-              check_dbm(buffer);
+        char buffer[1024];
+        while(fgets_safe(buffer, stdin))
+          check_dbm(buffer);
 
-            read_stdin = true;
-          }
-          continue;
-
-        case 'p':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=2"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_patterns = false;
-            dump_pattern_rows = false;
-            continue;
-          }
-          break;
-
-        case 's':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_samples = true;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_samples = false;
-            continue;
-          }
-          break;
+        read_stdin = true;
       }
+      continue;
     }
     check_dbm(arg);
   }
