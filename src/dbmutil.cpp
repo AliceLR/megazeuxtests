@@ -217,6 +217,7 @@ struct DBM_data
   /* NAME (44) */
 
   char name[45];
+  char name_stripped[45];
   bool read_name = false;
 
   /* INFO (10) */
@@ -298,6 +299,10 @@ public:
 
     m.name[44] = '\0';
     m.read_name = true;
+
+    memcpy(m.name_stripped, m.name, arraysize(m.name));
+    strip_module_name(m.name_stripped, arraysize(m.name_stripped));
+
     return DBM_SUCCESS;
   }
 } NAME_handler("NAME", false);
@@ -970,7 +975,7 @@ static int DBM_read(FILE *fp)
   if(DBM_parser.max_chunk_length > 4*1024*1024)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-  O_("Name      : %s\n",  m.name);
+  O_("Name      : %s\n",  m.name_stripped);
   O_("Version   : %d.%02x\n", m.tracker_version >> 8, m.tracker_version & 0xFF);
   O_("Songs     : %u\n",  m.num_songs);
   if(m.num_samples)
