@@ -81,8 +81,23 @@ struct OKT_sample
 
 struct OKT_pattern
 {
+  struct event
+  {
+    uint8_t note;
+    uint8_t instrument;
+    uint8_t effect;
+    uint8_t param;
+  };
+
   uint16_t num_rows;
-  // TODO: pattern data.
+  uint8_t channel_cols[8];
+  bool is_empty;
+  event *data;
+
+  ~OKT_pattern()
+  {
+    delete[] data;
+  }
 };
 
 struct OKT_data
@@ -94,7 +109,7 @@ struct OKT_data
   /* CMOD (8) */
 
   uint16_t chan_flags[4];
-  int num_channels = 0;
+  unsigned int num_channels = 0;
 
   /* SAMP (number of samples * 32) */
 
@@ -290,7 +305,45 @@ public:
     if(p.num_rows > 64)
       m.uses[FT_ROWS_OVER_64] = true;
 
-    /* TODO: pattern contents. */
+    p.data = new OKT_pattern::event[p.num_rows * m.num_channels];
+    OKT_pattern::event *current = p.data;
+
+    p.is_empty = true;
+    for(size_t i = 0; i < p.num_rows; i++)
+    {
+      for(size_t j = 0; j < m.num_channels; j++)
+      {
+        current->note       = fgetc(fp);
+        current->instrument = fgetc(fp);
+        current->effect     = fgetc(fp);
+        current->param      = fgetc(fp);
+
+        switch(p.channel_cols[j])
+        {
+          case 0:
+          case 1:
+            if(current->note || current->instrument)
+            {
+              p.channel_cols[j] = 2;
+              p.is_empty = false;
+            }
+            /* fall-through */
+          case 2:
+          case 3:
+            if(current->effect)
+            {
+              p.channel_cols[j] = 4;
+              p.is_empty = false;
+            }
+            break;
+          default:
+            break;
+        }
+        current++;
+      }
+    }
+    if(feof(fp))
+      return OKT_READ_ERROR;
 
     return 0;
   }
@@ -319,6 +372,55 @@ static const IFF<OKT_data> OKT_parser({
   &PBOD_handler,
   &SBOD_handler
 });
+
+static void print_headers(OKT_data &m, OKT_pattern &p)
+{
+  O_("          :");
+  for(unsigned int chn = 0; chn < m.num_channels; chn++)
+  {
+    if(!p.channel_cols[chn])
+      continue;
+
+    fprintf(stderr, " #%x%*s :", chn, (p.channel_cols[chn] - 1) * 3, "");
+  }
+  fprintf(stderr, "\n");
+
+  O_("--------- :");
+  for(size_t i = 0; i < m.num_channels; i++)
+  {
+    if(!p.channel_cols[i])
+      continue;
+
+    fprintf(stderr, " %.*s :", (p.channel_cols[i] * 3 - 1), "------------");
+  }
+  fprintf(stderr, "\n");
+}
+
+static void print_row(OKT_data &m, OKT_pattern &p, unsigned int row)
+{
+  O_(" %8u :", row);
+
+  OKT_pattern::event *current = p.data + row * m.num_channels;
+  for(size_t i = 0; i < m.num_channels; i++, current++)
+  {
+    if(!p.channel_cols[i])
+      continue;
+
+#define P_EVENT(c,v) do{ if(c) { fprintf(stderr, " %02x", v); } else { fprintf(stderr, "   "); } }while(0)
+
+    if(p.channel_cols[i] >= 1)
+      P_EVENT(current->note, current->note);
+    if(p.channel_cols[i] >= 2)
+      P_EVENT((current->note || current->instrument), current->instrument);
+    if(p.channel_cols[i] >= 3)
+      P_EVENT(current->effect, current->effect);
+    if(p.channel_cols[i] >= 4)
+      P_EVENT(current->effect, current->param);
+
+    fprintf(stderr, " :");
+  }
+  fprintf(stderr, "\n");
+}
 
 int OKT_read(FILE *fp)
 {
@@ -364,12 +466,26 @@ int OKT_read(FILE *fp)
       if(i >= MAX_PATTERNS)
         break;
 
+      if(Config.dump_pattern_rows)
+        fprintf(stderr, "\n");
+
       OKT_pattern &p = m.patterns[i];
 
       O_("Pattern %02x: %u rows\n", i, p.num_rows);
-    }
 
-    // FIXME Config.dump_pattern_rows
+      if(Config.dump_pattern_rows)
+      {
+        if(p.is_empty)
+        {
+          O_("          : Empty pattern data.\n");
+          continue;
+        }
+
+        print_headers(m, p);
+        for(unsigned int row = 0; row < p.num_rows; row++)
+          print_row(m, p, row);
+      }
+    }
   }
   return OKT_SUCCESS;
 }
