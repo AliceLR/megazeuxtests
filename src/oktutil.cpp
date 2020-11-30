@@ -460,6 +460,11 @@ int OKT_read(FILE *fp)
   if(Config.dump_patterns)
   {
     O_("          :\n");
+    O_("Orders    :");
+
+    for(unsigned int i = 0; i < m.num_orders; i++)
+      fprintf(stderr, " %02u", m.orders[i]);
+    fprintf(stderr, "\n");
 
     for(unsigned int i = 0; i < m.num_patterns; i++)
     {
