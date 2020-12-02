@@ -24,6 +24,11 @@ DBM_EXE  := dbmutil${BINEXT}
 -include ${DBM_OBJS:.o=.d}
 ${DBM_EXE}: ${DBM_OBJS}
 
+DSM_OBJS := ${OBJ}/dsmutil.o ${OBJ}/IFF.o
+DSM_EXE  := dsmutil${BINEXT}
+-include ${_DSM_OBJS:.o=.d}
+${DSM_EXE}: ${DSM_OBJS}
+
 FAR_OBJS := ${OBJ}/farutil.o
 FAR_EXE  := farutil${BINEXT}
 -include ${FAR_OBJS:.o=.d}
@@ -72,6 +77,7 @@ ${XM_EXE}: ${XM_OBJS}
 ALL_EXES := \
   ${_669_EXE} \
   ${DBM_EXE}  \
+  ${DSM_EXE}  \
   ${FAR_EXE}  \
   ${GDM_EXE}  \
   ${IT_EXE}   \

@@ -5,6 +5,8 @@ src/.build
 669util.exe
 dbmutil
 dbmutil.exe
+dsmutil
+dsmutil.exe
 farutil
 farutil.exe
 gdmutil
