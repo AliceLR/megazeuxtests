@@ -1,7 +1,6 @@
 #if 0
 clang++ \
- -O1 -g -Wall -Wextra -pedantic -I/megazeux/contrib/rad/ \
- -fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer \
+ -O3 -g -Wall -Wextra -pedantic -I/megazeux/contrib/rad/ "$@" \
  radtest.cpp -oradtest
 exit 0
 #endif
@@ -35,7 +34,7 @@ exit 0
 
 #define OPL_RATE 49716
 
-#define USAGE "Usage: radtest filename.rad [duration in samples=1000000]"
+#define USAGE "Usage: radtest filename.rad [duration in samples=1000000] [rate]"
 
 static void rad_player_callback(void *arg, uint16_t reg, uint8_t data)
 {
@@ -46,8 +45,9 @@ static void rad_player_callback(void *arg, uint16_t reg, uint8_t data)
 int main(int argc, char *argv[])
 {
   size_t duration = 1024*1024;
+  size_t sample_rate = OPL_RATE;
 
-  if(argc < 2 || argc > 3 || !argv || !argv[1])
+  if(argc < 2 || argc > 4 || !argv || !argv[1])
   {
     std::cerr << USAGE << std::endl;
     return 0;
@@ -59,6 +59,16 @@ int main(int argc, char *argv[])
     if(!duration)
     {
       std::cerr << "Error: invalid duration." << std::endl;
+      return -1;
+    }
+  }
+
+  if(argc > 3)
+  {
+    sample_rate = strtoul(argv[3], nullptr, 10);
+    if(!sample_rate || sample_rate < 1024)
+    {
+      std::cerr << "Error: invalid sample rate." << std::endl;
       return -1;
     }
   }
@@ -97,13 +107,13 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  Opal adlib(OPL_RATE);
+  Opal adlib(sample_rate);
   RADPlayer player;
 
   player.Init(data.get(), rad_player_callback, &adlib);
-  uint32_t rate = player.GetHertz();
+  uint32_t update_hz = player.GetHertz();
   size_t timer = 0;
-  size_t timer_max = OPL_RATE / rate;
+  size_t timer_max = sample_rate / update_hz;
 
   for(size_t i = 0; i < duration; i++)
   {
