@@ -26,7 +26,7 @@ ${DBM_EXE}: ${DBM_OBJS}
 
 DSM_OBJS := ${OBJ}/dsmutil.o ${OBJ}/IFF.o
 DSM_EXE  := dsmutil${BINEXT}
--include ${_DSM_OBJS:.o=.d}
+-include ${DSM_OBJS:.o=.d}
 ${DSM_EXE}: ${DSM_OBJS}
 
 FAR_OBJS := ${OBJ}/farutil.o

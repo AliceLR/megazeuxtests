@@ -40,6 +40,7 @@ enum DSIK_error
   DSIK_READ_ERROR,
   DSIK_SEEK_ERROR,
   DSIK_NOT_A_DSM,
+  DSIK_OLD_FORMAT,
   DSIK_INVALID,
 };
 
@@ -51,6 +52,7 @@ static const char *DSIK_strerror(int err)
     case DSIK_READ_ERROR:        return "read error";
     case DSIK_SEEK_ERROR:        return "seek error";
     case DSIK_NOT_A_DSM:         return "not a DSIK module";
+    case DSIK_OLD_FORMAT:        return "old format DSMs not supported";
     case DSIK_INVALID:           return "invalid DSM";
   }
   return IFF_strerror(err);
@@ -77,6 +79,13 @@ static const int MAX_SAMPLES  = 256;
 static const int MAX_PATTERNS = 256;
 static const int MAX_ORDERS   = 128;
 static const int MAX_CHANNELS = 16;
+
+enum DSIK_type
+{
+  DSM_1_0,
+  DSMF_RIFF,
+  DSMF_VARIANT
+};
 
 struct DSIK_song
 {
@@ -155,11 +164,20 @@ struct DSIK_pattern
 
 struct DSIK_data
 {
-  /* Header (12) */
+  /* Header (12 or, in rare cases, 16)
+   *
+   * Standard header (12): "RIFF", riff size, "DSMF".
+   *
+   * Variant header (16): prefixed with an extra DSMF,
+   * usually has "RIFF" blanked out at position 4,
+   * the RIFF length at position 8, and finally "DSMF"
+   * (also sometimes blanked out) at position 12.
+   *
+   * v1.0 header (4): DSM\x10. Not supported...
+   */
 
-  char     riff[4];  /* RIFF */
-  uint32_t riff_len; /* RIFF chunk length */
-  char     magic[4]; /* DSMF */
+  char header[16];
+  enum DSIK_type type;
 
   /* SONG (192) */
 
@@ -470,15 +488,29 @@ int DSIK_read(FILE *fp)
   DSIK_song &s = m.song;
   DSIK_parser.max_chunk_length = 0;
 
-  if(!fread(m.riff, 4, 1, fp))
+  if(!fread(m.header, 12, 1, fp))
     return DSIK_READ_ERROR;
 
-  m.riff_len = fget_u32le(fp);
+  if(!strncmp(m.header + 0, "RIFF", 4) && !strncmp(m.header + 8, "DSMF", 4))
+  {
+    m.type = DSMF_RIFF;
+  }
+  else
 
-  if(!fread(m.magic, 4, 1, fp))
-    return DSIK_READ_ERROR;
+  if(!strncmp(m.header + 0, "DSMF", 4))
+  {
+    m.type = DSMF_VARIANT;
 
-  if(strncmp(m.riff, "RIFF", 4) || strncmp(m.magic, "DSMF", 4))
+    if(!fread(m.header + 12, 4, 1, fp))
+      return DSIK_READ_ERROR;
+  }
+  else
+
+  if(!strncmp(m.header + 0, "DSM\x10", 4))
+  {
+    return DSIK_OLD_FORMAT;
+  }
+  else
     return DSIK_NOT_A_DSM;
 
   int err = DSIK_parser.parse_iff(fp, 0, m);
@@ -489,6 +521,7 @@ int DSIK_read(FILE *fp)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
   O_("Name      : %s\n",  s.name);
+  O_("Version   : %04u\n",s.format_version);
   O_("Samples   : %u\n",  s.num_samples);
   O_("Orders    : %u\n",  s.num_orders);
   O_("Patterns  : %u\n",  s.num_patterns);

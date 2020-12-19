@@ -109,7 +109,7 @@ public:
       const IFFHandler<T> *handler = find_handler(id);
       if(!handler)
       {
-        O_("Warning   : ignoring unknown IFF tag '%4.4s'.\n", id);
+        O_("Warning   : ignoring unknown IFF tag '%4.4s' @ %#lx.\n", id, ftell(fp) - 8);
       }
       else
 
