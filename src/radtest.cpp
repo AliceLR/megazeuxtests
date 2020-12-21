@@ -1,7 +1,8 @@
 #if 0
 clang++ \
- -O3 -g -Wall -Wextra -pedantic -I/megazeux/contrib/rad/ "$@" \
- radtest.cpp -oradtest
+ -O3 -g -Wall -Wextra -pedantic \
+ -I/megazeux/contrib/rad/ -I/c/megazeux-git/contrib/rad/ \
+ "$@" radtest.cpp -oradtest
 exit 0
 #endif
 
@@ -21,6 +22,7 @@ exit 0
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <chrono>
 #include <iostream>
 #include <memory>
 #include <stdio.h>
@@ -115,6 +117,8 @@ int main(int argc, char *argv[])
   size_t timer = 0;
   size_t timer_max = sample_rate / update_hz;
 
+  auto time_start = std::chrono::steady_clock::now();
+
   for(size_t i = 0; i < duration; i++)
   {
     int16_t left;
@@ -126,9 +130,13 @@ int main(int argc, char *argv[])
     {
       player.Update();
       timer = 0;
-      std::cerr << "Order " << player.GetTunePos() << " line " << player.GetTuneLine() << std::endl;
+//      std::cerr << "Order " << player.GetTunePos() << " line " << player.GetTuneLine() << std::endl;
     }
   }
+
+  auto time_end = std::chrono::steady_clock::now();
+  auto time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start);
+  std::cerr << "Time (ms): " << time_ms.count() << std::endl;
 
   return 0;
 }
