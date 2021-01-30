@@ -52,6 +52,7 @@ static const char *DBM_strerror(int err)
 enum DBM_features
 {
   FT_MULTIPLE_SONGS,
+  FT_ROWS_OVER_64,
   FT_ROWS_OVER_256,
   FT_CHUNK_ORDER,
   FT_CHUNK_OVER_4_MIB,
@@ -68,6 +69,7 @@ enum DBM_features
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
   ">1Song",
+  ">64Rows",
   ">256Rows",
   "Misordered",
   ">4MBChunk",
@@ -413,6 +415,8 @@ public:
       p.packed_data_size = fget_u32be(fp);
       len -= 6;
 
+      if(p.num_rows > 64)
+        m.uses[FT_ROWS_OVER_64] = true;
       if(p.num_rows > 256)
         m.uses[FT_ROWS_OVER_256] = true;
 
