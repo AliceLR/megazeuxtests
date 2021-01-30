@@ -53,6 +53,7 @@ enum DBM_features
 {
   FT_MULTIPLE_SONGS,
   FT_ROWS_OVER_256,
+  FT_CHUNK_ORDER,
   FT_CHUNK_OVER_4_MIB,
   FT_VENV_CHUNK,
   FT_PENV_CHUNK,
@@ -68,6 +69,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
 {
   ">1Song",
   ">256Rows",
+  "Misordered",
   ">4MBChunk",
   "VENV",
   "PENV",
@@ -324,6 +326,7 @@ public:
       O_("Error     : duplicate INFO.\n");
       return DBM_INVALID;
     }
+    m.read_info = true;
 
     m.num_instruments = fget_u16be(fp);
     m.num_samples     = fget_u16be(fp);
@@ -388,6 +391,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     for(size_t i = 0; i < m.num_patterns; i++)
     {
       if(i >= MAX_PATTERNS)
@@ -523,6 +529,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     m.pattern_names = true;
     m.pattern_name_encoding = fget_u16be(fp);
 
@@ -557,6 +566,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     if(len < 50 * m.num_instruments)
     {
       O_("Error     : INST chunk length < %u\n", 50 * m.num_instruments);
@@ -600,6 +612,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     if(len < 8 * m.num_samples)
     {
       O_("Error     : SMPL chunk length < %u.\n", 8 * m.num_samples);
@@ -710,6 +725,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     m.uses[FT_VENV_CHUNK] = true;
 
     if(len < 4)
@@ -759,6 +777,9 @@ public:
 
   int parse(FILE *fp, size_t len, DBM_data &m) const override
   {
+    if(!m.read_info)
+      m.uses[FT_CHUNK_ORDER] = true;
+
     m.uses[FT_PENV_CHUNK] = true;
 
     if(len < 4)
