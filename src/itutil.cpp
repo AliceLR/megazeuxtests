@@ -63,6 +63,10 @@ enum IT_features
   FT_INSTRUMENT_MODE,
   FT_SAMPLE_GLOBAL_VOLUME,
   FT_SAMPLE_VIBRATO,
+  FT_SAMPLE_COMPRESSION,
+  FT_SAMPLE_COMPRESSION_1_4TH,
+  FT_SAMPLE_COMPRESSION_1_8TH,
+  FT_SAMPLE_COMPRESSION_INVALID_WIDTH,
   NUM_FEATURES
 };
 
@@ -72,6 +76,10 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "InstMode",
   "SmpGVL",
   "SmpVib",
+  "SmpCmp",
+  "SmpCmp<1/4th",
+  "SmpCmp<1/8th",
+  "SmpCmpInvalidBW",
 };
 
 enum IT_flags
@@ -90,6 +98,18 @@ enum IT_special
 {
   FS_SONG_MESSAGE    = (1 << 0),
   FS_MIDI_CONFIG     = (1 << 3)
+};
+
+enum IT_sample_flags
+{
+  SAMPLE_SET               = (1 << 0),
+  SAMPLE_16_BIT            = (1 << 1),
+  SAMPLE_STEREO            = (1 << 2),
+  SAMPLE_COMPRESSED        = (1 << 3),
+  SAMPLE_LOOP              = (1 << 4),
+  SAMPLE_SUSTAIN_LOOP      = (1 << 5),
+  SAMPLE_BIDI_LOOP         = (1 << 6),
+  SAMPLE_BIDI_SUSTAIN_LOOP = (1 << 7),
 };
 
 enum IT_vibrato_waveforms
@@ -121,6 +141,14 @@ struct IT_sample
   /*  77 */ uint8_t  vibrato_depth;
   /*  78 */ uint8_t  vibrato_waveform;
   /*  79 */ uint8_t  vibrato_rate;
+
+  /* Derived values for compressed samples. */
+  bool     scanned;
+  uint32_t uncompressed_bytes;
+  uint32_t compressed_bytes;
+  uint32_t smallest_block;
+  uint32_t smallest_block_samples;
+  uint32_t largest_block;
 };
 
 struct IT_header
@@ -170,6 +198,189 @@ struct IT_data
     delete[] pattern_offsets;
   }
 };
+
+class Bitstream
+{
+private:
+  FILE *in;
+  size_t in_length;
+  size_t in_total_bytes = 0;
+  uint32_t in_buffer = 0;
+  uint32_t in_bits = 0;
+
+public:
+  Bitstream(FILE *fp, size_t max_length): in(fp), in_length(max_length) {}
+
+  bool end_of_block()
+  {
+    return in_total_bytes >= in_length;
+  }
+
+  ssize_t read_bits(uint32_t bits)
+  {
+    if(bits > 24)
+      return -1;
+
+    if(in_bits < bits)
+    {
+      if(end_of_block())
+        return -1;
+
+      while(in_bits < 24)
+      {
+        int b = fgetc(in);
+        if(b < 0)
+        {
+          if(ferror(in))
+            return -1;
+          break;
+        }
+
+        in_buffer |= (b << in_bits);
+        in_bits += 8;
+        in_total_bytes++;
+
+        if(end_of_block())
+          break;
+      }
+
+      if(in_bits < bits)
+        return -1;
+    }
+
+    ssize_t ret = in_buffer & ((1 << bits) - 1);
+    in_buffer >>= bits;
+    in_bits -= bits;
+    return ret;
+  }
+};
+
+static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
+{
+  bool is_16_bit = !!(s.flags & SAMPLE_16_BIT);
+
+  if(fseek(fp, s.sample_data_offset, SEEK_SET))
+    return false;
+
+  s.scanned = false;
+  s.compressed_bytes = 0;
+  s.uncompressed_bytes = s.length * (is_16_bit ? 2 : 1) * (s.flags & SAMPLE_STEREO ? 2 : 1);
+  s.smallest_block = 0xffffffffu;
+  s.smallest_block_samples = 0;
+  s.largest_block = 0u;
+
+  for(uint32_t pos = 0; pos < s.length;)
+  {
+    uint16_t block_uncompressed_samples = is_16_bit ? 0x4000 : 0x8000;
+    uint16_t block_compressed_bytes = fget_u16le(fp);
+    uint16_t bit_width = is_16_bit ? 17 : 9;
+
+    if(feof(fp))
+      return false;
+
+    s.compressed_bytes += block_compressed_bytes + 2;
+
+    if(s.length - pos < block_uncompressed_samples)
+      block_uncompressed_samples = s.length - pos;
+
+    if(block_compressed_bytes > s.largest_block)
+      s.largest_block = block_compressed_bytes;
+
+    if(block_compressed_bytes < s.smallest_block)
+    {
+      s.smallest_block = block_compressed_bytes;
+      s.smallest_block_samples = block_uncompressed_samples;
+    }
+
+    Bitstream bs(fp, block_compressed_bytes);
+    //O_("block of size %u -> %u samples\n", block_compressed_bytes, block_uncompressed_samples);
+    for(uint32_t i = 0; i < block_uncompressed_samples;)
+    {
+      ssize_t code = bs.read_bits(bit_width);
+      if(code < 0)
+      {
+        if(bs.end_of_block())
+          break;
+        else
+          return false;
+      }
+
+      if(bit_width >= 1 && bit_width <= 6)
+      {
+        if(code == (1 << (bit_width - 1)))
+        {
+          // Change bitwidth.
+          ssize_t new_bit_width = bs.read_bits(is_16_bit ? 4 : 3) + 1;
+          if(new_bit_width < 0)
+            return false;
+
+          bit_width = (new_bit_width < bit_width) ? new_bit_width : new_bit_width + 1;
+          //O_("bit width now %u\n", bit_width);
+          continue;
+        }
+        // Unpack sample.
+        pos++;
+        i++;
+      }
+      else
+
+      if(bit_width <= (is_16_bit ? 16 : 8))
+      {
+        // trust in olivier lapicque's incomprehensible mess
+        uint16_t a, b;
+        if(is_16_bit)
+        {
+          a = (0xffff >> (17 - bit_width)) + 8;
+          b = a - 16;
+        }
+        else
+        {
+          a = (0xff >> (9 - bit_width)) + 4;
+          b = a - 8;
+        }
+
+        if(code > b && code <= a)
+        {
+          // Change bitwidth.
+          code -= b;
+          bit_width = (code < bit_width) ? code : code + 1;
+          //O_("bit width now %u\n", bit_width);
+          continue;
+        }
+
+        // Unpack sample.
+        pos++;
+        i++;
+      }
+      else
+
+      if(bit_width == (is_16_bit ? 17 : 9))
+      {
+        if(code & (is_16_bit ? 0x10000 : 0x100))
+        {
+          // Change bitwidth.
+          bit_width = (code & 0xff) + 1;
+          //O_("bit_width now %u\n", bit_width);
+          continue;
+        }
+
+        // Unpack sample.
+        pos++;
+        i++;
+      }
+      else
+      {
+        // Invalid width--prematurely end block.
+        O_("Warning : invalid bit width %u wtf\n", bit_width);
+        m.uses[FT_SAMPLE_COMPRESSION_INVALID_WIDTH] = true;
+        pos += block_uncompressed_samples - i;
+        break;
+      }
+    }
+  }
+  s.scanned = true;
+  return true;
+}
 
 static int IT_read(FILE *fp)
 {
@@ -301,6 +512,38 @@ static int IT_read(FILE *fp)
 
       if(s.vibrato_depth)
         m.uses[FT_SAMPLE_VIBRATO] = true;
+
+      if(s.flags & SAMPLE_COMPRESSED)
+        m.uses[FT_SAMPLE_COMPRESSION] = true;
+    }
+  }
+
+  /* Scan sample compression data. */
+  if(m.samples && m.uses[FT_SAMPLE_COMPRESSION])
+  {
+    for(unsigned int i = 0; i < h.num_samples; i++)
+    {
+      IT_sample &s = m.samples[i];
+      if(!(s.flags & SAMPLE_COMPRESSED))
+        continue;
+
+      bool res = IT_scan_compressed_sample(fp, m, s);
+      if(res)
+      {
+        /* Theoretical minimum size is 1 bit per sample.
+         * Potentially samples can go lower if certain alleged quirks re: large bit widths are true.
+         */
+        if(s.compressed_bytes < s.length / 8)
+        {
+          m.uses[FT_SAMPLE_COMPRESSION_1_8TH] = true;
+        }
+        else
+
+        if(s.compressed_bytes < s.length / 4)
+          m.uses[FT_SAMPLE_COMPRESSION_1_4TH] = true;
+      }
+      else
+        O_("Warning : Failed to scan compressed sample %u\n", i);
     }
   }
 
@@ -325,23 +568,57 @@ static int IT_read(FILE *fp)
       "---------------------------------------------------------------------";
 
     O_("        :\n");
-    O_("        : %-25s  %-13s : %-10s %-10s %-10s %-10s %-10s : %-10s GV  DV  DP  FL : VSp VDp VWf VRt :\n",
+    O_("        : %-25s  %-13s : %-10s %-10s %-10s %-10s %-10s : %-10s GV  DV  DP  %-8s : VSp VDp VWf VRt :\n",
       "Name", "Filename",
       "Length", "LoopStart", "LoopEnd", "Sus.Start", "Sus.End",
-      "C5 Speed"
+      "C5 Speed", "Flags"
     );
-    O_("        : %.40s : %.54s : %.25s : %.15s :\n", PAD, PAD, PAD, PAD);
+    O_("        : %.40s : %.54s : %.31s : %.15s :\n", PAD, PAD, PAD, PAD);
 
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
       IT_sample &s = m.samples[i];
+      char flagstr[9];
+
+      flagstr[0] = !(s.flags & SAMPLE_SET) ? '-' : ' ';
+      flagstr[1] = (s.flags & SAMPLE_16_BIT) ? 'W' : '.';
+      flagstr[2] = (s.flags & SAMPLE_STEREO) ? 'S' : '.';
+      flagstr[3] = (s.flags & SAMPLE_COMPRESSED) ? 'X' : ' ';
+      flagstr[4] = (s.flags & SAMPLE_LOOP) ? 'L' : ' ';
+      flagstr[5] = (s.flags & SAMPLE_BIDI_LOOP) ? 'b' : ' ';
+      flagstr[6] = (s.flags & SAMPLE_SUSTAIN_LOOP) ? 'S' : ' ';
+      flagstr[7] = (s.flags & SAMPLE_BIDI_SUSTAIN_LOOP) ? 'b' : ' ';
+      flagstr[8] = '\0';
+
       O_("Sam. %-3x: %-25s  %-13.13s : %-10u %-10u %-10u %-10u %-10u :"
-        " %-10u %-2x  %-2x  %-2x  %-2x : %-2x  %-2x  %-2x  %-2x  :\n",
+        " %-10u %-2x  %-2x  %-2x  %-8s : %-2x  %-2x  %-2x  %-2x  :\n",
         i, s.name, s.filename,
         s.length, s.loop_start, s.loop_end, s.sustain_loop_start, s.sustain_loop_end,
-        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, s.flags,
+        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, flagstr,
         s.vibrato_speed, s.vibrato_depth, s.vibrato_waveform, s.vibrato_rate
       );
+    }
+
+    if(m.uses[FT_SAMPLE_COMPRESSION])
+    {
+      O_("        :\n");
+      O_("        : Scan?  %-10s %-10s : %-10s %-10s %-10s :\n",
+        "CmpBytes", "UncmpBytes",
+        "Min.Block", "Min.Smpls.", "Max.Block"
+      );
+      O_("        : %.28s : %.32s :\n", PAD, PAD);
+      for(unsigned int i = 0; i < h.num_samples; i++)
+      {
+        IT_sample &s = m.samples[i];
+        if(!(s.flags & SAMPLE_COMPRESSED))
+          continue;
+
+        O_("Sam. %-3x: %-6s %-10u %-10u : %-10u %-10u %-10u :\n",
+          i, s.scanned ? "pass" : "fail",
+          s.compressed_bytes, s.uncompressed_bytes,
+          s.smallest_block, s.smallest_block_samples, s.largest_block
+        );
+      }
     }
   }
 
