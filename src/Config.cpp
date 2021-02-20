@@ -27,7 +27,7 @@ const char ConfigInfo::COMMON_FLAGS[] =
   "  -         Read filenames from stdin. Useful when there are too many files\n"
   "            for argv. Place after any other options if applicable.\n\n";
 
-bool ConfigInfo::init(int *_argc, char **argv)
+bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, void *), void *priv)
 {
   int argc = *_argc;
   int new_argc = 1;
@@ -37,6 +37,12 @@ bool ConfigInfo::init(int *_argc, char **argv)
     char *arg = argv[i];
     if(arg[0] == '-' && arg[1])
     {
+      if(handler)
+      {
+        if(handler(arg, priv))
+          continue;
+      }
+
       switch(arg[1])
       {
         case 'p':

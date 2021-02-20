@@ -32,7 +32,12 @@ struct ConfigInfo final
    * option is encountered, this function will print an error and
    * return false.
    */
-  bool init(int *argc, char **argv);
+  bool init(int *argc, char **argv, bool (*handler)(const char *, void *), void *priv);
+
+  bool init(int *argc, char **argv)
+  {
+    return init(argc, argv, nullptr, nullptr);
+  }
 };
 
 extern ConfigInfo Config;

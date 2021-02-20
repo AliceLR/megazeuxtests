@@ -207,7 +207,8 @@ public:
   }
 } DSMP_handler("DSMP", false);
 
-static const IFF<MASI_data,Endian::LITTLE,IFFPadding::BYTE> MASI_parser({
+static const IFF<MASI_data> MASI_parser(Endian::LITTLE, IFFPadding::BYTE,
+{
   &TITL_handler,
   &SDFT_handler,
   &PBOD_handler,

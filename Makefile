@@ -39,6 +39,11 @@ GDM_EXE  := gdmutil${BINEXT}
 -include ${GDM_OBJS:.o=.d}
 ${GDM_EXE}: ${GDM_OBJS}
 
+IFFDUMP_OBJS := ${OBJ}/iffdump.o ${OBJ}/IFF.o
+IFFDUMP_EXE  := iffdump${BINEXT}
+-include ${IFFDUMP_OBJS:.o=.d}
+${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
+
 IT_OBJS  := ${OBJ}/itutil.o
 IT_EXE   := itutil${BINEXT}
 -include ${IT_OBJS:.o=.d}
@@ -80,6 +85,7 @@ ALL_EXES := \
   ${DSM_EXE}  \
   ${FAR_EXE}  \
   ${GDM_EXE}  \
+  ${IFFDUMP_EXE} \
   ${IT_EXE}   \
   ${MASI_EXE} \
   ${MED_EXE}  \

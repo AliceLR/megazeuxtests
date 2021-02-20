@@ -423,7 +423,8 @@ public:
   }
 } PATT_handler("PATT", false);
 
-static const IFF<DSIK_data, Endian::LITTLE, IFFPadding::BYTE> DSIK_parser({
+static const IFF<DSIK_data> DSIK_parser(Endian::LITTLE, IFFPadding::BYTE,
+{
   &SONG_handler,
   &INST_handler,
   &PATT_handler,

@@ -33,7 +33,8 @@ enum IFF_error
 enum class IFFPadding
 {
   BYTE,
-  WORD
+  WORD,
+  DWORD,
 };
 
 const char *IFF_strerror(int err);
@@ -47,21 +48,26 @@ public:
 
   virtual int parse(FILE *fp, size_t len, T &m) const = 0;
 
+  IFFHandler():
+    id("IGNORE"), is_container(false) {}
   IFFHandler(const char *id, bool is_container):
     id(id), is_container(is_container) {}
 };
 
-template<class T, Endian E=Endian::BIG, IFFPadding P=IFFPadding::WORD>
+template<class T>
 class IFF
 {
 private:
   std::vector<const IFFHandler<T> *> handlers;
+  bool use_generic = false;
+  Endian endian = Endian::BIG;
+  IFFPadding padding = IFFPadding::WORD;
 
   const IFFHandler<T> *find_handler(char (&id)[4]) const
   {
     for(const IFFHandler<T> *h : handlers)
     {
-      if(!strncmp(h->id, id, 4))
+      if(use_generic || !strncmp(h->id, id, 4))
         return h;
     }
     return nullptr;
@@ -69,6 +75,24 @@ private:
 
 public:
   mutable size_t max_chunk_length = 0;
+  mutable char current_id[5];
+  mutable size_t current_start;
+
+  IFF(Endian e, IFFPadding p, const IFFHandler<T> *generic_handler):
+   endian(e), padding(p)
+  {
+    handlers.push_back(generic_handler);
+    use_generic = true;
+  }
+  IFF(const IFFHandler<T> *generic_handler): IFF(Endian::BIG, IFFPadding::WORD, generic_handler) {}
+
+  template<int N>
+  IFF(Endian e, IFFPadding p, const IFFHandler<T> *(&&handlers_in)[N]):
+   endian(e), padding(p)
+  {
+    for(int i = 0; i < N; i++)
+      handlers.push_back(handlers_in[i]);
+  }
 
   template<int N>
   IFF(const IFFHandler<T> *(&&handlers_in)[N])
@@ -88,10 +112,14 @@ public:
       char id[4];
       size_t len;
 
+      current_start = ftell(fp);
       if(!fread(id, 4, 1, fp))
         break;
 
-      if(E == Endian::BIG)
+      memcpy(current_id, id, 4);
+      current_id[4] = '\0';
+
+      if(endian == Endian::BIG)
         len = fget_u32be(fp);
       else
         len = fget_u32le(fp);
@@ -103,8 +131,21 @@ public:
         max_chunk_length = len;
 
       end_pos = ftell(fp) + len;
-      if((len & 1) && P == IFFPadding::WORD)
-        end_pos++;
+      switch(padding)
+      {
+        case IFFPadding::BYTE:
+          break;
+
+        case IFFPadding::WORD:
+          if(len & 1)
+            end_pos++;
+          break;
+
+        case IFFPadding::DWORD:
+          if(len & 3)
+            end_pos = (end_pos + 3) & ~3;
+          break;
+      }
 
       const IFFHandler<T> *handler = find_handler(id);
       if(!handler)
