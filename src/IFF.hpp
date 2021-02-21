@@ -28,6 +28,7 @@ enum IFF_error
   IFF_SEEK_ERROR      = 0x1001,
   IFF_CONTAINER_ERROR = 0x1002,
   IFF_NO_HANDLER      = 0x1003,
+  IFF_CONFIG_ERROR    = 0x1004,
 };
 
 enum class IFFPadding
@@ -35,6 +36,12 @@ enum class IFFPadding
   BYTE,
   WORD,
   DWORD,
+};
+
+enum class IFFCodeSize
+{
+  TWO  = 2,
+  FOUR = 4,
 };
 
 const char *IFF_strerror(int err);
@@ -62,12 +69,13 @@ private:
   bool use_generic = false;
   Endian endian = Endian::BIG;
   IFFPadding padding = IFFPadding::WORD;
+  IFFCodeSize codesize = IFFCodeSize::FOUR;
 
-  const IFFHandler<T> *find_handler(char (&id)[4]) const
+  const IFFHandler<T> *find_handler(const char *id) const
   {
     for(const IFFHandler<T> *h : handlers)
     {
-      if(use_generic || !strncmp(h->id, id, 4))
+      if(use_generic || !memcmp(h->id, id, static_cast<size_t>(codesize)))
         return h;
     }
     return nullptr;
@@ -78,13 +86,24 @@ public:
   mutable char current_id[5];
   mutable size_t current_start;
 
-  IFF(Endian e, IFFPadding p, const IFFHandler<T> *generic_handler):
-   endian(e), padding(p)
+  IFF(Endian e, IFFPadding p, IFFCodeSize c, const IFFHandler<T> *generic_handler):
+   endian(e), padding(p), codesize(c)
   {
     handlers.push_back(generic_handler);
     use_generic = true;
   }
-  IFF(const IFFHandler<T> *generic_handler): IFF(Endian::BIG, IFFPadding::WORD, generic_handler) {}
+  IFF(Endian e, IFFPadding p, const IFFHandler<T> *generic_handler):
+   IFF(e, p, IFFCodeSize::FOUR, generic_handler) {}
+  IFF(const IFFHandler<T> *generic_handler):
+   IFF(Endian::BIG, IFFPadding::WORD, IFFCodeSize::FOUR, generic_handler) {}
+
+  template<int N>
+  IFF(Endian e, IFFPadding p, IFFCodeSize c, const IFFHandler<T> *(&&handlers_in)[N]):
+   endian(e), padding(p), codesize(c)
+  {
+    for(int i = 0; i < N; i++)
+      handlers.push_back(handlers_in[i]);
+  }
 
   template<int N>
   IFF(Endian e, IFFPadding p, const IFFHandler<T> *(&&handlers_in)[N]):
@@ -106,26 +125,41 @@ public:
     size_t start_pos = ftell(fp);
     size_t current_pos = start_pos;
     size_t end_pos = start_pos;
+    size_t codelen = static_cast<size_t>(codesize);
+    char id[5];
+
+    switch(codesize)
+    {
+      case IFFCodeSize::TWO:
+      case IFFCodeSize::FOUR:
+        break;
+
+      default:
+        return IFF_CONFIG_ERROR;
+    }
+    if(codelen + 1 > arraysize(id))
+      return IFF_CONFIG_ERROR;
 
     while(!container_len || current_pos < start_pos + container_len)
     {
-      char id[4];
       size_t len;
 
       current_start = ftell(fp);
-      if(!fread(id, 4, 1, fp))
+
+      if(!fread(id, codelen, 1, fp))
         break;
 
-      memcpy(current_id, id, 4);
-      current_id[4] = '\0';
+      memcpy(current_id, id, codelen);
+      current_id[codelen] = '\0';
 
       if(endian == Endian::BIG)
         len = fget_u32be(fp);
       else
         len = fget_u32le(fp);
 
+      /* Length may be optional on the final code in some formats... */
       if(feof(fp))
-        return IFF_READ_ERROR;
+        len = 0;
 
       if(len > max_chunk_length)
         max_chunk_length = len;
@@ -150,7 +184,8 @@ public:
       const IFFHandler<T> *handler = find_handler(id);
       if(!handler)
       {
-        O_("Warning   : ignoring unknown IFF tag '%4.4s' @ %#lx.\n", id, ftell(fp) - 8);
+        O_("Warning   : ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
+         (int)codelen, (int)codelen, id, ftell(fp) - 8);
       }
       else
 

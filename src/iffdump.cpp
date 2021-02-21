@@ -29,18 +29,27 @@
 
 struct IFFDumpConfig
 {
-  size_t offset;
-  Endian endian;
-  IFFPadding padding;
+  size_t offset        = 0;
+  Endian endian        = Endian::BIG;
+  IFFPadding padding   = IFFPadding::WORD;
+  IFFCodeSize codesize = IFFCodeSize::FOUR;
 };
 
-static struct IFFDumpConfig IFFConfig = { 0, Endian::BIG, IFFPadding::WORD };
+static struct IFFDumpConfig IFFConfig{};
 
 static bool config_handler(const char *arg, void *priv)
 {
   struct IFFDumpConfig *conf = reinterpret_cast<struct IFFDumpConfig *>(priv);
   switch(arg[1])
   {
+    case '2':
+      conf->codesize = IFFCodeSize::TWO;
+      break;
+
+    case '4':
+      conf->codesize = IFFCodeSize::FOUR;
+      break;
+
     case 'o':
       conf->offset = strtoul(arg + 2, nullptr, 10);
       break;
@@ -75,10 +84,42 @@ struct IFFDumpData
 
 static const class IFFDumpHandler final: public IFFHandler<IFFDumpData>
 {
+  mutable bool print_hex = false;
+
 public:
   int parse(FILE *fp, size_t len, IFFDumpData &m) const override
   {
-    O_("%-7s : pos=%zu, len=%zu\n", m.current->current_id, m.current->current_start, len);
+    const auto *current = m.current;
+    const char *current_id = current->current_id;
+    size_t current_start = current->current_start;
+    size_t codelen = static_cast<size_t>(IFFConfig.codesize);
+
+    for(size_t i = 0; i < codelen; i++)
+    {
+      if(current_id[i] < 0x20 || current_id[i] > 0x7E)
+      {
+        print_hex = true;
+        break;
+      }
+    }
+
+    if(print_hex)
+    {
+      static const char hex[] = "0123456789abcdef";
+      char hexbuf[9];
+      size_t j = 0;
+
+      for(size_t i = 0; i < codelen && j + 1 < arraysize(hexbuf); i++)
+      {
+        hexbuf[j++] = hex[static_cast<uint8_t>(current_id[i]) >> 4];
+        hexbuf[j++] = hex[current_id[i] & 0xF];
+      }
+      hexbuf[j] = '\0';
+
+      O_("%-8s : pos=%zu, len=%zu\n", hexbuf, current_start, len);
+    }
+    else
+      O_("%-8s : pos=%zu, len=%zu\n", current_id, current_start, len);
     return 0;
   }
 } iff_handler{};
@@ -89,7 +130,7 @@ static int IFF_dump(FILE *fp)
   if(fseek(fp, IFFConfig.offset, SEEK_SET))
     return IFF_SEEK_ERROR;
 
-  IFF<IFFDumpData> iff(IFFConfig.endian, IFFConfig.padding, &iff_handler);
+  IFF<IFFDumpData> iff(IFFConfig.endian, IFFConfig.padding, IFFConfig.codesize, &iff_handler);
   IFFDumpData data{};
   data.current = &iff;
   return iff.parse_iff(fp, 0, data);
@@ -100,18 +141,18 @@ static void check_iff(const char *filename)
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    O_("File    : %s\n", filename);
+    O_("File     : %s\n", filename);
 
     int err = IFF_dump(fp);
     if(err)
-      O_("Error   : %s\n\n", IFF_strerror(err));
+      O_("Error    : %s\n\n", IFF_strerror(err));
     else
       fprintf(stderr, "\n");
 
     fclose(fp);
   }
   else
-    O_("Error     : failed to open '%s'.\n", filename);
+    O_("Error    : failed to open '%s'.\n", filename);
 }
 
 int main(int argc, char *argv[])
