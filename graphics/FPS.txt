@@ -1,21 +1,31 @@
 . "@FPS"
+: "t"
+set "$h" to "0&TIME_HOURS&"
+set "$m" to "0&TIME_MINUTES&"
+set "$s" to "0&TIME_SECONDS&"
+set "$t" to "&$h+('$h.length'-2)&:&$m+('$m.length'-2)&:&$s+('$s.length'-2)&"
 : "l"
-* "~f&local29&"
+* "~f&local29& :: &$t&"
 loop start
 inc "local&local31&" by 1
 cycle 1
 loop for 4
 if "local30" = "TIME_SECONDS" then "l"
-set "local26" to "(-1>>1)"
-set "local27" to "(1<<31)"
+set "local26" to "(1000000000)"
+set "local27" to "(-1000000000)"
 set "local28" to 0
 loop start
 inc "local28" by "local&loopcount&"
-set "local26" to "min&local26&,('local&loopcount&')"
-set "local27" to "max&local27&,('local&loopcount&')"
+if "local26" < "local&loopcount&" then "min"
+set "local26" to "local&loopcount&"
+: "min"
+if "local27" > "local&loopcount&" then "max"
+set "local27" to "local&loopcount&"
+: "max"
 loop for 9
 set "local29" to "('local28'-'local26'-'local27'/8)"
 set "local30" to "TIME_SECONDS"
 set "local31" to "('local31'+1%10)"
 set "local&local31&" to 0
-goto "l"
+goto "t"
+
