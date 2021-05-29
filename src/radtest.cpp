@@ -1,6 +1,6 @@
 #if 0
-clang++ \
- -O3 -g -Wall -Wextra -pedantic \
+[ -n "$CXX" ] || { CXX="g++"; }
+"$CXX" -O3 -g -Wall -Wextra -pedantic \
  -I/megazeux/contrib/rad/ -I/c/megazeux-git/contrib/rad/ \
  "$@" radtest.cpp -oradtest
 exit 0
@@ -36,17 +36,65 @@ exit 0
 
 #define OPL_RATE 49716
 
-#define USAGE "Usage: radtest filename.rad [duration in samples=1000000] [rate]"
+#define USAGE "Usage: radtest filename.rad [(duration/rate) in samples=128] [rate]"
 
-static void rad_player_callback(void *arg, uint16_t reg, uint8_t data)
+class FastOpal : Opal
+{
+public:
+  FastOpal() : Opal(OPL_RATE) {}
+
+  /**
+   * This skips Opal's built-in linear resampler entirely.
+   */
+  void Sample(int16_t *left, int16_t *right)
+  {
+    Output(*left, *right);
+  }
+};
+
+typedef void (*rad_player_callback)(void *arg, uint16_t reg, uint8_t data);
+
+static void opal_callback(void *arg, uint16_t reg, uint8_t data)
 {
   Opal *adlib = reinterpret_cast<Opal *>(arg);
   adlib->Port(reg, data);
 }
 
+template<rad_player_callback CALLBACK, class OPLTYPE>
+void test_opl(OPLTYPE &adlib, const uint8_t *data, size_t duration, size_t sample_rate)
+{
+  RADPlayer player;
+
+  player.Init(data, CALLBACK, &adlib);
+  uint32_t update_hz = player.GetHertz();
+  size_t timer = 0;
+  size_t timer_max = sample_rate / update_hz;
+
+  auto time_start = std::chrono::steady_clock::now();
+
+  for(size_t i = 0; i < duration; i++)
+  {
+    int16_t left;
+    int16_t right;
+    adlib.Sample(&left, &right);
+
+    timer++;
+    if(timer >= timer_max)
+    {
+      player.Update();
+      timer = 0;
+//      std::cerr << "Order " << player.GetTunePos() << " line " << player.GetTuneLine() << std::endl;
+    }
+  }
+
+  auto time_end = std::chrono::steady_clock::now();
+  auto time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start);
+  std::cerr << "Time (ms): " << time_ms.count() << std::endl;
+}
+
 int main(int argc, char *argv[])
 {
-  size_t duration = 1024*1024;
+  size_t duration = 128;
   size_t sample_rate = OPL_RATE;
 
   if(argc < 2 || argc > 4 || !argv || !argv[1])
@@ -68,7 +116,9 @@ int main(int argc, char *argv[])
   if(argc > 3)
   {
     sample_rate = strtoul(argv[3], nullptr, 10);
-    if(!sample_rate || sample_rate < 1024)
+    if(!sample_rate)
+      sample_rate = OPL_RATE;
+    if(sample_rate < 1024)
     {
       std::cerr << "Error: invalid sample rate." << std::endl;
       return -1;
@@ -109,34 +159,20 @@ int main(int argc, char *argv[])
     return -1;
   }
 
+  duration *= sample_rate;
+
+  std::cerr << "Using Opal:" << std::endl;
+
   Opal adlib(sample_rate);
-  RADPlayer player;
+  test_opl<opal_callback>(adlib, data.get(), duration, sample_rate);
 
-  player.Init(data.get(), rad_player_callback, &adlib);
-  uint32_t update_hz = player.GetHertz();
-  size_t timer = 0;
-  size_t timer_max = sample_rate / update_hz;
-
-  auto time_start = std::chrono::steady_clock::now();
-
-  for(size_t i = 0; i < duration; i++)
+  if(sample_rate == OPL_RATE)
   {
-    int16_t left;
-    int16_t right;
-    adlib.Sample(&left, &right);
+    std::cerr << std::endl << "Using FastOpal:" << std::endl;
 
-    timer++;
-    if(timer >= timer_max)
-    {
-      player.Update();
-      timer = 0;
-//      std::cerr << "Order " << player.GetTunePos() << " line " << player.GetTuneLine() << std::endl;
-    }
+    FastOpal adlib2;
+    test_opl<opal_callback>(adlib2, data.get(), duration, OPL_RATE);
   }
-
-  auto time_end = std::chrono::steady_clock::now();
-  auto time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start);
-  std::cerr << "Time (ms): " << time_ms.count() << std::endl;
 
   return 0;
 }
