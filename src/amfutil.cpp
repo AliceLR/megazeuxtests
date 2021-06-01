@@ -42,7 +42,6 @@ enum AMF_err
   AMF_BAD_VERSION,
   AMF_BAD_CHANNELS,
   AMF_BAD_TRACKS,
-  AMF_BAD_TRACK_IDX,
 };
 
 static const char *AMF_strerror(int err)
@@ -57,16 +56,16 @@ static const char *AMF_strerror(int err)
     case AMF_BAD_VERSION:   return "AMF version invalid";
     case AMF_BAD_CHANNELS:  return "too many channels";
     case AMF_BAD_TRACKS:    return "too many tracks";
-    case AMF_BAD_TRACK_IDX: return "invalid track index in order";
   }
   return "unknown error";
 }
 
 enum AMF_features
 {
+  FT_NOTE_7F,
+  FT_VOLUME_FF,
   FT_BLANK_TRACK,
   FT_OUT_OF_BOUNDS_TRACK,
-  FT_REPEAT_EVENT_AT_ROW_0,
   FT_2_EFFECTS,
   FT_3_EFFECTS,
   FT_4_EFFECTS,
@@ -101,9 +100,10 @@ enum AMF_features
 
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "Note7F",
+  "VolFF",
   "Track0",
   "Track>Max",
-  "Rep0",
   "2fx",
   "3fx",
   "4fx",
@@ -369,11 +369,7 @@ static int AMF_read(FILE *fp)
       order.num_rows = 64;
 
     for(size_t j = 0; j < m.num_channels; j++)
-    {
       order.tracks[j] = fget_u16le(fp);
-      if(order.tracks[j] > m.num_tracks)
-        return AMF_BAD_TRACK_IDX;
-    }
   }
 
   // Sample table.
@@ -480,25 +476,17 @@ static int AMF_read(FILE *fp)
         break;
 
       AMF_event &ev = track.track_data[row];
-      if(cmd < 0x7f)
+      if(cmd < 0x80)
       {
         // Note.
         ev.flags  |= AMF_event::NOTEVOL;
         ev.note   = cmd;
         ev.volume = param;
-      }
-      else
 
-      if(cmd == 0x7f)
-      {
-        // Copy previous event.
-        if(row == 0) // Shouldn't happen?
-        {
-          m.uses[FT_REPEAT_EVENT_AT_ROW_0] = true;
-          continue;
-        }
-
-        ev = track.track_data[row - 1];
+        if(cmd == 0x7f)
+          m.uses[FT_NOTE_7F] = true;
+        if(param == 0xff)
+          m.uses[FT_VOLUME_FF] = true;
       }
       else
 
@@ -795,7 +783,17 @@ static int AMF_read(FILE *fp)
               if(flags & AMF_event::NOTEVOL)
               {
                 if(ev.flags & AMF_event::NOTEVOL)
-                  fprintf(stderr, " %02x %02x", ev.note, ev.volume);
+                {
+                  if(ev.note < 0x7f)
+                    fprintf(stderr, " %02x", ev.note);
+                  else
+                    fprintf(stderr, "   ");
+
+                  if(ev.volume < 0xff)
+                    fprintf(stderr, " %02x", ev.volume);
+                  else
+                    fprintf(stderr, "   ");
+                }
                 else
                   fprintf(stderr, "      ");
               }
