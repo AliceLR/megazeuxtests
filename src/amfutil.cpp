@@ -133,6 +133,33 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "FXSurround",
 };
 
+static const char *AMF_effect_strings[23] =
+{
+  " A",
+  "vs",
+  " v",
+  "po",
+  "pa",
+  " G",
+  " I",
+  " J",
+  " H",
+  " L",
+  " K",
+  " C",
+  " B",
+  "sy",
+  " Q",
+  " O",
+  "vf",
+  "pf",
+  "SD",
+  "SC",
+  " T",
+  "pe",
+  " X",
+};
+
 enum AMF_sampletypes
 {
   SAMPLE_NONE = 0,
@@ -676,7 +703,130 @@ static int AMF_read(FILE *fp)
       }
 
       // Assemble human-readable patterns.
-      // FIXME
+      static const char *BLANK = "                             ";
+      static const char *LINE  = "-----------------------------";
+
+      O_("          :\n");
+      O_("Effect Key: ");
+      for(unsigned int i = 0; i < arraysize(AMF_effect_strings); i++)
+        fprintf(stderr, "%s%s=%02x", (i > 0)?",":"", AMF_effect_strings[i], i + 0x81);
+      fprintf(stderr, "\n");
+
+      for(unsigned int i = 0; i < m.num_orders; i++)
+      {
+        AMF_order &order = m.orders[i];
+
+        AMF_track *ord_tracks[AMF_MAX_CHANNELS];
+        int ord_widths[AMF_MAX_CHANNELS];
+
+        O_("          :\n");
+        O_("Order %02x  :", i);
+
+        // Get track pointers, compute widths, and print header.
+        for(size_t j = 0; j < m.num_channels; j++)
+        {
+          uint16_t track_id = order.real_tracks[j];
+          ord_tracks[j] = &m.tracks[track_id];
+          uint8_t flags = ord_tracks[j]->event_flag_xor;
+          int width = 0;
+
+          if(flags & AMF_event::SAMPLE)
+          {
+            // Width needs to be at least 6, add note column.
+            flags |= AMF_event::NOTEVOL;
+            width += 3;
+          }
+          if(flags & AMF_event::NOTEVOL)
+            width += 6;
+          if(flags & AMF_event::FX)
+            width += 5 * (flags & AMF_event::FX);
+
+          ord_widths[j] = width;
+          if(width > 0)
+          {
+            if(width < 6)
+              width = 6;
+            fprintf(stderr, " T%04x%.*s :", track_id, width - 6, BLANK);
+          }
+        }
+        fprintf(stderr, "\n");
+
+        O_("--------  :");
+        for(size_t j = 0; j < m.num_channels; j++)
+        {
+          int width = ord_widths[j];
+          if(width > 0)
+          {
+            if(width < 6)
+              width = 6;
+            fprintf(stderr, " %.*s :", width - 1, LINE);
+          }
+        }
+        fprintf(stderr, "\n");
+
+        // Print pattern body.
+        for(unsigned int row = 0; row < order.num_rows; row++)
+        {
+          O_("      %02x  :", row);
+          for(unsigned int col = 0; col < m.num_channels; col++)
+          {
+            int width = ord_widths[col];
+            if(width < 1)
+              continue;
+
+            AMF_track &track = *ord_tracks[col];
+            if(col < track.num_rows)
+            {
+              AMF_event &ev = track.track_data[row];
+              uint8_t flags = track.event_flag_xor;
+
+              if(flags & AMF_event::NOTEVOL)
+              {
+                if(ev.flags & AMF_event::NOTEVOL)
+                  fprintf(stderr, " %02x %02x", ev.note, ev.volume);
+                else
+                  fprintf(stderr, "      ");
+              }
+
+              if(flags & AMF_event::SAMPLE)
+              {
+                if(ev.flags & AMF_event::SAMPLE)
+                  fprintf(stderr, " %02x", ev.sample);
+                else
+                  fprintf(stderr, "   ");
+              }
+
+              if(flags & AMF_event::FX)
+              {
+                uint8_t num_fx = (flags & AMF_event::FX);
+                uint8_t ev_fx = (ev.flags & AMF_event::FX);
+                for(unsigned int j = 0; j < num_fx; j++)
+                {
+                  char tmp[3];
+                  if(j < ev_fx)
+                  {
+                    uint8_t effect = ev.fx[j].effect;
+                    sprintf(tmp, "%02x", effect);
+                    fprintf(stderr, " %s%02X",
+                      (effect >= 0x81 && effect <= 0x97) ? AMF_effect_strings[effect - 0x81] : tmp,
+                      ev.fx[j].param
+                    );
+                  }
+                  else
+                    fprintf(stderr, "     ");
+                }
+              }
+            }
+            else
+              width = 0;
+
+            if(width < 6)
+              fprintf(stderr, "%.*s", 6 - width, BLANK);
+            fprintf(stderr, " :");
+          }
+          fprintf(stderr, "\n");
+        }
+      }
     }
   }
 
