@@ -69,6 +69,31 @@ enum AMF_features
   FT_3_EFFECTS,
   FT_4_EFFECTS,
   FT_TOO_MANY_EFFECTS,
+  FT_FX_UNKNOWN,
+  FT_FX_SPEED,
+  FT_FX_VOLSLIDE,
+  FT_FX_VOLUME,
+  FT_FX_PORTAMENTO,
+  FT_FX_PORTAMENTO_ABS,
+  FT_FX_TONEPORTA,
+  FT_FX_TREMOR,
+  FT_FX_ARPEGGIO,
+  FT_FX_VIBRATO,
+  FT_FX_VOLSLIDE_TONEPORTA,
+  FT_FX_VOLSLIDE_VIBRATO,
+  FT_FX_BREAK,
+  FT_FX_JUMP,
+  FT_FX_SYNC,
+  FT_FX_RETRIGGER,
+  FT_FX_OFFSET,
+  FT_FX_VOLSLIDE_FINE,
+  FT_FX_PORTAMENTO_FINE,
+  FT_FX_NOTE_DELAY,
+  FT_FX_NOTE_CUT,
+  FT_FX_BPM,
+  FT_FX_PORTAMENTO_EXTRA_FINE,
+  FT_FX_PAN,
+  FT_FX_PAN_SURROUND,
   NUM_FEATURES
 };
 
@@ -81,6 +106,31 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "3fx",
   "4fx",
   ">4fx",
+  "FXUnknown",
+  "FXSpeed",
+  "FXVolslide",
+  "FXVolume",
+  "FXPorta",
+  "FXPortAbs",
+  "FXToneporta",
+  "FXTremor",
+  "FXArpeg",
+  "FXVibr",
+  "FXVolPorta",
+  "FXVolVib",
+  "FXBreak",
+  "FXJump",
+  "FXSync",
+  "FXRetrig",
+  "FXOffset",
+  "FXVolFine",
+  "FXPortaFine",
+  "FXNDelay",
+  "FXNCut",
+  "FXBPM",
+  "FXPortaExF",
+  "FXPan",
+  "FXSurround",
 };
 
 enum AMF_sampletypes
@@ -423,15 +473,94 @@ static int AMF_read(FILE *fp)
       {
         // Effect.
         uint8_t fx = (ev.flags & AMF_event::FX);
+
+        if(fx + AMF_event::INC_FX > m.highest_fx_count)
+          m.highest_fx_count = fx + AMF_event::INC_FX;
+
         if(fx == AMF_event::MAX_FX) // Shouldn't happen?
           continue;
+
+        switch(cmd)
+        {
+          case 0x81: // Speed (Axx)
+            m.uses[FT_FX_SPEED] = true;
+            break;
+          case 0x82: // Volslide (signed: >0 Dx0, <0 D0x)
+            m.uses[FT_FX_VOLSLIDE] = true;
+            break;
+          case 0x83: // Channel volume (PT Cxx)
+            m.uses[FT_FX_VOLUME] = true;
+            break;
+          case 0x84: // Portamento (signed: >0 Exx, <0 Fxx)
+            m.uses[FT_FX_PORTAMENTO] = true;
+            break;
+          case 0x85: // "Porta Abs" (unknown)
+            m.uses[FT_FX_PORTAMENTO_ABS] = true;
+            break;
+          case 0x86: // Tone Portamento (Gxx)
+            m.uses[FT_FX_TONEPORTA] = true;
+            break;
+          case 0x87: // Tremor (Ixx)
+            m.uses[FT_FX_TREMOR] = true;
+            break;
+          case 0x88: // Arpeggio (doc claims PT 0xx)
+            m.uses[FT_FX_ARPEGGIO] = true;
+            break;
+          case 0x89: // Vibrato (doc claims PT 4xx)
+            m.uses[FT_FX_VIBRATO] = true;
+            break;
+          case 0x8A: // Volslide + Toneporta (signed: >0 Lx0, <0 L0x)
+            m.uses[FT_FX_VOLSLIDE_TONEPORTA] = true;
+            break;
+          case 0x8B: // Volslide + Vibrato (signed: >0 Kx0, <0 K0x)
+            m.uses[FT_FX_VOLSLIDE_VIBRATO] = true;
+            break;
+          case 0x8C: // Break
+            m.uses[FT_FX_BREAK] = true;
+            break;
+          case 0x8D: // Jump
+            m.uses[FT_FX_JUMP] = true;
+            break;
+          case 0x8E: // "Sync" (unknown)
+            m.uses[FT_FX_SYNC] = true;
+            break;
+          case 0x8F: // Retrigger (Q0x)
+            m.uses[FT_FX_RETRIGGER] = true;
+            break;
+          case 0x90: // Offset (PT 9xx)
+            m.uses[FT_FX_OFFSET] = true;
+            break;
+          case 0x91: // Volslide (fine) (signed: >0 DxF, <0 DFx)
+            m.uses[FT_FX_VOLSLIDE_FINE] = true;
+            break;
+          case 0x92: // Portamento (fine) (signed: >0 EFx, <0 FFx)
+            m.uses[FT_FX_PORTAMENTO_FINE] = true;
+            break;
+          case 0x93: // Note delay (PT EDx)
+            m.uses[FT_FX_NOTE_DELAY] = true;
+            break;
+          case 0x94: // Note cut (PT ECx)
+            m.uses[FT_FX_NOTE_CUT] = true;
+            break;
+          case 0x95: // BPM (Txx)
+            m.uses[FT_FX_BPM] = true;
+            break;
+          case 0x96: // Portamento (extra fine) (signed: >0 EEx, <0 FEx)
+            m.uses[FT_FX_PORTAMENTO_EXTRA_FINE] = true;
+            break;
+          case 0x97: // Pan + Surround (Xxx, range 0x00 to 0x80 with 0xA4=surround?)
+            if(param == 0xA4)
+              m.uses[FT_FX_PAN_SURROUND] = true;
+            else
+              m.uses[FT_FX_PAN] = true;
+            break;
+          default:
+            m.uses[FT_FX_UNKNOWN] = true;
+        }
 
         ev.flags += AMF_event::INC_FX;
         ev.fx[fx].effect = cmd;
         ev.fx[fx].param  = param;
-
-        if(fx + AMF_event::INC_FX > m.highest_fx_count)
-          m.highest_fx_count = fx + AMF_event::INC_FX;
       }
 
       track.event_flag_xor |= ev.flags;
