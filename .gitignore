@@ -1,8 +1,11 @@
 backup*.mzx
 backup/
 src/.build
+desktop.ini
 669util
 669util.exe
+amfutil
+amfutil.exe
 dbmutil
 dbmutil.exe
 dsmutil

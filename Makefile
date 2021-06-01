@@ -19,6 +19,11 @@ _669_EXE := 669util${BINEXT}
 -include ${_669_OBJS:.o=.d}
 ${_669_EXE}: ${_669_OBJS}
 
+AMF_OBJS := ${OBJ}/amfutil.o
+AMF_EXE  := amfutil${BINEXT}
+-include ${AMF_OBJS:.o=.d}
+${AMF_EXE}: ${AMF_OBJS}
+
 DBM_OBJS := ${OBJ}/dbmutil.o ${OBJ}/IFF.o
 DBM_EXE  := dbmutil${BINEXT}
 -include ${DBM_OBJS:.o=.d}
@@ -81,6 +86,7 @@ ${XM_EXE}: ${XM_OBJS}
 
 ALL_EXES := \
   ${_669_EXE} \
+  ${AMF_EXE}  \
   ${DBM_EXE}  \
   ${DSM_EXE}  \
   ${FAR_EXE}  \
