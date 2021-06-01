@@ -37,6 +37,7 @@ enum AMF_err
   AMF_ALLOC_ERROR,
   AMF_READ_ERROR,
   AMF_SEEK_ERROR,
+  AMF_IS_ASYLUM,
   AMF_BAD_SIGNATURE,
   AMF_BAD_VERSION,
   AMF_BAD_CHANNELS,
@@ -51,6 +52,7 @@ static const char *AMF_strerror(int err)
     case AMF_SUCCESS:       return "no error";
     case AMF_READ_ERROR:    return "read error";
     case AMF_SEEK_ERROR:    return "seek error";
+    case AMF_IS_ASYLUM:     return "is an ASYLUM AMF";
     case AMF_BAD_SIGNATURE: return "AMF signature mismatch";
     case AMF_BAD_VERSION:   return "AMF version invalid";
     case AMF_BAD_CHANNELS:  return "too many channels";
@@ -170,8 +172,6 @@ static constexpr size_t AMF_MAX_ORDERS   = 256;
 static constexpr size_t AMF_MAX_CHANNELS = 32;
 static constexpr size_t AMF_MAX_TRACKS   = AMF_MAX_ORDERS * AMF_MAX_CHANNELS;
 
-static const char magic[] = "AMF";
-
 struct AMF_order
 {
   uint16_t tracks[AMF_MAX_CHANNELS];
@@ -289,14 +289,23 @@ static int AMF_read(FILE *fp)
     return AMF_READ_ERROR;
 
   if(memcmp(m.magic, "AMF", 3))
+  {
+    char tmp[32];
+    rewind(fp);
+    if(fread(tmp, 20, 1, fp))
+    {
+      tmp[19] = '\0';
+      if(!strcmp(tmp, "ASYLUM Music Format"))
+        return AMF_IS_ASYLUM;
+    }
     return AMF_BAD_SIGNATURE;
+  }
 
   m.version = fgetc(fp);
-
-  O_("Version   : %3.3s %02x\n", m.magic, m.version);
-
   if(m.version != 0x01 && (m.version < 0x08 || m.version > 0x0E))
     return AMF_BAD_VERSION;
+
+  O_("Version   : DSMI %3.3s %02u\n", m.magic, m.version);
 
   if(!fread(m.name, 32, 1, fp))
     return AMF_READ_ERROR;
@@ -453,6 +462,9 @@ static int AMF_read(FILE *fp)
     track.event_flag_xor  = 0;
 
     track.init();
+
+    if(!track.num_events || !track.raw_data)
+      continue;
 
     if(!fread(track.raw_data, track.calculated_size, 1, fp))
       return AMF_READ_ERROR;
@@ -616,7 +628,7 @@ static int AMF_read(FILE *fp)
   O_("Title     : %s\n", m.name);
   O_("Samples   : %u\n", m.num_samples);
   O_("Orders    : %u\n", m.num_orders);
-  O_("Tracks    : %u (%zu)\n", m.num_tracks, m.real_num_tracks);
+  O_("Tracks    : %zu (%u logical)\n", m.real_num_tracks, m.num_tracks);
   O_("Channels  : %u\n", m.num_channels);
 
   O_("Uses      :");
@@ -661,17 +673,17 @@ static int AMF_read(FILE *fp)
     }
 
     O_("          :\n");
-    O_("Tracks    : Offset      Events  ??? :\n");
-    O_("------    : ----------  ------  --- :\n");
+    O_("Tracks    : Offset      Events  ???  Rows :\n");
+    O_("------    : ----------  ------  ---  ---- :\n");
 
-    for(unsigned int i = 0; i < m.real_num_tracks; i++)
+    for(unsigned int i = 1; i <= m.real_num_tracks; i++)
     {
       AMF_track &track = m.tracks[i];
-      if(!track.raw_data)
+      if(!track.raw_data && !track.track_data)
         continue;
 
-      O_("Track %02x  : %-10u  %-6u  %-3u :\n",
-       i, track.offset_in_file, track.num_events, track.unknown);
+      O_("Track %02x  : %-10u  %-6u  %-3u  %-4u :\n",
+       i, track.offset_in_file, track.num_events, track.unknown, track.num_rows);
     }
 
     if(Config.dump_pattern_rows)
@@ -680,7 +692,7 @@ static int AMF_read(FILE *fp)
       if(m.real_num_tracks > 1)
         O_("          :\n");
 
-      for(unsigned int i = 0; i < m.real_num_tracks; i++)
+      for(unsigned int i = 1; i <= m.real_num_tracks; i++)
       {
         AMF_track &track = m.tracks[i];
         if(!track.raw_data)
