@@ -575,8 +575,8 @@ static int AMF_read(FILE *fp)
           case 0x96: // Portamento (extra fine) (signed: >0 EEx, <0 FEx)
             m.uses[FT_FX_PORTAMENTO_EXTRA_FINE] = true;
             break;
-          case 0x97: // Pan + Surround (Xxx, range 0x00 to 0x80 with 0xA4=surround?)
-            if(param == 0xA4)
+          case 0x97: // Pan + Surround (Xxx, range -0x40 to +0x40 with (0xA4 - 0x80)=0x64=surround)
+            if(param == 0x64)
               m.uses[FT_FX_PAN_SURROUND] = true;
             else
               m.uses[FT_FX_PAN] = true;
