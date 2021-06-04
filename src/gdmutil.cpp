@@ -66,6 +66,116 @@ static const char *GDM_strerror(int err)
   return "unknown error";
 }
 
+enum GDM_features
+{
+  FT_SURROUND,
+  FT_CHANNEL_PAN,
+  FT_SAMPLE_VOLUME,
+  FT_NO_SAMPLE_VOLUME,
+  FT_SAMPLE_PAN,
+  FT_SAMPLE_COMPRESSION,
+  FT_EVENT_NO_NOTE,
+  FT_EVENT_NO_INST,
+  FT_FX_UNKNOWN,
+  FT_FX_PORTAMENTO_UP,
+  FT_FX_PORTAMENTO_DOWN,
+  FT_FX_TONEPORTA,
+  FT_FX_VIBRATO,
+  FT_FX_VOLSLIDE_TONEPORTA,
+  FT_FX_VOLSLIDE_VIBRATO,
+  FT_FX_TREMOLO,
+  FT_FX_TREMOR,
+  FT_FX_OFFSET,
+  FT_FX_VOLSLIDE,
+  FT_FX_JUMP,
+  FT_FX_VOLUME,
+  FT_FX_BREAK,
+  FT_FX_FILTER,
+  FT_FX_PORTAMENTO_FINE,
+  FT_FX_GLISSANDO,
+  FT_FX_VIBRATO_WAVEFORM,
+  FT_FX_C4_TUNING,
+  FT_FX_LOOP,
+  FT_FX_TREMOLO_WAVEFORM,
+  FT_FX_PORTAMENTO_EXTRA_FINE,
+  FT_FX_VOLSLIDE_FINE,
+  FT_FX_NOTE_CUT,
+  FT_FX_NOTE_DELAY,
+  FT_FX_PATTERN_DELAY,
+  FT_FX_FUNKREPEAT,
+  FT_FX_TEMPO,
+  FT_FX_ARPEGGIO,
+  FT_FX_SETFLAG,
+  FT_FX_RETRIGGER,
+  FT_FX_GLOBAL_VOLUME,
+  FT_FX_VIBRATO_FINE,
+  FT_FX_SAMPLE_CTRL,
+  FT_FX_PAN,
+  FT_FX_FREQ,
+  FT_FX_SPECIAL_UNKNOWN,
+  FT_FX_BPM,
+  FT_FX_CH3,
+  FT_FX_CH4,
+  FT_OVER_64_ROWS,
+  FT_OVER_256_ROWS,
+  NUM_FEATURES
+};
+
+
+static const char *FEATURE_STR[NUM_FEATURES] =
+{
+  "Surround",
+  "ChPan",
+  "SVol",
+  "NoSVol",
+  "SPan",
+  "SCmpr",
+  "NoNote",
+  "NoInst",
+  "FXUnknown",
+  "FXPortaUp",
+  "FXPortaDn",
+  "FXToneporta",
+  "FXVibrato",
+  "FXVolPorta",
+  "FXVolVibr",
+  "FXTremolo",
+  "FXTremor",
+  "FXOffset",
+  "FXVolslide",
+  "FXJump",
+  "FXVolume",
+  "FXBreak",
+  "FXFilter",
+  "FXPortaFine",
+  "FXGliss",
+  "FXVibrWF",
+  "FXFinetune",
+  "FXLoop",
+  "FXTremWF",
+  "FXPortaExFine",
+  "FXVolFine",
+  "FXNoteCut",
+  "FXNoteDelay",
+  "FXPattDelay",
+  "FXInvLoop",
+  "FXTempo",
+  "FXArpeggio",
+  "FXSetFlag",
+  "FXRetrig",
+  "FXGVol",
+  "FXVibrFine",
+  "FXSmplCtrl",
+  "FXPan",
+  "FXFreq",
+  "FXUnknownSp",
+  "FXBPM",
+  "FXCh3",
+  "FXCh4",
+  ">64Rows",
+  ">256Rows",
+};
+
 static const char MAGIC[] = "GDM\xFE";
 static const char MAGIC_EOF[] = "\x0D\x0A\x1A";
 static const char MAGIC_2[] = "GMFS";
@@ -125,10 +235,10 @@ enum GDM_effects
   E_NONE,
   E_PORTAMENTO_UP,
   E_PORTAMENTO_DOWN,
-  E_PORTAMENTO_TONE,
+  E_TONEPORTA,
   E_VIBRATO,
-  E_VOLSLIDE_PORTAMENTO,
-  E_VIBRATO_PORTAMENTO,
+  E_VOLSLIDE_TONEPORTA,
+  E_VOLSLIDE_VIBRATO,
   E_TREMOLO,
   E_TREMOR,
   E_SAMPLE_OFFSET,
@@ -137,7 +247,14 @@ enum GDM_effects
   E_VOLUME,
   E_PATTERN_BREAK,
   E_EXT,
-  E_TEMPO
+  E_TEMPO,
+  E_ARPEGGIO,
+  E_SETFLAG,
+  E_RETRIGGER,
+  E_GLOBAL_VOLUME,
+  E_VIBRATO_FINE,
+  E_SPECIAL            = 0x1e,
+  E_BPM                = 0x1f,
 };
 
 enum GDM_effects_ext
@@ -158,6 +275,13 @@ enum GDM_effects_ext
   EX_NOTE_DELAY,
   EX_EXTEND_ROW,
   EX_FUNKREPEAT
+};
+
+enum GDM_effects_special
+{
+  ES_SAMPLE_CTRL = 0x0,
+  ES_PAN         = 0x8,
+  ES_FREQ        = 0xd,
 };
 
 template<int N>
@@ -253,18 +377,83 @@ struct GDM_data
   uint8_t orders[256];
   uint8_t buffer[65536];
   uint8_t num_channels;
+
+  bool uses[NUM_FEATURES];
+
+  ~GDM_data()
+  {
+    for(int i = 0; i < 256; i++)
+      delete patterns[i];
+  }
 };
 
-void GDM_free(GDM_data &d)
+static enum GDM_features get_effect_feature(uint8_t fx_effect, uint8_t fx_param)
 {
-  for(int i = 0; i < 256; i++)
-    free(d.patterns[i]);
+  switch(fx_effect)
+  {
+    default:                   return FT_FX_UNKNOWN;
+    case E_PORTAMENTO_UP:      return FT_FX_PORTAMENTO_UP;
+    case E_PORTAMENTO_DOWN:    return FT_FX_PORTAMENTO_DOWN;
+    case E_TONEPORTA:          return FT_FX_TONEPORTA;
+    case E_VIBRATO:            return FT_FX_VIBRATO;
+    case E_VOLSLIDE_TONEPORTA: return FT_FX_VOLSLIDE_TONEPORTA;
+    case E_VOLSLIDE_VIBRATO:   return FT_FX_VOLSLIDE_VIBRATO;
+    case E_TREMOLO:            return FT_FX_TREMOLO;
+    case E_TREMOR:             return FT_FX_TREMOR;
+    case E_SAMPLE_OFFSET:      return FT_FX_OFFSET;
+    case E_VOLSLIDE:           return FT_FX_VOLSLIDE;
+    case E_PATTERN_JUMP:       return FT_FX_JUMP;
+    case E_VOLUME:             return FT_FX_VOLUME;
+    case E_PATTERN_BREAK:      return FT_FX_BREAK;
+    case E_TEMPO:              return FT_FX_TEMPO;
+    case E_ARPEGGIO:           return FT_FX_ARPEGGIO;
+    case E_SETFLAG:            return FT_FX_SETFLAG;
+    case E_RETRIGGER:          return FT_FX_RETRIGGER;
+    case E_GLOBAL_VOLUME:      return FT_FX_GLOBAL_VOLUME;
+    case E_VIBRATO_FINE:       return FT_FX_VIBRATO_FINE;
+    case E_BPM:                return FT_FX_BPM;
+    case E_EXT:
+    {
+      uint8_t fx_ext = (fx_param >> 4) & 0x0F;
+      switch(fx_ext)
+      {
+        case EX_FILTER:                     return FT_FX_FILTER;
+        case EX_FINE_PORTAMENTO_UP:         return FT_FX_PORTAMENTO_FINE;
+        case EX_FINE_PORTAMENTO_DOWN:       return FT_FX_PORTAMENTO_FINE;
+        case EX_GLISSANDO:                  return FT_FX_GLISSANDO;
+        case EX_VIBRATO_WAVEFORM:           return FT_FX_VIBRATO_WAVEFORM;
+        case EX_C4_TUNING:                  return FT_FX_C4_TUNING;
+        case EX_LOOP:                       return FT_FX_LOOP;
+        case EX_TREMOLO_WAVEFORM:           return FT_FX_TREMOLO_WAVEFORM;
+        case EX_EXTRA_FINE_PORTAMENTO_UP:   return FT_FX_PORTAMENTO_EXTRA_FINE;
+        case EX_EXTRA_FINE_PORTAMENTO_DOWN: return FT_FX_PORTAMENTO_EXTRA_FINE;
+        case EX_FINE_VOLSLIDE_UP:           return FT_FX_VOLSLIDE_FINE;
+        case EX_FINE_VOLSLIDE_DOWN:         return FT_FX_VOLSLIDE_FINE;
+        case EX_NOTE_CUT:                   return FT_FX_NOTE_CUT;
+        case EX_NOTE_DELAY:                 return FT_FX_NOTE_DELAY;
+        case EX_EXTEND_ROW:                 return FT_FX_PATTERN_DELAY;
+        case EX_FUNKREPEAT:                 return FT_FX_FUNKREPEAT;
+        default: /* shouldn't happen. */    return FT_FX_UNKNOWN;
+      }
+    }
+    case E_SPECIAL:
+    {
+      uint8_t fx_special = (fx_param >> 4) & 0x0F;
+      switch(fx_special)
+      {
+        case ES_SAMPLE_CTRL: return FT_FX_SAMPLE_CTRL;
+        case ES_PAN:         return FT_FX_PAN;
+        case ES_FREQ:        return FT_FX_FREQ;
+        default:             return FT_FX_SPECIAL_UNKNOWN;
+       }
+    }
+  }
 }
 
-int GDM_read(GDM_data &d, FILE *fp)
+static int GDM_read(FILE *fp)
 {
-  GDM_header &h = d.header;
-  memset(&d, 0, sizeof(struct GDM_data));
+  GDM_data m{};
+  GDM_header &h = m.header;
 
   if(!fread(h.magic, 4, 1, fp))
     return GDM_READ_ERROR;
@@ -311,49 +500,33 @@ int GDM_read(GDM_data &d, FILE *fp)
     return GDM_READ_ERROR;
 
   // Get channel count by checking for 255 in the panning table.
-  bool uses_chpan = false;
-  bool uses_surround = false;
   for(int i = 0; i < 32; i++)
   {
     if(h.panning[i] != 255)
     {
-      d.num_channels = i + 1;
+      m.num_channels = i + 1;
 
       if(h.panning[i] == 16)
-        uses_surround = true;
+        m.uses[FT_SURROUND] = true;
       if(h.panning[i] != 8)
-        uses_chpan = true;
+        m.uses[FT_CHANNEL_PAN] = true;
     }
   }
-
-  O_("Name      : %s\n", h.name);
-  O_("Type      : GDM %u.%u (%s/%s %u.%u)\n",
-   VER_MAJOR(h.gdm_version), VER_MINOR(h.gdm_version), FORMAT(h.original_format),
-   TRACKER(h.tracker_id), VER_MAJOR(h.tracker_version), VER_MINOR(h.tracker_version));
-  O_("Orders    : %u\n", h.num_orders);
-  O_("Patterns  : %u\n", h.num_patterns);
-  O_("Tracks    : %u\n", d.num_channels);
-  O_("Samples   : %u\n", h.num_samples);
 
   // Order list.
   if(fseek(fp, h.order_offset, SEEK_SET))
     return GDM_SEEK_ERROR;
 
-  if(!fread(d.orders, h.num_orders, 1, fp))
+  if(!fread(m.orders, h.num_orders, 1, fp))
     return GDM_READ_ERROR;
 
   // Samples.
   if(fseek(fp, h.sample_offset, SEEK_SET))
     return GDM_SEEK_ERROR;
 
-  bool uses_svol = false;
-  bool uses_nosvol = false;
-  bool uses_span = false;
-  bool uses_lzw = false;
-  bool print_sample_header = true;
   for(size_t i = 0; i < h.num_samples; i++)
   {
-    GDM_sample &s = d.samples[i];
+    GDM_sample &s = m.samples[i];
     if(!fread(s.name, 32, 1, fp) || !fread(s.filename, 12, 1, fp))
       return GDM_READ_ERROR;
 
@@ -372,49 +545,29 @@ int GDM_read(GDM_data &d, FILE *fp)
     if(feof(fp))
       return GDM_READ_ERROR;
 
-    if(Config.dump_samples)
-    {
-      char tmp[16];
-      if(print_sample_header)
-      {
-        O_("          : %-32s  %-12s  %-10s %-10s %-10s %-7s %-7s %-5s %-5s\n",
-         "Name", "Filename", "Length", "L. Start", "L. End", "Flags", "C4Rate", "Vol.", "Pan.");
-        print_sample_header = false;
-      }
-      O_("Sample %02x : %-32s  %-12s  %-10u %-10u %-10u %-7s %-7u %-5u %-5u\n",
-       (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
-       FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning);
-    }
     if((s.flags & S_VOL) && s.default_volume != 255)
-      uses_svol = true;
+      m.uses[FT_SAMPLE_VOLUME] = true;
     else
-      uses_nosvol = true;
+      m.uses[FT_NO_SAMPLE_VOLUME] = true;
     if((s.flags & S_PAN) && s.default_panning != 255)
     {
       if(s.default_panning == 16)
-        uses_surround = true;
+        m.uses[FT_SURROUND] = true;
 
-      uses_span = true;
+      m.uses[FT_SAMPLE_PAN] = true;
     }
     if(s.flags & S_LZW)
-      uses_lzw = true;
+      m.uses[FT_SAMPLE_COMPRESSION] = true;
   }
 
   // Patterns.
   if(fseek(fp, h.pattern_offset, SEEK_SET))
     return GDM_SEEK_ERROR;
 
-  bool uses_nonote = false;
-  bool uses_noinst = false;
-  bool uses_finevol = false;
-  bool uses_fineport = false;
-  bool uses_fxch3 = false;
-  bool uses_fxch4 = false;
-  bool uses_over64 = false;
   for(size_t i = 0; i < h.num_patterns; i++)
   {
-    GDM_pattern *p = (GDM_pattern *)calloc(1, sizeof(GDM_pattern));
-    d.patterns[i] = p;
+    GDM_pattern *p = new GDM_pattern{};
+    m.patterns[i] = p;
     if(!p)
       return GDM_ALLOC_ERROR;
 
@@ -449,9 +602,9 @@ int GDM_read(GDM_data &d, FILE *fp)
         n.sample = inst;
 
         if(!note)
-          uses_nonote = true;
+          m.uses[FT_EVENT_NO_NOTE] = true;
         if(!inst)
-          uses_noinst = true;
+          m.uses[FT_EVENT_NO_INST] = true;
       }
 
       if(t & 0x40)
@@ -473,21 +626,16 @@ int GDM_read(GDM_data &d, FILE *fp)
           n.effects[fx_channel].param = fx_param;
 
           if(fx_channel == 0x02)
-            uses_fxch3 = true;
+            m.uses[FT_FX_CH3] = true;
           if(fx_channel == 0x03)
-            uses_fxch4 = true;
+            m.uses[FT_FX_CH4] = true;
 
-          if(fx_effect == E_EXT)
+          if(fx_effect)
           {
-            uint8_t fx_ext = (fx_param >> 4) & 0x0F;
-            if(fx_ext == EX_FINE_PORTAMENTO_UP ||
-             fx_ext == EX_FINE_PORTAMENTO_DOWN ||
-             fx_ext == EX_EXTRA_FINE_PORTAMENTO_UP ||
-             fx_ext == EX_EXTRA_FINE_PORTAMENTO_DOWN)
-              uses_fineport = true;
-
-            if(fx_ext == EX_FINE_VOLSLIDE_UP || fx_ext == EX_FINE_VOLSLIDE_DOWN)
-              uses_finevol = true;
+            enum GDM_features fx_feature = get_effect_feature(fx_effect, fx_param);
+            if(fx_feature == FT_FX_UNKNOWN)
+              fprintf(stderr, "wtf is this effect: %02x %02x\n", fx_effect, fx_param);
+            m.uses[fx_feature] = true;
           }
 
           if(!(fx & 0x20))
@@ -505,32 +653,57 @@ int GDM_read(GDM_data &d, FILE *fp)
 
     p->num_rows = row;
     if(row > 64)
-      uses_over64 = true;
+      m.uses[FT_OVER_64_ROWS] = true;
+    if(row > 256)
+      m.uses[FT_OVER_256_ROWS] = true;
   }
 
-  O_("Uses      :%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
-    uses_surround ? " Surround" : "",
-    uses_chpan    ? " ChPan"    : "",
-    uses_svol     ? " SVol"     : "",
-    uses_nosvol   ? " NoSVol"   : "",
-    uses_span     ? " SPan"     : "",
-    uses_lzw      ? " LZW"      : "",
-    uses_nonote   ? " NoNote"   : "",
-    uses_noinst   ? " NoInst"   : "",
-    uses_finevol  ? " FineVol"  : "",
-    uses_fineport ? " FinePort" : "",
-    uses_fxch3    ? " FXCh3"    : "",
-    uses_fxch4    ? " FXCh4"    : "",
-    uses_over64   ? " >64Rows"  : ""
-  );
+  /* Print metadata. */
+  O_("Name      : %s\n", h.name);
+  O_("Type      : GDM %u.%u (%s/%s %u.%u)\n",
+   VER_MAJOR(h.gdm_version), VER_MINOR(h.gdm_version), FORMAT(h.original_format),
+   TRACKER(h.tracker_id), VER_MAJOR(h.tracker_version), VER_MINOR(h.tracker_version));
+  O_("Orders    : %u\n", h.num_orders);
+  O_("Patterns  : %u\n", h.num_patterns);
+  O_("Tracks    : %u\n", m.num_channels);
+  O_("Samples   : %u\n", h.num_samples);
+
+  O_("Uses      :");
+  for(int i = 0; i < NUM_FEATURES; i++)
+    if(m.uses[i])
+      fprintf(stderr, " %s", FEATURE_STR[i]);
+  fprintf(stderr, "\n");
+
+  /* Print samples. */
+  static const char LINE[] = "--------------------------------";
+  if(Config.dump_samples)
+  {
+    char tmp[16];
+
+    O_("          :\n");
+    O_("Samples   : %-32.32s  %-12.12s : Length     LoopStart  LoopEnd    Flags    C4Rate   Vol.   Pan.  :\n",
+     "Name", "Filename");
+    O_("-------   : %-32.32s  %-12.12s : ---------- ---------- ---------- -------  -------  -----  ----- :\n",
+     LINE, LINE);
+
+    for(unsigned int i = 0; i < h.num_samples; i++)
+    {
+      GDM_sample &s = m.samples[i];
+      O_("Sample %02x : %-32s  %-12s : %-10u %-10u %-10u %-7s  %-7u  %-5u  %-5u :\n",
+        (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
+        FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning
+      );
+    }
+  }
 
 #define P_PRINT(x)   do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
 #define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %2x%02x", x, y); else fprintf(stderr, "     "); }while(0)
 
   if(Config.dump_patterns)
   {
+    O_("          :\n");
     O_("Panning   :");
-    for(unsigned int k = 0; k < d.num_channels; k++)
+    for(unsigned int k = 0; k < m.num_channels; k++)
     {
       if(h.panning[k] == 255)
         continue;
@@ -540,7 +713,7 @@ int GDM_read(GDM_data &d, FILE *fp)
 
     O_("Order Tbl.:");
     for(unsigned int i = 0; i < h.num_orders; i++)
-      fprintf(stderr, " %02x", d.orders[i]);
+      fprintf(stderr, " %02x", m.orders[i]);
     fprintf(stderr, "\n");
 
     for(unsigned int i = 0; i < h.num_patterns; i++)
@@ -548,13 +721,11 @@ int GDM_read(GDM_data &d, FILE *fp)
       if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
-      GDM_pattern *p = d.patterns[i];
-      O_("Pattern %02x: %u rows\n", i, p->num_rows);
-
+      GDM_pattern *p = m.patterns[i];
       if(Config.dump_pattern_rows)
       {
-        O_("          :");
-        for(unsigned int k = 0; k < d.num_channels; k++)
+        O_("Pattern %02x:", i);
+        for(unsigned int k = 0; k < m.num_channels; k++)
         {
           if(h.panning[k] == 255)
             continue;
@@ -566,10 +737,21 @@ int GDM_read(GDM_data &d, FILE *fp)
         }
         fprintf(stderr, "\n");
 
+        O_("--------- :");
+        for(unsigned int k = 0; k < m.num_channels; k++)
+        {
+          if(h.panning[k] == 255)
+            continue;
+
+          int len = p->max_track_effects[k] * 5 + 4;
+          fprintf(stderr, " %*.*s :", len, len, LINE);
+        }
+        fprintf(stderr, "\n");
+
         for(unsigned int j = 0; j < p->num_rows; j++)
         {
           O_("       %02x :", j);
-          for(unsigned int k = 0; k < d.num_channels; k++)
+          for(unsigned int k = 0; k < m.num_channels; k++)
           {
             if(h.panning[k] == 255)
               continue;
@@ -584,16 +766,15 @@ int GDM_read(GDM_data &d, FILE *fp)
           fprintf(stderr, "\n");
         }
       }
+      else
+        O_("Pattern %02x: %u rows\n", i, p->num_rows);
     }
   }
   return GDM_SUCCESS;
 }
 
-void check_gdm(const char *filename)
+static void check_gdm(const char *filename)
 {
-  static GDM_data d;
-  int ret;
-
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
@@ -602,14 +783,13 @@ void check_gdm(const char *filename)
     // Can't read entire header into a struct so add a buffer instead.
     setvbuf(fp, NULL, _IOFBF, 4096);
 
-    ret = GDM_read(d, fp);
+    int ret = GDM_read(fp);
     if(ret)
       O_("Error     : %s\n\n", GDM_strerror(ret));
     else
       fprintf(stderr, "\n");
 
     fclose(fp);
-    GDM_free(d);
   }
   else
     O_("Failed to open '%s'\n.", filename);
