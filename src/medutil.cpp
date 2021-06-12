@@ -26,12 +26,18 @@ static const char USAGE[] =
   "Usage:\n"
   "  medutil [filename.ext...]\n\n";
 
+static const char MAGIC_MED2[] = "MED\x02";
+static const char MAGIC_MED3[] = "MED\x03";
+static const char MAGIC_MED4[] = "MED\x04";
 static const char MAGIC_MMD0[] = "MMD0";
 static const char MAGIC_MMD1[] = "MMD1";
 static const char MAGIC_MMD2[] = "MMD2";
 static const char MAGIC_MMD3[] = "MMD3";
 
 static int num_med;
+static int num_med2;
+static int num_med3;
+static int num_med4;
 static int num_mmd0;
 static int num_mmd1;
 static int num_mmd2;
@@ -200,6 +206,9 @@ struct MED_handler
   int (*read_fn)(FILE *fp);
 };
 
+static int read_med2(FILE *fp);
+static int read_med3(FILE *fp);
+static int read_med4(FILE *fp);
 static int read_mmd0(FILE *fp);
 static int read_mmd1(FILE *fp);
 static int read_mmd2(FILE *fp);
@@ -207,6 +216,9 @@ static int read_mmd3(FILE *fp);
 
 static const MED_handler HANDLERS[] =
 {
+  { MAGIC_MED2, read_med2 },
+  { MAGIC_MED3, read_med3 },
+  { MAGIC_MED4, read_med4 },
   { MAGIC_MMD0, read_mmd0 },
   { MAGIC_MMD1, read_mmd1 },
   { MAGIC_MMD2, read_mmd2 },
@@ -1195,6 +1207,27 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   return MED_SUCCESS;
 }
 
+static int read_med2(FILE *fp)
+{
+  O_("Type      : MED2\n");
+  num_med2++;
+  return MED_NOT_IMPLEMENTED;
+}
+
+static int read_med3(FILE *fp)
+{
+  O_("Type      : MED3\n");
+  num_med3++;
+  return MED_NOT_IMPLEMENTED;
+}
+
+static int read_med4(FILE *fp)
+{
+  O_("Type      : MED4\n");
+  num_med4++;
+  return MED_NOT_IMPLEMENTED;
+}
+
 static int read_mmd0(FILE *fp)
 {
   num_mmd0++;
@@ -1209,12 +1242,14 @@ static int read_mmd1(FILE *fp)
 
 static int read_mmd2(FILE *fp)
 {
+  O_("Type      : %4.4s\n", MAGIC_MMD2);
   num_mmd2++;
   return MED_NOT_IMPLEMENTED;
 }
 
 static int read_mmd3(FILE *fp)
 {
+  O_("Type      : %4.4s\n", MAGIC_MMD3);
   num_mmd3++;
   return MED_NOT_IMPLEMENTED;
 }
@@ -1292,6 +1327,12 @@ int main(int argc, char *argv[])
   }
   if(num_med)
     O_("Total .MED modules : %d\n", num_med);
+  if(num_med2)
+    O_("Total MED2         : %d\n", num_med2);
+  if(num_med3)
+    O_("Total MED3         : %d\n", num_med3);
+  if(num_med4)
+    O_("Total MED4         : %d\n", num_med4);
   if(num_mmd0)
     O_("Total MMD0         : %d\n", num_mmd0);
   if(num_mmd1)
