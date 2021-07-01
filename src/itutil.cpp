@@ -39,6 +39,7 @@ enum IT_error
   IT_SEEK_ERROR,
   IT_INVALID_MAGIC,
   IT_INVALID_SAMPLE,
+  IT_INVALID_INSTRUMENT,
   IT_INVALID_ORDER_COUNT,
   IT_INVALID_PATTERN_COUNT,
 };
@@ -52,6 +53,7 @@ static const char *IT_strerror(int err)
     case IT_SEEK_ERROR: return "seek error";
     case IT_INVALID_MAGIC: return "file is not an IT";
     case IT_INVALID_SAMPLE: return "IT sample magic mismatch";
+    case IT_INVALID_INSTRUMENT: return "IT instrument magic mismatch";
     case IT_INVALID_ORDER_COUNT: return "invalid order count >256";
     case IT_INVALID_PATTERN_COUNT: return "invalid pattern count >256";
   }
@@ -60,6 +62,7 @@ static const char *IT_strerror(int err)
 enum IT_features
 {
   FT_OLD_FORMAT,
+  FT_SAMPLE_MODE,
   FT_INSTRUMENT_MODE,
   FT_SAMPLE_GLOBAL_VOLUME,
   FT_SAMPLE_VIBRATO,
@@ -67,12 +70,17 @@ enum IT_features
   FT_SAMPLE_COMPRESSION_1_4TH,
   FT_SAMPLE_COMPRESSION_1_8TH,
   FT_SAMPLE_COMPRESSION_INVALID_WIDTH,
+  FT_ENV_VOLUME,
+  FT_ENV_PAN,
+  FT_ENV_PITCH,
+  FT_ENV_FILTER,
   NUM_FEATURES
 };
 
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
   "<2.00",
+  "SmplMode",
   "InstMode",
   "SmpGVL",
   "SmpVib",
@@ -80,6 +88,10 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "SmpCmp<1/4th",
   "SmpCmp<1/8th",
   "SmpCmpInvalidBW",
+  "EnvVol",
+  "EnvPan",
+  "EnvPitch",
+  "EnvFilter",
 };
 
 enum IT_flags
@@ -118,6 +130,99 @@ enum IT_vibrato_waveforms
   WF_RAMP_DOWN,
   WF_SQUARE_WAVE,
   WF_RANDOM
+};
+
+static constexpr int MAX_ENVELOPE = 25;
+
+static const char *NNA_string(unsigned int nna)
+{
+  static const char NNA_TYPE[4][5]
+  {
+    "Cut", "Cont", "Off", "Fade"
+  };
+  return (nna < (size_t)arraysize(NNA_TYPE)) ? NNA_TYPE[nna] : "?";
+}
+
+static const char *DCT_string(unsigned int dct)
+{
+  static const char DCT_TYPE[4][5]
+  {
+    "Off", "Note", "Smpl", "Inst"
+  };
+  return (dct < (size_t)arraysize(DCT_TYPE)) ? DCT_TYPE[dct] : "?";
+}
+
+static const char *DCA_string(unsigned int dca)
+{
+  static const char DCA_TYPE[3][5]
+  {
+    "Cut", "Off", "Fade"
+  };
+  return (dca < (size_t)arraysize(DCA_TYPE)) ? DCA_TYPE[dca] : "?";
+}
+
+
+struct IT_keymap
+{
+  uint8_t  note;
+  uint8_t  sample;
+};
+
+struct IT_node
+{
+  int8_t   value; /* Note: no padding in file. */
+  uint16_t tick;
+};
+
+struct IT_envelope
+{
+  enum IT_envelope_flags
+  {
+    ENABLED = (1<<0),
+    LOOP    = (1<<1),
+    SUSTAIN = (1<<2),
+    CARRY   = (1<<3),
+    FILTER  = (1<<7), /* Sets pitch envelope to act as a filter envelope instead. */
+  };
+
+  /*  00 */ uint8_t  flags;
+  /*  01 */ uint8_t  num_nodes;
+  /*  02 */ uint8_t  loop_start;
+  /*  03 */ uint8_t  loop_end;
+  /*  04 */ uint8_t  sustain_start;
+  /*  05 */ uint8_t  sustain_end;
+  /*  06 */ IT_node  nodes[MAX_ENVELOPE];
+};
+
+struct IT_instrument
+{
+  /*  00 */ char     magic[4]; /* IMPI */
+  /*  04 */ char     filename[13];
+  /*  17 */ uint8_t  new_note_act;
+  /*  18 */ uint8_t  duplicate_check_type;
+  /*  19 */ uint8_t  duplicate_check_act;
+  /*  20 */ uint16_t fadeout;
+  /*  22 */ int8_t   pitch_pan_sep;
+  /*  23 */ uint8_t  pitch_pan_center;
+  /*  24 */ uint8_t  global_volume;
+  /*  25 */ uint8_t  default_pan;
+  /*  26 */ uint8_t  random_volume;
+  /*  27 */ uint8_t  random_pan;
+  /*  28 */ uint16_t tracker_version; /* Inst. files only. */
+  /*  30 */ uint8_t  num_samples;     /* Inst. files only. */
+  /*  31 */ uint8_t  pad;
+  /*  32 */ char     name[26];
+  /*  58 */ uint8_t  init_filter_cutoff;
+  /*  59 */ uint8_t  init_filter_resonance;
+  /*  60 */ uint8_t  midi_channel;
+  /*  61 */ uint8_t  midi_program;
+  /*  62 */ uint16_t midi_bank;
+  /*  64 */ IT_keymap keymap[120];
+  /* 304 */
+
+  IT_envelope env_volume;
+  IT_envelope env_pan;
+  IT_envelope env_pitch;
 };
 
 struct IT_sample
@@ -181,17 +286,19 @@ struct IT_header
 
 struct IT_data
 {
-  IT_header header;
-  IT_sample *samples = nullptr;
-  uint8_t   *orders = nullptr;
-  uint32_t  *instrument_offsets = nullptr;
-  uint32_t  *sample_offsets = nullptr;
-  uint32_t  *pattern_offsets = nullptr;
-  bool      uses[NUM_FEATURES];
+  IT_header     header;
+  IT_sample     *samples = nullptr;
+  IT_instrument *instruments = nullptr;
+  uint8_t       *orders = nullptr;
+  uint32_t      *instrument_offsets = nullptr;
+  uint32_t      *sample_offsets = nullptr;
+  uint32_t      *pattern_offsets = nullptr;
+  bool          uses[NUM_FEATURES];
 
   ~IT_data()
   {
     delete[] samples;
+    delete[] instruments;
     delete[] orders;
     delete[] instrument_offsets;
     delete[] sample_offsets;
@@ -382,6 +489,204 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
   return true;
 }
 
+/**
+ * Read an IT sample.
+ */
+static int IT_read_sample(FILE *fp, IT_sample &s)
+{
+  if(!fread(s.magic, 4, 1, fp))
+    return IT_READ_ERROR;
+  if(strncmp(s.magic, "IMPS", 4))
+    return IT_INVALID_SAMPLE;
+
+  if(!fread(s.filename, 13, 1, fp))
+    return IT_READ_ERROR;
+  s.filename[12] = '\0';
+
+  s.global_volume      = fgetc(fp);
+  s.flags              = fgetc(fp);
+  s.default_volume     = fgetc(fp);
+
+  if(!fread(s.name, 26, 1, fp))
+    return IT_READ_ERROR;
+  s.name[25] = '\0';
+
+  s.convert            = fgetc(fp);
+  s.default_pan        = fgetc(fp);
+  s.length             = fget_u32le(fp);
+  s.loop_start         = fget_u32le(fp);
+  s.loop_end           = fget_u32le(fp);
+  s.c5_speed           = fget_u32le(fp);
+  s.sustain_loop_start = fget_u32le(fp);
+  s.sustain_loop_end   = fget_u32le(fp);
+  s.sample_data_offset = fget_u32le(fp);
+  s.vibrato_speed      = fgetc(fp);
+  s.vibrato_depth      = fgetc(fp);
+  s.vibrato_waveform   = fgetc(fp);
+  s.vibrato_rate       = fgetc(fp);
+
+  if(feof(fp))
+    return IT_READ_ERROR;
+
+  return IT_SUCCESS;
+}
+
+/**
+ * Read an IT envelope.
+ */
+static int IT_read_envelope(FILE *fp, IT_envelope &env)
+{
+  env.flags         = fgetc(fp);
+  env.num_nodes     = fgetc(fp);
+  env.loop_start    = fgetc(fp);
+  env.loop_end      = fgetc(fp);
+  env.sustain_start = fgetc(fp);
+  env.sustain_end   = fgetc(fp);
+
+  static_assert(MAX_ENVELOPE >= 25, "wtf?");
+  for(size_t i = 0; i < 25; i++)
+  {
+    env.nodes[i].value = fgetc(fp);
+    env.nodes[i].tick  = fget_u16le(fp);
+  }
+  fgetc(fp); /* Padding byte. */
+  if(feof(fp))
+    return IT_READ_ERROR;
+
+  return IT_SUCCESS;
+}
+
+/**
+ * Read an IT instrument.
+ */
+static int IT_read_instrument(FILE *fp, IT_instrument &ins)
+{
+  if(!fread(ins.magic, 4, 1, fp))
+    return IT_READ_ERROR;
+  if(strncmp(ins.magic, "IMPI", 4))
+    return IT_INVALID_INSTRUMENT;
+
+  if(!fread(ins.filename, 13, 1, fp))
+    return IT_READ_ERROR;
+  ins.filename[12] = '\0';
+
+  ins.new_note_act          = fgetc(fp);
+  ins.duplicate_check_type  = fgetc(fp);
+  ins.duplicate_check_act   = fgetc(fp);
+  ins.fadeout               = fget_u16le(fp);
+  ins.pitch_pan_sep         = fgetc(fp);
+  ins.pitch_pan_center      = fgetc(fp);
+  ins.global_volume         = fgetc(fp);
+  ins.default_pan           = fgetc(fp);
+  ins.random_volume         = fgetc(fp);
+  ins.random_pan            = fgetc(fp);
+  ins.tracker_version       = fget_u16le(fp);
+  ins.num_samples           = fgetc(fp);
+  ins.pad                   = fgetc(fp);
+
+  if(!fread(ins.name, 26, 1, fp))
+    return IT_READ_ERROR;
+  ins.name[25] = '\0';
+
+  ins.init_filter_cutoff    = fgetc(fp);
+  ins.init_filter_resonance = fgetc(fp);
+  ins.midi_channel          = fgetc(fp);
+  ins.midi_program          = fgetc(fp);
+  ins.midi_bank             = fget_u16le(fp);
+
+  for(size_t i = 0; i < 120; i++)
+  {
+    ins.keymap[i].note   = fgetc(fp);
+    ins.keymap[i].sample = fgetc(fp);
+  }
+  if(feof(fp))
+    return IT_READ_ERROR;
+
+  int ret;
+  ret = IT_read_envelope(fp, ins.env_volume);
+  if(ret != IT_SUCCESS)
+    return ret;
+  ret = IT_read_envelope(fp, ins.env_pan);
+  if(ret != IT_SUCCESS)
+    return ret;
+  ret = IT_read_envelope(fp, ins.env_pitch);
+  if(ret != IT_SUCCESS)
+    return ret;
+
+  return IT_SUCCESS;
+}
+
+/**
+ * Read an IT instrument (1.x).
+ */
+static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
+{
+  if(!fread(ins.magic, 4, 1, fp))
+    return IT_READ_ERROR;
+  if(strncmp(ins.magic, "IMPI", 4))
+    return IT_INVALID_INSTRUMENT;
+
+  if(!fread(ins.filename, 13, 1, fp))
+    return IT_READ_ERROR;
+  ins.filename[12] = '\0';
+
+  IT_envelope &env = ins.env_volume;
+
+  env.flags         = fgetc(fp);
+  env.loop_start    = fgetc(fp);
+  env.loop_end      = fgetc(fp);
+  env.sustain_start = fgetc(fp);
+  env.sustain_end   = fgetc(fp);
+  fgetc(fp);
+  fgetc(fp);
+
+  ins.fadeout              = fget_u16le(fp) << 1;
+  ins.new_note_act         = fgetc(fp);
+  ins.duplicate_check_type = fgetc(fp) & 1;
+  ins.duplicate_check_act  = 1;
+  ins.tracker_version      = fget_u16le(fp);
+  ins.num_samples          = fgetc(fp);
+  ins.pad                  = fgetc(fp);
+
+  if(!fread(ins.name, 26, 1, fp))
+    return IT_READ_ERROR;
+  ins.name[25] = '\0';
+  fgetc(fp);
+  fgetc(fp);
+  fgetc(fp);
+  fgetc(fp);
+  fgetc(fp);
+  fgetc(fp);
+
+  for(size_t i = 0; i < 120; i++)
+  {
+    ins.keymap[i].note   = fgetc(fp);
+    ins.keymap[i].sample = fgetc(fp);
+  }
+  if(feof(fp))
+    return IT_READ_ERROR;
+
+  /* Envelope points (??) */
+  if(fseek(fp, 200, SEEK_CUR))
+    return IT_SEEK_ERROR;
+
+  static_assert(MAX_ENVELOPE >= 25, "wtf?");
+  size_t num_nodes;
+  for(num_nodes = 0; num_nodes < 25; num_nodes++)
+  {
+    env.nodes[num_nodes].tick  = fgetc(fp);
+    env.nodes[num_nodes].value = fgetc(fp);
+  }
+  env.num_nodes = num_nodes;
+  if(feof(fp))
+    return IT_READ_ERROR;
+
+  return IT_SUCCESS;
+}
+
+/**
+ * Read an IT file.
+ */
 static int IT_read(FILE *fp)
 {
   IT_data m{};
@@ -426,6 +731,8 @@ static int IT_read(FILE *fp)
 
   if(h.flags & F_INST_MODE)
     m.uses[FT_INSTRUMENT_MODE] = true;
+  else
+    m.uses[FT_SAMPLE_MODE] = true;
 
   if(h.num_orders)
   {
@@ -461,7 +768,45 @@ static int IT_read(FILE *fp)
       return IT_READ_ERROR;
   }
 
-  /* TODO load instruments. */
+  /* Load instruments. */
+  if(h.num_instruments && (h.flags & F_INST_MODE))
+  {
+    m.instruments = new IT_instrument[h.num_instruments]{};
+    for(size_t i = 0; i < h.num_instruments; i++)
+    {
+      if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
+        return IT_SEEK_ERROR;
+
+      IT_instrument &ins = m.instruments[i];
+
+      if(h.format_version >= 0x200)
+      {
+        int ret = IT_read_instrument(fp, ins);
+        if(ret != IT_SUCCESS)
+          return ret;
+      }
+      else
+      {
+        int ret = IT_read_old_instrument(fp, ins);
+        if(ret != IT_SUCCESS)
+          return ret;
+      }
+
+      if(ins.env_volume.flags & IT_envelope::ENABLED)
+        m.uses[FT_ENV_VOLUME] = true;
+
+      if(ins.env_pan.flags & IT_envelope::ENABLED)
+        m.uses[FT_ENV_PAN] = true;
+
+      if(ins.env_pitch.flags & IT_envelope::ENABLED)
+      {
+        if(ins.env_pitch.flags & IT_envelope::FILTER)
+          m.uses[FT_ENV_FILTER] = true;
+        else
+          m.uses[FT_ENV_PITCH] = true;
+      }
+    }
+  }
 
   /* Load samples. */
   if(h.num_samples)
@@ -474,38 +819,9 @@ static int IT_read(FILE *fp)
 
       IT_sample &s = m.samples[i];
 
-      if(!fread(s.magic, 4, 1, fp))
-        return IT_READ_ERROR;
-      if(strncmp(s.magic, "IMPS", 4))
-        return IT_INVALID_SAMPLE;
-
-      if(!fread(s.filename, 13, 1, fp))
-        return IT_READ_ERROR;
-
-      s.global_volume      = fgetc(fp);
-      s.flags              = fgetc(fp);
-      s.default_volume     = fgetc(fp);
-
-      if(!fread(s.name, 26, 1, fp))
-        return IT_READ_ERROR;
-      s.name[25] = '\0';
-
-      s.convert            = fgetc(fp);
-      s.default_pan        = fgetc(fp);
-      s.length             = fget_u32le(fp);
-      s.loop_start         = fget_u32le(fp);
-      s.loop_end           = fget_u32le(fp);
-      s.c5_speed           = fget_u32le(fp);
-      s.sustain_loop_start = fget_u32le(fp);
-      s.sustain_loop_end   = fget_u32le(fp);
-      s.sample_data_offset = fget_u32le(fp);
-      s.vibrato_speed      = fgetc(fp);
-      s.vibrato_depth      = fgetc(fp);
-      s.vibrato_waveform   = fgetc(fp);
-      s.vibrato_rate       = fgetc(fp);
-
-      if(feof(fp))
-        return IT_READ_ERROR;
+      int ret = IT_read_sample(fp, s);
+      if(ret != IT_SUCCESS)
+        return ret;
 
       if(s.global_volume < 0x40)
         m.uses[FT_SAMPLE_GLOBAL_VOLUME] = true;
@@ -567,6 +883,50 @@ static int IT_read(FILE *fp)
     static const char PAD[] =
       "---------------------------------------------------------------------";
 
+    /* Instruments */
+    if(h.flags & F_INST_MODE)
+    {
+      O_("        :\n");
+      O_("        : %-25s  %-13s : NNA  DCT  DCA  Fade  : GV  RV  Env  : DP  RP  PPS  PPC Env  : IFC IFR Env  :\n",
+        "Name", "Filename"
+      );
+      O_("        : %.40s : %.20s : %.12s : %.21s : %.12s :\n", PAD, PAD, PAD, PAD, PAD);
+
+      for(unsigned int i = 0; i < h.num_instruments; i++)
+      {
+        IT_instrument &ins = m.instruments[i];
+        char flagvol[5];
+        char flagpan[5];
+        char flagpitch[5];
+
+#define ENV_FLAGS(flags, str, is_pitch) do{ \
+  str[0] = (flags & IT_envelope::ENABLED) ? 'e' : '\0'; \
+  str[1] = (flags & IT_envelope::LOOP) ? 'L' : ' '; \
+  str[2] = (flags & IT_envelope::SUSTAIN) ? 'S' : ' '; \
+  str[3] = (flags & IT_envelope::CARRY) ? 'C' : ' '; \
+  str[4] = '\0'; \
+  if(is_pitch && str[0]) \
+    str[0] = (flags & IT_envelope::FILTER) ? 'f' : 'p'; \
+}while(0)
+
+        ENV_FLAGS(ins.env_volume.flags, flagvol, false);
+        ENV_FLAGS(ins.env_pan.flags, flagpan, false);
+        ENV_FLAGS(ins.env_pitch.flags, flagpitch, true);
+
+        O_("Ins. %-3x: %-25s  %-13.13s : %-4.4s %-4.4s %-4.4s %-5u : %-3u %-3u %-4.4s : %-3u %-3u %-4d %-3u %-4.4s : %-3u %-3u %-4.4s :\n",
+          i, ins.name, ins.filename,
+          NNA_string(ins.new_note_act),
+          DCT_string(ins.duplicate_check_type),
+          DCA_string(ins.duplicate_check_act),
+          ins.fadeout,
+          ins.global_volume, ins.random_volume, flagvol,
+          ins.default_pan, ins.random_pan, ins.pitch_pan_sep, ins.pitch_pan_center, flagpan,
+          ins.init_filter_cutoff, ins.init_filter_resonance, flagpitch
+        );
+      }
+    }
+
+    /* Samples */
     O_("        :\n");
     O_("        : %-25s  %-13s : %-10s %-10s %-10s %-10s %-10s : %-10s GV  DV  DP  %-8s : VSp VDp VWf VRt :\n",
       "Name", "Filename",
