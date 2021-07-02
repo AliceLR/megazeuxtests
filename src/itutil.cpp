@@ -691,6 +691,11 @@ static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
   if(feof(fp))
     return IT_READ_ERROR;
 
+  /* These don't exist for old instruments. */
+  ins.real_default_pan = -1;
+  ins.real_init_filter_cutoff = -1;
+  ins.real_init_filter_resonance = -1;
+
   return IT_SUCCESS;
 }
 
