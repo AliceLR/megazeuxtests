@@ -223,6 +223,11 @@ struct IT_instrument
   IT_envelope env_volume;
   IT_envelope env_pan;
   IT_envelope env_pitch;
+
+  /* Derived values. */
+  int real_default_pan;
+  int real_init_filter_cutoff;
+  int real_init_filter_resonance;
 };
 
 struct IT_sample
@@ -613,6 +618,11 @@ static int IT_read_instrument(FILE *fp, IT_instrument &ins)
   if(ret != IT_SUCCESS)
     return ret;
 
+  /* Fix some variables. */
+  ins.real_default_pan = (~ins.default_pan & 0x80) ? ins.default_pan : -1;
+  ins.real_init_filter_cutoff = (ins.init_filter_cutoff & 0x80) ? ins.init_filter_cutoff & 0x7f : -1;
+  ins.real_init_filter_resonance = (ins.init_filter_resonance & 0x80) ? ins.init_filter_resonance & 0x7f : -1;
+
   return IT_SUCCESS;
 }
 
@@ -913,15 +923,15 @@ static int IT_read(FILE *fp)
         ENV_FLAGS(ins.env_pan.flags, flagpan, false);
         ENV_FLAGS(ins.env_pitch.flags, flagpitch, true);
 
-        O_("Ins. %-3x: %-25s  %-13.13s : %-4.4s %-4.4s %-4.4s %-5u : %-3u %-3u %-4.4s : %-3u %-3u %-4d %-3u %-4.4s : %-3u %-3u %-4.4s :\n",
+        O_("Ins. %-3x: %-25s  %-13.13s : %-4.4s %-4.4s %-4.4s %-5u : %-3u %-3u %-4.4s : %-3d %-3u %-4d %-3u %-4.4s : %-3d %-3d %-4.4s :\n",
           i, ins.name, ins.filename,
           NNA_string(ins.new_note_act),
           DCT_string(ins.duplicate_check_type),
           DCA_string(ins.duplicate_check_act),
           ins.fadeout,
           ins.global_volume, ins.random_volume, flagvol,
-          ins.default_pan, ins.random_pan, ins.pitch_pan_sep, ins.pitch_pan_center, flagpan,
-          ins.init_filter_cutoff, ins.init_filter_resonance, flagpitch
+          ins.real_default_pan, ins.random_pan, ins.pitch_pan_sep, ins.pitch_pan_center, flagpan,
+          ins.real_init_filter_cutoff, ins.real_init_filter_resonance, flagpitch
         );
       }
     }
