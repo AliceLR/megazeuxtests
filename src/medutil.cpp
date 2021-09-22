@@ -132,8 +132,14 @@ enum MED_features
   FT_INST_SYNTH,
   FT_INST_SYNTH_HYBRID,
   FT_INST_EXT,
+  FT_INST_S16,
+  FT_INST_STEREO,
+  FT_INST_MD16,
   FT_INST_HOLD_DECAY,
   FT_INST_DEFAULT_PITCH,
+  FT_HYBRID_USES_IFFOCT,
+  FT_HYBRID_USES_EXT,
+  FT_HYBRID_USES_SYNTH,
   NUM_FEATURES
 };
 
@@ -196,8 +202,14 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "Synth",
   "Hybrid",
   "ExtSample",
+  "InsS16",
+  "InsStereo",
+  "InsAura",
   "HoldDecay",
   "DefPitch",
+  "HybIFFOCT",
+  "HybExt",
+  "HybSyn(?!)",
 };
 
 struct MED_handler
@@ -238,7 +250,13 @@ enum MMD0instrtype
   I_IFF4OCT = 4,
   I_IFF6OCT = 5,
   I_IFF7OCT = 6,
-  I_EXT     = 7
+  I_EXT     = 7,
+
+  /* Flags */
+  I_TYPEMASK = 0x08,
+  I_S16      = 0x10,
+  I_STEREO   = 0x20,
+  I_MD16     = 0x18,
 };
 
 static const char *MED_insttype_str(int t)
@@ -365,6 +383,9 @@ struct MMD0synth
   /*  22 */ uint8_t  volume_table[128];
   /* 150 */ uint8_t  waveform_table[128];
   /* 278 */ uint32_t waveform_offsets[64]; /* struct SynthWF * */
+
+  /* Waveform 0 for hybrids is a sample. */
+  MMD0instr hybrid_instrument;
 };
 
 /* Extra instrument data. */
@@ -510,7 +531,7 @@ struct MMD0
   }
 };
 
-static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
+static int read_mmd(FILE *fp, int mmd_version)
 {
   MMD0 m{};
   MMD0head &h = m.header;
@@ -572,10 +593,12 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
       m.uses[FT_TRANSPOSE_INSTRUMENT] = true;
   }
   s.num_blocks      = fget_u16be(fp);
+  /* FIXME this is completely wrong for MMD2/3 */
   s.num_orders      = fget_u16be(fp);
 
   if(!fread(s.orders, 256, 1, fp))
     return MED_READ_ERROR;
+  /* end FIXME */
 
   s.default_tempo   = fget_u16be(fp);
   s.transpose       = fgetc(fp);
@@ -586,6 +609,7 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
   if(s.transpose != 0)
     m.uses[FT_TRANSPOSE_SONG] = true;
 
+  /* FIXME MMD2/3 handles track volume separately. */
   if(!fread(s.track_volume, 16, 1, fp))
     return MED_READ_ERROR;
 
@@ -621,14 +645,17 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
 
     MMD1block &b = m.patterns[i];
 
-    if(is_mmd1)
+    if(mmd_version >= 1)
     {
+      /* MMD1 through MMD3 */
       b.num_tracks       = fget_u16be(fp);
       b.num_rows         = fget_u16be(fp) + 1;
       b.blockinfo_offset = fget_u32be(fp);
+      /* FIXME load blockinfo */
     }
     else
     {
+      /* MMD0 */
       b.num_tracks = fgetc(fp);
       b.num_rows   = fgetc(fp) + 1;
     }
@@ -653,13 +680,17 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
         int b = fgetc(fp);
         int c = fgetc(fp);
 
-        if(is_mmd1)
+        if(mmd_version >= 1)
         {
+          /* MMD1 through MMD3 */
           int d = fgetc(fp);
           current->mmd1(a, b, c, d);
         }
         else
+        {
+          /* MMD0 */
           current->mmd0(a, b, c);
+        }
 
         /**
          * C-1=1, C#1=2... + 7 octaves.
@@ -922,14 +953,61 @@ static int read_mmd0_mmd1(FILE *fp, bool is_mmd1)
         syn->waveform_offsets[j] = fget_u32be(fp);
 
       if(inst.type == I_HYBRID)
+      {
         m.uses[FT_INST_SYNTH_HYBRID] = true;
+
+        /* Get the size and type of the sample. */
+        if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[0], SEEK_SET))
+          return MED_SEEK_ERROR;
+
+        MMD0instr &h_inst = syn->hybrid_instrument;
+
+        h_inst.length = fget_u32be(fp);
+        h_inst.type   = fget_s16be(fp);
+        if(h_inst.type < 0)
+          m.uses[FT_HYBRID_USES_SYNTH] = true; /* Shouldn't happen? */
+        else
+        if((h_inst.type & I_TYPEMASK) == I_EXT)
+          m.uses[FT_HYBRID_USES_EXT] = true;
+        else
+        if((h_inst.type & I_TYPEMASK) > 0)
+          m.uses[FT_HYBRID_USES_IFFOCT] = true;
+
+        if(h_inst.type > 0)
+        {
+          if(h_inst.type & I_MD16)
+            m.uses[FT_INST_MD16] = true;
+          else
+          if(h_inst.type & I_S16)
+            m.uses[FT_INST_S16] = true;
+
+          if(h_inst.type & I_STEREO)
+            m.uses[FT_INST_STEREO] = true;
+        }
+      }
       else
         m.uses[FT_INST_SYNTH] = true;
     }
     else
+    {
+      if((inst.type & I_TYPEMASK) == I_EXT)
+      {
+        m.uses[FT_INST_EXT] = true;
+      }
+      else
 
-    if(inst.type > 0)
-      m.uses[FT_INST_IFFOCT] = true;
+      if((inst.type & I_TYPEMASK) > 0)
+        m.uses[FT_INST_IFFOCT] = true;
+
+      if(inst.type & I_MD16)
+        m.uses[FT_INST_MD16] = true;
+      else
+      if(inst.type & I_S16)
+        m.uses[FT_INST_S16] = true;
+
+      if(inst.type & I_STEREO)
+        m.uses[FT_INST_STEREO] = true;
+    }
   }
 
   if(feof(fp))
@@ -1231,27 +1309,25 @@ static int read_med4(FILE *fp)
 static int read_mmd0(FILE *fp)
 {
   num_mmd0++;
-  return read_mmd0_mmd1(fp, false);
+  return read_mmd(fp, 0);
 }
 
 static int read_mmd1(FILE *fp)
 {
   num_mmd1++;
-  return read_mmd0_mmd1(fp, true);
+  return read_mmd(fp, 1);
 }
 
 static int read_mmd2(FILE *fp)
 {
-  O_("Type      : %4.4s\n", MAGIC_MMD2);
   num_mmd2++;
-  return MED_NOT_IMPLEMENTED;
+  return read_mmd(fp, 2);
 }
 
 static int read_mmd3(FILE *fp)
 {
-  O_("Type      : %4.4s\n", MAGIC_MMD3);
   num_mmd3++;
-  return MED_NOT_IMPLEMENTED;
+  return read_mmd(fp, 3);
 }
 
 static int read_med(FILE *fp)
