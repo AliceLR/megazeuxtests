@@ -112,7 +112,7 @@ public:
       num_with_pat_fe++;
     num_xms++;
 
-    O_("Version : %04x\n", h.version);
+    O_("Type    : XM %04x\n", h.version);
     O_("Orders  : %u\n", h.num_orders);
     O_("Patterns: %u%s\n", h.num_patterns, has_fe ? " (uses 0xFE)" : "");
     O_("Invalid?: %s\n",

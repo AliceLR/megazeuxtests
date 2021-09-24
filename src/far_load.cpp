@@ -104,7 +104,7 @@ public:
 
     total_far++;
 
-    O_("Version : %x\n", h.version);
+    O_("Type    : FAR %x\n", h.version);
     if(h.version != 0x10)
     {
       O_("Error   : unknown FAR version %02x\n", h.version);

@@ -851,7 +851,7 @@ static modutil::error IT_read(FILE *fp)
   /* TODO load patterns. */
 
   O_("Name    : %s\n", h.name);
-  O_("Version : T:%x TV:%03x V:%x\n", (h.tracker_version >> 12), (h.tracker_version & 0xFFF), h.format_version);
+  O_("Type    : IT %x (T:%x %03x)\n", h.format_version, (h.tracker_version >> 12), (h.tracker_version & 0xFFF));
   O_("Orders  : %u\n", h.num_orders);
   O_("Patterns: %u\n", h.num_patterns);
   O_("Samples : %u\n", h.num_samples);

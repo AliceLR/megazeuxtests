@@ -500,7 +500,7 @@ modutil::error DSIK_read(FILE *fp)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
   O_("Name    : %s\n",  s.name);
-  O_("Version : %04u\n",s.format_version);
+  O_("Type    : DSM %04u\n",s.format_version);
   O_("Samples : %u\n",  s.num_samples);
   O_("Orders  : %u\n",  s.num_orders);
   O_("Patterns: %u\n",  s.num_patterns);

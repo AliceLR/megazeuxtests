@@ -380,8 +380,8 @@ static modutil::error STM_read(FILE *fp)
    * Print dump.
    */
   O_("Name    : %s\n",       m.name);
+  O_("Type    : STM %u.%02u\n", h.version_maj, h.version_min);
   O_("Tracker : %8.8s\n",    h.tracker);
-  O_("Version : %u.%02u\n",  h.version_maj, h.version_min);
   O_("Samples : %u\n",       h.num_instruments);
   O_("Orders  : %u\n",       h.num_orders);
   O_("Patterns: %u\n",       h.num_patterns);

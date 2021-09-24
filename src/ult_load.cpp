@@ -322,7 +322,7 @@ public:
     /**
      * Print info.
      */
-    O_("Title   : %s\n", m.title);
+    O_("Name    : %s\n", m.title);
     O_("Type    : ULT V00%d\n", m.version);
     O_("Samples : %u\n", h.num_samples);
     O_("Channels: %u\n", h.num_channels);

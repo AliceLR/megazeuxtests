@@ -424,7 +424,7 @@ public:
     if(OKT_parser.max_chunk_length > 4*1024*1024)
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-//    O_("Name    : %s\n",  m.name);
+    O_("Type    : Oktalyzer\n");
     O_("Samples : %u\n",  m.num_samples);
     O_("Channels: %u\n",  m.num_channels);
     O_("Patterns: %u\n",  m.num_patterns);

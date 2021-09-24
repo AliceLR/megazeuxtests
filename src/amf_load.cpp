@@ -276,8 +276,6 @@ static modutil::error AMF_read(FILE *fp)
     return modutil::BAD_VERSION;
   }
 
-  O_("Version : DSMI %3.3s %02u\n", m.magic, m.version);
-
   if(!fread(m.name, 32, 1, fp))
     return modutil::READ_ERROR;
 
@@ -584,7 +582,8 @@ static modutil::error AMF_read(FILE *fp)
   }
 
   // Print metadata.
-  O_("Title   : %s\n", m.name);
+  O_("Name    : %s\n", m.name);
+  O_("Type    : DSMI %3.3s %02u\n", m.magic, m.version);
   O_("Samples : %u\n", m.num_samples);
   O_("Orders  : %u\n", m.num_orders);
   O_("Tracks  : %zu (%u logical)\n", m.real_num_tracks, m.num_tracks);
