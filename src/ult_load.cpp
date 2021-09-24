@@ -32,6 +32,28 @@ enum ULT_features
   FT_SAMPLE_16BIT,
   FT_SAMPLE_REVERSE,
   FT_SAMPLE_BIT7,
+  FT_FX_ARPEGGIO,
+  FT_FX_PORTAMENTO,
+  FT_FX_TONE_PORTAMENTO,
+  FT_FX_VIBRATO,
+  FT_FX_SPECIAL,
+  FT_FX_UNUSED_6,
+  FT_FX_TREMOLO,
+  FT_FX_UNUSED_8,
+  FT_FX_OFFSET,
+  FT_FX_FINE_OFFSET,
+  FT_FX_VOLSLIDE,
+  FT_FX_PAN,
+  FT_FX_VOLUME,
+  FT_FX_BREAK,
+  FT_FX_SPEED,
+  FT_FX_VIBRATO_STRENGTH,
+  FT_FX_FINE_PORTAMENTO,
+  FT_FX_PATTERN_DELAY,
+  FT_FX_RETRIGGER,
+  FT_FX_FINE_VOLSLIDE,
+  FT_FX_NOTE_CUT,
+  FT_FX_NOTE_DELAY,
   NUM_FEATURES
 };
 
@@ -40,6 +62,28 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "S:16",
   "S:Rev",
   "S:bit7",
+  "E:Arpeggio",
+  "E:Porta",
+  "E:TPorta",
+  "E:Vibrato",
+  "E:Special",
+  "E:6",
+  "E:Tremolo",
+  "E:8",
+  "E:Offset",
+  "E:FineOffset",
+  "E:Volslide",
+  "E:Pan",
+  "E:Vol",
+  "E:Break",
+  "E:Speed",
+  "E:VibStrength",
+  "E:FinePorta",
+  "E:PattDelay",
+  "E:Retrig",
+  "E:FineVol",
+  "E:NoteCut",
+  "E:NoteDelay",
 };
 
 
@@ -49,6 +93,40 @@ enum ULT_versions
   ULT_V1_4 = 2,
   ULT_V1_5 = 3,
   ULT_V1_6 = 4,
+};
+
+enum ULT_effects
+{
+  FX_ARPEGGIO,
+  FX_PORTAMENTO_UP,
+  FX_PORTAMENTO_DOWN,
+  FX_TONE_PORTAMENTO,
+  FX_VIBRATO,
+  FX_SPECIAL,
+  FX_UNUSED_6,
+  FX_TREMOLO,
+  FX_UNUSED_8,
+  FX_OFFSET,
+  FX_VOLSLIDE,
+  FX_PAN,
+  FX_VOLUME,
+  FX_BREAK,
+  FX_EXTRA,
+  FX_SPEED,
+
+  SP_NO_LOOP   = 0x01,
+  SP_BACKWARDS = 0x02,
+  SP_END_LOOP  = 0x0C,
+
+  EX_VIBRATO_STRENGTH = 0x00,
+  EX_FINE_PORTAMENTO_UP = 0x01,
+  EX_FINE_PORTAMENTO_DOWN = 0x02,
+  EX_PATTERN_DELAY = 0x08,
+  EX_RETRIGGER = 0x09,
+  EX_FINE_VOLSLIDE_UP = 0x0A,
+  EX_FINE_VOLSLIDE_DOWN = 0x0B,
+  EX_NOTE_CUT = 0x0C,
+  EX_NOTE_DELAY = 0x0D,
 };
 
 enum ULT_sample_flags
@@ -157,6 +235,60 @@ struct ULT_data
     delete[] text;
   }
 };
+
+static ULT_features effect_feature(uint8_t effect, uint8_t param)
+{
+  switch(effect)
+  {
+    case FX_ARPEGGIO:        return param ? FT_FX_ARPEGGIO : NUM_FEATURES;
+    case FX_PORTAMENTO_UP:   return FT_FX_PORTAMENTO;
+    case FX_PORTAMENTO_DOWN: return FT_FX_PORTAMENTO;
+    case FX_TONE_PORTAMENTO: return FT_FX_TONE_PORTAMENTO;
+    case FX_VIBRATO:         return FT_FX_VIBRATO;
+    case FX_UNUSED_6:        return FT_FX_UNUSED_6;
+    case FX_TREMOLO:         return FT_FX_TREMOLO;
+    case FX_UNUSED_8:        return FT_FX_UNUSED_8;
+    case FX_OFFSET:          return FT_FX_OFFSET;
+    case FX_VOLSLIDE:        return FT_FX_VOLSLIDE;
+    case FX_PAN:             return FT_FX_PAN;
+    case FX_VOLUME:          return FT_FX_VOLUME;
+    case FX_BREAK:           return FT_FX_BREAK;
+    case FX_SPEED:           return FT_FX_SPEED;
+
+    // TODO individual effects
+    case FX_SPECIAL:         return FT_FX_SPECIAL;
+
+    case FX_EXTRA:
+      switch(param >> 4)
+      {
+        case EX_VIBRATO_STRENGTH:     return FT_FX_VIBRATO_STRENGTH;
+        case EX_FINE_PORTAMENTO_UP:   return FT_FX_FINE_PORTAMENTO;
+        case EX_FINE_PORTAMENTO_DOWN: return FT_FX_FINE_PORTAMENTO;
+        case EX_PATTERN_DELAY:        return FT_FX_PATTERN_DELAY;
+        case EX_RETRIGGER:            return FT_FX_RETRIGGER;
+        case EX_FINE_VOLSLIDE_UP:     return FT_FX_FINE_VOLSLIDE;
+        case EX_FINE_VOLSLIDE_DOWN:   return FT_FX_FINE_VOLSLIDE;
+        case EX_NOTE_CUT:             return FT_FX_NOTE_CUT;
+        case EX_NOTE_DELAY:           return FT_FX_NOTE_DELAY;
+      }
+      break;
+  }
+  return NUM_FEATURES;
+}
+
+static void check_event(ULT_data &m, const ULT_event &e)
+{
+  ULT_features a = effect_feature(e.effect, e.param);
+  ULT_features b = effect_feature(e.effect2, e.param2);
+  if(a != NUM_FEATURES)
+    m.uses[a] = true;
+  if(b != NUM_FEATURES)
+    m.uses[b] = true;
+
+  // Special case--99 sets fine offset.
+  if(e.effect == FX_OFFSET && e.effect2 == FX_OFFSET)
+    m.uses[FT_FX_FINE_OFFSET] = true;
+}
 
 
 class ULT_loader : modutil::loader
@@ -299,6 +431,7 @@ public:
               return modutil::READ_ERROR;
 
             ULT_event tmp(arr[2], arr[3], arr[4], arr[5], arr[6]);
+            check_event(m, tmp);
             int c = arr[1];
             do
             {
@@ -312,6 +445,7 @@ public:
           else
           {
             *current = ULT_event(arr[0], arr[1], arr[2], arr[3], arr[4]);
+            check_event(m, *current);
             current += p.channels;
             k++;
           }
