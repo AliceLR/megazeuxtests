@@ -104,6 +104,13 @@ static inline uint16_t fget_u16be(FILE *fp)
   return (a << 8) | (b);
 }
 
+static inline int16_t fget_s16le(FILE *fp)
+{
+  int a = fgetc(fp);
+  int b = fgetc(fp);
+  return (a << 8) | (b);
+}
+
 static inline int16_t fget_s16be(FILE *fp)
 {
   int a = fgetc(fp);

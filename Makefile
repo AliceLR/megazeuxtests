@@ -31,6 +31,7 @@ MODUTIL_OBJS := \
   ${OBJ}/med_load.o \
   ${OBJ}/okt_load.o \
   ${OBJ}/stm_load.o \
+  ${OBJ}/ult_load.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \
