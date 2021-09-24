@@ -27,6 +27,9 @@
   "Usage:\n" \
   "  %s [options] [filename.ext...]\n\n" \
 
+static int total_unidentified = 0;
+
+
 namespace modutil
 {
 static std::vector<const modutil::loader *> &loaders_vector()
@@ -93,7 +96,10 @@ static void check_module(const char *filename)
       break;
     }
     if(!has_format)
+    {
       O_("Error   : unknown format.\n\n");
+      total_unidentified++;
+    }
 
     fclose(fp);
   }
@@ -143,6 +149,13 @@ int main(int argc, char *argv[])
 
   for(const modutil::loader *loader : modutil::loaders_vector())
     loader->report();
+
+  if(total_unidentified)
+  {
+    fprintf(stderr, "\n");
+    O_("Total unidentified  : %d\n", total_unidentified);
+    O_("------------------- :\n");
+  }
 
   return 0;
 }
