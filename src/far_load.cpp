@@ -106,7 +106,10 @@ public:
 
     O_("Version : %x\n", h.version);
     if(h.version != 0x10)
-      return modutil::FAR_BAD_VERSION;
+    {
+      O_("Error   : unknown FAR version %02x\n", h.version);
+      return modutil::BAD_VERSION;
+    }
 
     fix_u16le(h.text_length);
 

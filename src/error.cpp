@@ -29,6 +29,7 @@ const char *strerror(modutil::error err)
     case SEEK_ERROR:        return "seek error";
     case INVALID:           return "invalid module";
     case NOT_IMPLEMENTED:   return "feature not implemented";
+    case BAD_VERSION:       return "unrecognized format version";
 
     /* IFF */
     case IFF_CONFIG_ERROR:  return "invalid IFF configuration";
@@ -53,7 +54,6 @@ const char *strerror(modutil::error err)
     case IT_INVALID_PATTERN_COUNT: return "invalid pattern count >256";
 
     /* GDM */
-    case GDM_BAD_VERSION:   return "GDM version invalid";
     case GDM_BAD_CHANNEL:   return "invalid GDM channel index";
     case GDM_BAD_PATTERN:   return "invalid GDM pattern data";
     case GDM_TOO_MANY_EFFECTS: return "note has more effects (>4) than allowed";
@@ -61,22 +61,17 @@ const char *strerror(modutil::error err)
     /* AMF/DSMI */
     case AMF_IS_ASYLUM:     return "is an ASYLUM AMF";
     case AMF_BAD_SIGNATURE: return "AMF signature mismatch";
-    case AMF_BAD_VERSION:   return "AMF version invalid";
     case AMF_BAD_CHANNELS:  return "AMF has too many channels";
     case AMF_BAD_TRACKS:    return "AMF has too many tracks";
 
     /* DSIK (DSM) */
     case DSIK_OLD_FORMAT:   return "old format DSMs not supported";
 
-    /* FAR */
-    case FAR_BAD_VERSION:   return "FAR version invalid";
-
     /* OctaMED */
     case MED_TOO_MANY_BLOCKS: return "only <=256 blocks supported";
     case MED_TOO_MANY_INSTR: return "only <=63 instruments supported";
 
     /* STM */
-    case STM_UNKNOWN_VERSION: return "unknown STM version";
     case STM_INVALID_ORDERS: return "invalid order count >256";
     case STM_INVALID_PATTERNS: return "invalid pattern count >=64";
   }

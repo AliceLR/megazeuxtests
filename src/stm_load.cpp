@@ -267,7 +267,10 @@ static modutil::error STM_read(FILE *fp)
       return modutil::READ_ERROR;
   }
   else
-    return modutil::STM_UNKNOWN_VERSION;
+  {
+    O_("Error   : unknown STM version %02x.%02x\n", h.version_maj, h.version_min);
+    return modutil::BAD_VERSION;
+  }
 
   memcpy(m.name, h.name, 20);
   m.name[20] = '\0';

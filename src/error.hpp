@@ -28,6 +28,7 @@ namespace modutil
     SEEK_ERROR,
     INVALID,
     NOT_IMPLEMENTED,
+    BAD_VERSION,
 
     /* IFF */
     IFF_CONFIG_ERROR,
@@ -52,7 +53,6 @@ namespace modutil
     IT_INVALID_PATTERN_COUNT,
 
     /* GDM */
-    GDM_BAD_VERSION,
     GDM_BAD_CHANNEL,
     GDM_BAD_PATTERN,
     GDM_TOO_MANY_EFFECTS,
@@ -60,22 +60,17 @@ namespace modutil
     /* AMF/DSMI */
     AMF_IS_ASYLUM,
     AMF_BAD_SIGNATURE,
-    AMF_BAD_VERSION,
     AMF_BAD_CHANNELS,
     AMF_BAD_TRACKS,
 
     /* DSIK (DSM) */
     DSIK_OLD_FORMAT,
 
-    /* FAR */
-    FAR_BAD_VERSION,
-
     /* MED and OctaMED */
     MED_TOO_MANY_BLOCKS,
     MED_TOO_MANY_INSTR,
 
     /* STM */
-    STM_UNKNOWN_VERSION,
     STM_INVALID_ORDERS,
     STM_INVALID_PATTERNS,
   };

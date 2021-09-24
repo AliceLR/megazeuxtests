@@ -271,7 +271,10 @@ static modutil::error AMF_read(FILE *fp)
 
   m.version = fgetc(fp);
   if(m.version != 0x01 && (m.version < 0x08 || m.version > 0x0E))
-    return modutil::AMF_BAD_VERSION;
+  {
+    O_("Error   : unknown AMF version %02x\n", m.version);
+    return modutil::BAD_VERSION;
+  }
 
   O_("Version : DSMI %3.3s %02u\n", m.magic, m.version);
 
