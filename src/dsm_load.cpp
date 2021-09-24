@@ -28,35 +28,10 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "A utility to dump DSIK module format metadata and patterns.\n"
-  "Usage:\n"
-  "  dsmutil [options] [filenames...]\n\n";
+static int total_dsik = 0;
 
-enum DSIK_error
-{
-  DSIK_SUCCESS,
-  DSIK_READ_ERROR,
-  DSIK_SEEK_ERROR,
-  DSIK_NOT_A_DSM,
-  DSIK_OLD_FORMAT,
-  DSIK_INVALID,
-};
-
-static const char *DSIK_strerror(int err)
-{
-  switch(err)
-  {
-    case DSIK_SUCCESS:           return "no error";
-    case DSIK_READ_ERROR:        return "read error";
-    case DSIK_SEEK_ERROR:        return "seek error";
-    case DSIK_NOT_A_DSM:         return "not a DSIK module";
-    case DSIK_OLD_FORMAT:        return "old format DSMs not supported";
-    case DSIK_INVALID:           return "invalid DSM";
-  }
-  return IFF_strerror(err);
-}
 
 enum DSIK_features
 {
@@ -201,18 +176,18 @@ static const class DSIK_SONG_Handler final: public IFFHandler<DSIK_data>
 public:
   DSIK_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DSIK_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
   {
     if(len < 192)
     {
-      O_("Error     : SONG chunk length < 192.\n");
-      return DSIK_INVALID;
+      O_("Error   : SONG chunk length < 192.\n");
+      return modutil::INVALID;
     }
 
     DSIK_song &s = m.song;
 
     if(!fread(s.name, 28, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
     s.name[27] = '\0';
 
     s.format_version = fget_u16le(fp);
@@ -229,32 +204,32 @@ public:
 
     if(s.num_orders > MAX_ORDERS)
     {
-      O_("Error     : order count %u > %u.\n", s.num_orders, MAX_ORDERS);
-      return DSIK_INVALID;
+      O_("Error   : order count %u > %u.\n", s.num_orders, MAX_ORDERS);
+      return modutil::INVALID;
     }
     if(s.num_samples > MAX_SAMPLES)
     {
-      O_("Error     : sample count %u > %u.\n", s.num_samples, MAX_SAMPLES);
-      return DSIK_INVALID;
+      O_("Error   : sample count %u > %u.\n", s.num_samples, MAX_SAMPLES);
+      return modutil::INVALID;
     }
     if(s.num_patterns > MAX_PATTERNS)
     {
-      O_("Error     : pattern count %u > %u.\n", s.num_patterns, MAX_PATTERNS);
-      return DSIK_INVALID;
+      O_("Error   : pattern count %u > %u.\n", s.num_patterns, MAX_PATTERNS);
+      return modutil::INVALID;
     }
     if(s.num_channels > MAX_CHANNELS)
     {
-      O_("Error     : channel count %u > %u.\n", s.num_channels, MAX_CHANNELS);
-      return DSIK_INVALID;
+      O_("Error   : channel count %u > %u.\n", s.num_channels, MAX_CHANNELS);
+      return modutil::INVALID;
     }
 
     if(!fread(s.channel_map, 16, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(!fread(s.orders, 128, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } SONG_handler("SONG", false);
 
@@ -263,23 +238,23 @@ static const class DSIK_INST_Handler final: public IFFHandler<DSIK_data>
 public:
   DSIK_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DSIK_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
   {
     if(len < 64)
     {
-      O_("Error     : INST chunk length < 64.\n");
-      return DSIK_INVALID;
+      O_("Error   : INST chunk length < 64.\n");
+      return modutil::INVALID;
     }
     if(m.current_sample >= MAX_SAMPLES)
     {
-      O_("Warning   : ignoring sample %u.\n", m.current_sample);
-      return DSIK_SUCCESS;
+      O_("Warning : ignoring sample %u.\n", m.current_sample);
+      return modutil::SUCCESS;
     }
 
     DSIK_sample &sm = m.samples[m.current_sample++];
 
     if(!fread(sm.filename, 13, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
     sm.filename[12] = '\0';
 
     sm.flags          = fget_u16le(fp);
@@ -292,12 +267,12 @@ public:
     sm.period         = fget_u16le(fp);
 
     if(!fread(sm.name, 28, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
     sm.name[27] = '\0';
 
     /* ignore sample data. */
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } INST_handler("INST", false);
 
@@ -306,18 +281,18 @@ static const class DSIK_PATT_Handler final: public IFFHandler<DSIK_data>
 public:
   DSIK_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DSIK_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
   {
     DSIK_song &s = m.song;
     if(len < 2)
     {
-      O_("Error     : PATT chunk length < 2.\n");
-      return DSIK_INVALID;
+      O_("Error   : PATT chunk length < 2.\n");
+      return modutil::INVALID;
     }
     if(m.current_pattern >= MAX_PATTERNS)
     {
-      O_("Warning   : ignoring pattern %u.\n", m.current_pattern);
-      return DSIK_SUCCESS;
+      O_("Warning : ignoring pattern %u.\n", m.current_pattern);
+      return modutil::SUCCESS;
     }
 
     DSIK_pattern &p = m.patterns[m.current_pattern++];
@@ -325,14 +300,14 @@ public:
     p.length_in_bytes = fget_u16le(fp);
     if(p.length_in_bytes < 2)
     {
-      O_("Error     : pattern %u length field invalid %d.\n", m.current_pattern - 1, static_cast<int>(p.length_in_bytes) - 2);
-      return DSIK_INVALID;
+      O_("Error   : pattern %u length field invalid %d.\n", m.current_pattern - 1, static_cast<int>(p.length_in_bytes) - 2);
+      return modutil::INVALID;
     }
     p.length_in_bytes -= 2;
 
     std::unique_ptr<uint8_t[]> buffer(new uint8_t[p.length_in_bytes]);
     if(!fread(buffer.get(), p.length_in_bytes, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
 
     // Prescan row count.
     size_t i;
@@ -346,8 +321,8 @@ public:
         size_t ch = f & DSIK_pattern::CHANNEL;
         if(ch > s.num_channels)
         {
-          O_("Error     : invalid channel %zu referenced in pattern %u.\n", ch, m.current_pattern - 1);
-          return DSIK_INVALID;
+          O_("Error   : invalid channel %zu referenced in pattern %u.\n", ch, m.current_pattern - 1);
+          return modutil::INVALID;
         }
 
         if(f & DSIK_pattern::NOTE)
@@ -381,8 +356,8 @@ public:
 
     if(i > p.length_in_bytes)
     {
-      O_("Error     : invalid pattern data in pattern %u.\n", m.current_pattern - 1);
-      return DSIK_INVALID;
+      O_("Error   : invalid pattern data in pattern %u.\n", m.current_pattern - 1);
+      return modutil::INVALID;
     }
 
     if(p.num_rows > 128)
@@ -419,7 +394,7 @@ public:
       else
         row += s.num_channels;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } PATT_handler("PATT", false);
 
@@ -433,7 +408,7 @@ static const IFF<DSIK_data> DSIK_parser(Endian::LITTLE, IFFPadding::BYTE,
 
 static void print_headers(DSIK_song &s, DSIK_pattern &p)
 {
-  O_("          :");
+  O_("        :");
   for(unsigned int chn = 0; chn < s.num_channels; chn++)
   {
     if(!p.channel_cols[chn])
@@ -443,7 +418,7 @@ static void print_headers(DSIK_song &s, DSIK_pattern &p)
   }
   fprintf(stderr, "\n");
 
-  O_("--------- :");
+  O_("------- :");
   for(size_t i = 0; i < s.num_channels; i++)
   {
     if(!p.channel_cols[i])
@@ -456,7 +431,7 @@ static void print_headers(DSIK_song &s, DSIK_pattern &p)
 
 static void print_row(DSIK_song &s, DSIK_pattern &p, unsigned int row)
 {
-  O_(" %8u :", row);
+  O_("%6u  :", row);
 
   DSIK_pattern::event *current = p.data + row * s.num_channels;
   for(size_t i = 0; i < s.num_channels; i++, current++)
@@ -483,14 +458,14 @@ static void print_row(DSIK_song &s, DSIK_pattern &p, unsigned int row)
 }
 
 
-int DSIK_read(FILE *fp)
+modutil::error DSIK_read(FILE *fp)
 {
   DSIK_data m{};
   DSIK_song &s = m.song;
   DSIK_parser.max_chunk_length = 0;
 
   if(!fread(m.header, 12, 1, fp))
-    return DSIK_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(!strncmp(m.header + 0, "RIFF", 4) && !strncmp(m.header + 8, "DSMF", 4))
   {
@@ -503,33 +478,36 @@ int DSIK_read(FILE *fp)
     m.type = DSMF_VARIANT;
 
     if(!fread(m.header + 12, 4, 1, fp))
-      return DSIK_READ_ERROR;
+      return modutil::READ_ERROR;
   }
   else
 
   if(!strncmp(m.header + 0, "DSM\x10", 4))
   {
-    return DSIK_OLD_FORMAT;
+    total_dsik++;
+    return modutil::DSIK_OLD_FORMAT;
   }
   else
-    return DSIK_NOT_A_DSM;
+    return modutil::FORMAT_ERROR;
 
-  int err = DSIK_parser.parse_iff(fp, 0, m);
+  total_dsik++;
+
+  modutil::error err = DSIK_parser.parse_iff(fp, 0, m);
   if(err)
     return err;
 
   if(DSIK_parser.max_chunk_length > 4*1024*1024)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-  O_("Name      : %s\n",  s.name);
-  O_("Version   : %04u\n",s.format_version);
-  O_("Samples   : %u\n",  s.num_samples);
-  O_("Orders    : %u\n",  s.num_orders);
-  O_("Patterns  : %u\n",  s.num_patterns);
-  O_("Channels  : %u\n",  s.num_channels);
-  O_("Max Chunk : %zu\n", DSIK_parser.max_chunk_length);
+  O_("Name    : %s\n",  s.name);
+  O_("Version : %04u\n",s.format_version);
+  O_("Samples : %u\n",  s.num_samples);
+  O_("Orders  : %u\n",  s.num_orders);
+  O_("Patterns: %u\n",  s.num_patterns);
+  O_("Channels: %u\n",  s.num_channels);
+  O_("MaxChunk: %zu\n", DSIK_parser.max_chunk_length);
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_STR[i]);
@@ -537,18 +515,18 @@ int DSIK_read(FILE *fp)
 
   if(Config.dump_samples)
   {
-    O_("          :\n");
+    O_("        :\n");
 
     static const char PAD[] = "------------------------------";
-    O_("          : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : Vol  C4Rate  Period  Flags :\n",
+    O_("Samples : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : Vol  C4Rate  Period  Flags :\n",
       "Name", "Filename", "Length", "LoopStart", "LoopEnd");
-    O_("          : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : ---  ------  ------  ----- :\n",
+    O_("------- : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : ---  ------  ------  ----- :\n",
       PAD, PAD, PAD, PAD, PAD);
 
     for(unsigned int i = 0; i < s.num_samples; i++)
     {
       DSIK_sample &sm = m.samples[i];
-      O_("Sample %02x : %-27.27s  %-12.12s : %-10u %-10u %-10u : %-3u  %-6u  %-6u  %-5u :\n",
+      O_("    %02x  : %-27.27s  %-12.12s : %-10u %-10u %-10u : %-3u  %-6u  %-6u  %-5u :\n",
         i + 1, sm.name, sm.filename,
         sm.length, sm.loop_start, sm.loop_end,
         sm.default_volume, sm.c4rate, sm.period, sm.flags
@@ -558,12 +536,15 @@ int DSIK_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
-    O_("Orders    :");
+    O_("        :\n");
+    O_("Orders  :");
 
     for(unsigned int i = 0; i < s.num_orders; i++)
       fprintf(stderr, " %02u", s.orders[i]);
     fprintf(stderr, "\n");
+
+    if(!Config.dump_pattern_rows)
+      O_("        :\n");
 
     for(unsigned int i = 0; i < s.num_patterns; i++)
     {
@@ -575,13 +556,13 @@ int DSIK_read(FILE *fp)
 
       DSIK_pattern &p = m.patterns[i];
 
-      O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.length_in_bytes);
+      O_("Pat. %02x : %u rows, %u bytes\n", i, p.num_rows, p.length_in_bytes);
 
       if(Config.dump_pattern_rows)
       {
         if(p.is_empty)
         {
-          O_("          : Empty pattern data.\n");
+          O_("        : Empty pattern data.\n");
           continue;
         }
 
@@ -591,58 +572,28 @@ int DSIK_read(FILE *fp)
       }
     }
   }
-  return DSIK_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-void check_dsm(const char *filename)
+class DSIK_loader : modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  DSIK_loader(): modutil::loader("DSM : Digital Sound Interface Kit") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("File      : %s\n", filename);
-
-    int err = DSIK_read(fp);
-    if(err)
-      O_("Error     : %s\n\n", DSIK_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Error     : failed to open '%s'.\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return DSIK_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_dsm(buffer);
+    if(!total_dsik)
+      return;
 
-        read_stdin = true;
-      }
-      continue;
-    }
-    check_dsm(arg);
+    fprintf(stderr, "\n");
+    O_("Total DSM           : %d\n", total_dsik);
+    O_("------------------- :\n");
   }
+};
 
-  return 0;
-}
+static const DSIK_loader loader;

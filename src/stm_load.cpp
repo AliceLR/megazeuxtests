@@ -17,43 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <utility>
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "Dump information about STM files.\n\n"
-  "Usage:\n"
-  "  stmutil [options] [filename.ext...]\n\n";
+static int total_stms = 0;
 
-enum STM_error
-{
-  STM_SUCCESS,
-  STM_READ_ERROR,
-  STM_SEEK_ERROR,
-  STM_NOT_AN_STM,
-  STM_NOT_IMPLEMENTED,
-  STM_UNKNOWN_VERSION,
-  STM_INVALID_ORDERS,
-  STM_INVALID_PATTERNS,
-};
-
-static const char *STM_strerror(int err)
-{
-  switch(err)
-  {
-    case STM_SUCCESS:         return "no error";
-    case STM_READ_ERROR:      return "read error";
-    case STM_SEEK_ERROR:      return "seek error";
-    case STM_NOT_AN_STM:      return "not an .STM";
-    case STM_NOT_IMPLEMENTED: return "feature not implemented";
-    case STM_UNKNOWN_VERSION: return "unknown version";
-    case STM_INVALID_ORDERS:  return "invalid order count >256!";
-    case STM_INVALID_PATTERNS:return "invalid pattern count >=64!";
-  }
-  return "unknown error";
-}
 
 enum STM_features
 {
@@ -210,7 +180,7 @@ struct STM_module
   }
 };
 
-static int STM_read(FILE *fp)
+static modutil::error STM_read(FILE *fp)
 {
   STM_module m{};
   STM_header &h = m.header;
@@ -219,17 +189,40 @@ static int STM_read(FILE *fp)
    * Header.
    */
   if(!fread(h.name, sizeof(h.name), 1, fp))
-    return STM_READ_ERROR;
+    return modutil::READ_ERROR;
   if(!fread(h.tracker, sizeof(h.tracker), 1, fp))
-    return STM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   h.eof         = fgetc(fp);
   h.type        = fgetc(fp);
   h.version_maj = fgetc(fp);
   h.version_min = fgetc(fp);
   if(feof(fp))
-    return STM_READ_ERROR;
+    return modutil::READ_ERROR;
 
+  /* This format doesn't have a proper magic, so do some basic tests on the header. */
+  if(h.eof != '\x1a' || (h.type != TYPE_SONG && h.type != TYPE_MODULE))
+    return modutil::FORMAT_ERROR;
+  for(int i = 0; i < 8; i++)
+    if(!(h.tracker[i] >= 32 && h.tracker[i] <= 126))
+      return modutil::FORMAT_ERROR;
+
+  /* libxmp checks for this STX magic string at position 60,
+   * presumably to prevent false positives from S3M or STMIK files. */
+  {
+    long pos = ftell(fp);
+    if(fseek(fp, 60, SEEK_SET))
+      return modutil::SEEK_ERROR;
+    char tmp[4];
+    if(!fread(tmp, 4, 1, fp))
+      return modutil::READ_ERROR;
+    if(!memcmp(tmp, "SCRM", 4))
+      return modutil::FORMAT_ERROR;
+    if(fseek(fp, pos, SEEK_SET))
+      return modutil::SEEK_ERROR;
+  }
+
+  total_stms++;
   if(h.version_maj == 1)
   {
     h.num_instruments = fget_u16le(fp);
@@ -247,9 +240,9 @@ static int STM_read(FILE *fp)
     /* end ??? */
 
     if(feof(fp))
-      return STM_READ_ERROR;
+      return modutil::READ_ERROR;
     if(fseek(fp, h.bytes_to_skip, SEEK_CUR))
-      return STM_SEEK_ERROR;
+      return modutil::SEEK_ERROR;
   }
   else
 
@@ -271,10 +264,10 @@ static int STM_read(FILE *fp)
     /* end ??? */
 
     if(!fread(h.unused, sizeof(h.unused), 1, fp))
-      return STM_READ_ERROR;
+      return modutil::READ_ERROR;
   }
   else
-    return STM_UNKNOWN_VERSION;
+    return modutil::STM_UNKNOWN_VERSION;
 
   memcpy(m.name, h.name, 20);
   m.name[20] = '\0';
@@ -295,7 +288,7 @@ static int STM_read(FILE *fp)
   {
     STM_instrument &ins = m.instruments[i];
     if(!fread(ins.filename, sizeof(ins.filename), 1, fp))
-      return STM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     ins.filename[sizeof(ins.filename) - 1] = '\0';
 
@@ -311,7 +304,7 @@ static int STM_read(FILE *fp)
     ins.segment_length = fget_u16le(fp);
 
     if(feof(fp))
-      return STM_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
 
@@ -319,13 +312,13 @@ static int STM_read(FILE *fp)
    * Order table.
    */
   if(h.num_orders > MAX_ORDERS)
-    return STM_INVALID_ORDERS;
+    return modutil::STM_INVALID_ORDERS;
   if(h.num_patterns > MAX_PATTERNS)
-    return STM_INVALID_PATTERNS;
+    return modutil::STM_INVALID_PATTERNS;
 
   m.stored_orders = h.num_orders;
   if(!fread(m.orders, h.num_orders, 1, fp))
-    return STM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   size_t real_orders = 0;
   size_t patterns_alloc = h.num_patterns;
@@ -376,21 +369,21 @@ static int STM_read(FILE *fp)
         *current = STM_event(fp);
     }
     if(feof(fp))
-      return STM_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
 
   /**
    * Print dump.
    */
-  O_("Name      : %s\n",       m.name);
-  O_("Tracker   : %8.8s\n",    h.tracker);
-  O_("Version   : %u.%02u\n",  h.version_maj, h.version_min);
-  O_("Samples   : %u\n",       h.num_instruments);
-  O_("Orders    : %u\n",       h.num_orders);
-  O_("Patterns  : %u\n",       h.num_patterns);
+  O_("Name    : %s\n",       m.name);
+  O_("Tracker : %8.8s\n",    h.tracker);
+  O_("Version : %u.%02u\n",  h.version_maj, h.version_min);
+  O_("Samples : %u\n",       h.num_instruments);
+  O_("Orders  : %u\n",       h.num_orders);
+  O_("Patterns: %u\n",       h.num_patterns);
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_DESC[i]);
@@ -398,13 +391,13 @@ static int STM_read(FILE *fp)
 
   if(Config.dump_samples)
   {
-    O_("          :\n");
-    O_("          : Filename      Seg.   Length Start  End   : Vol  C2Spd :\n");
-    O_("          : ------------  -----  -----  -----  ----- : ---  ----- :\n");
+    O_("        :\n");
+    O_("Samples : Filename      Seg.   Length Start  End   : Vol  C2Spd :\n");
+    O_("------- : ------------  -----  -----  -----  ----- : ---  ----- :\n");
     for(unsigned int i = 0; i < h.num_instruments; i++)
     {
       STM_instrument &ins = m.instruments[i];
-      O_("Sample %02x : %-12.12s  %-5u  %-5u  %-5u  %-5u : %-3u  %-5u :\n",
+      O_("    %02x  : %-12.12s  %-5u  %-5u  %-5u  %-5u : %-3u  %-5u :\n",
         i + 1, ins.filename, ins.segment,
         ins.length, ins.loop_start, ins.loop_end,
         ins.default_volume, ins.c2speed
@@ -414,8 +407,8 @@ static int STM_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
-    O_("Order tbl.:");
+    O_("        :\n");
+    O_("Orders  :");
     for(size_t i = 0; i < h.num_orders; i++)
       fprintf(stderr, " %02x", m.orders[i]);
     fprintf(stderr, " (%zu stored)\n", m.stored_orders);
@@ -427,7 +420,7 @@ static int STM_read(FILE *fp)
       if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
-      O_("Pattern %02x: %u rows, %u channels\n", i, p.rows, p.channels);
+      O_("Pat. %02x : %u rows, %u channels\n", i, p.rows, p.channels);
 
       if(!Config.dump_pattern_rows)
         continue;
@@ -460,6 +453,7 @@ static int STM_read(FILE *fp)
         O_("Pattern is blank.\n");
         continue;
       }
+      fprintf(stderr, "\n");
 
       O_("");
       for(unsigned int track = 0; track < p.channels; track++)
@@ -503,59 +497,29 @@ static int STM_read(FILE *fp)
     }
   }
 
-  return STM_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-static void STM_check(const char *filename)
+
+class STM_loader : modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  STM_loader(): modutil::loader("STM : Screamtracker 2") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    setvbuf(fp, NULL, _IOFBF, 2048);
-
-    O_("File      : %s\n", filename);
-
-    int err = STM_read(fp);
-    if(err)
-      O_("Error     : %s\n\n", STM_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Failed to open '%s'.\n\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return STM_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          STM_check(buffer);
+    if(!total_stms)
+      return;
 
-        read_stdin = true;
-      }
-      continue;
-    }
-    STM_check(arg);
+    fprintf(stderr, "\n");
+    O_("Total STMs          : %d\n", total_stms);
+    O_("------------------- :\n");
   }
-  return 0;
-}
+};
+
+static const STM_loader loader;

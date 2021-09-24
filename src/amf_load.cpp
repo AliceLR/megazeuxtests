@@ -14,10 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
- * Utility for dumping and aggregating DSMI AMF module information.
- */
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,40 +21,10 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "A utility to dump DSMI AMF metadata and patterns.\n"
-  "Usage:\n"
-  "  amfutil [options] [filenames...]\n\n";
+static int total_dsmi = 0;
 
-enum AMF_err
-{
-  AMF_SUCCESS,
-  AMF_ALLOC_ERROR,
-  AMF_READ_ERROR,
-  AMF_SEEK_ERROR,
-  AMF_IS_ASYLUM,
-  AMF_BAD_SIGNATURE,
-  AMF_BAD_VERSION,
-  AMF_BAD_CHANNELS,
-  AMF_BAD_TRACKS,
-};
-
-static const char *AMF_strerror(int err)
-{
-  switch(err)
-  {
-    case AMF_SUCCESS:       return "no error";
-    case AMF_READ_ERROR:    return "read error";
-    case AMF_SEEK_ERROR:    return "seek error";
-    case AMF_IS_ASYLUM:     return "is an ASYLUM AMF";
-    case AMF_BAD_SIGNATURE: return "AMF signature mismatch";
-    case AMF_BAD_VERSION:   return "AMF version invalid";
-    case AMF_BAD_CHANNELS:  return "too many channels";
-    case AMF_BAD_TRACKS:    return "too many tracks";
-  }
-  return "unknown error";
-}
 
 enum AMF_features
 {
@@ -281,12 +247,12 @@ struct AMF_module
   }
 };
 
-static int AMF_read(FILE *fp)
+static modutil::error AMF_read(FILE *fp)
 {
   AMF_module m{};
 
   if(!fread(m.magic, sizeof(m.magic), 1, fp))
-    return AMF_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(memcmp(m.magic, "AMF", 3))
   {
@@ -296,19 +262,21 @@ static int AMF_read(FILE *fp)
     {
       tmp[19] = '\0';
       if(!strcmp(tmp, "ASYLUM Music Format"))
-        return AMF_IS_ASYLUM;
+        return modutil::AMF_IS_ASYLUM;
     }
-    return AMF_BAD_SIGNATURE;
+    return modutil::FORMAT_ERROR;
   }
+
+  total_dsmi++;
 
   m.version = fgetc(fp);
   if(m.version != 0x01 && (m.version < 0x08 || m.version > 0x0E))
-    return AMF_BAD_VERSION;
+    return modutil::AMF_BAD_VERSION;
 
-  O_("Version   : DSMI %3.3s %02u\n", m.magic, m.version);
+  O_("Version : DSMI %3.3s %02u\n", m.magic, m.version);
 
   if(!fread(m.name, 32, 1, fp))
-    return AMF_READ_ERROR;
+    return modutil::READ_ERROR;
 
   m.name[31] = '\0';
 
@@ -322,10 +290,10 @@ static int AMF_read(FILE *fp)
     m.num_channels = 4;
 
   if(m.num_channels > AMF_MAX_CHANNELS)
-    return AMF_BAD_CHANNELS;
+    return modutil::AMF_BAD_CHANNELS;
 
   if(m.num_tracks > AMF_MAX_TRACKS)
-    return AMF_BAD_TRACKS;
+    return modutil::AMF_BAD_TRACKS;
 
   // Channel panning and/or remap.
   if(m.version >= 0x0B)
@@ -355,7 +323,7 @@ static int AMF_read(FILE *fp)
   }
 
   if(feof(fp))
-    return AMF_READ_ERROR;
+    return modutil::READ_ERROR;
 
   // Order table.
   m.orders = new AMF_order[m.num_orders]{};
@@ -380,10 +348,10 @@ static int AMF_read(FILE *fp)
 
     sample.type = fgetc(fp);
     if(!fread(sample.name, 32, 1, fp))
-      return AMF_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(!fread(sample.filename, 13, 1, fp))
-      return AMF_READ_ERROR;
+      return modutil::READ_ERROR;
 
     sample.index = fget_u32le(fp);
 
@@ -463,7 +431,7 @@ static int AMF_read(FILE *fp)
       continue;
 
     if(!fread(track.raw_data, track.calculated_size, 1, fp))
-      return AMF_READ_ERROR;
+      return modutil::READ_ERROR;
 
     // Translate packed data to expanded form.
     for(size_t j = 0; j < track.calculated_size; j += 3)
@@ -613,13 +581,13 @@ static int AMF_read(FILE *fp)
   }
 
   // Print metadata.
-  O_("Title     : %s\n", m.name);
-  O_("Samples   : %u\n", m.num_samples);
-  O_("Orders    : %u\n", m.num_orders);
-  O_("Tracks    : %zu (%u logical)\n", m.real_num_tracks, m.num_tracks);
-  O_("Channels  : %u\n", m.num_channels);
+  O_("Title   : %s\n", m.name);
+  O_("Samples : %u\n", m.num_samples);
+  O_("Orders  : %u\n", m.num_orders);
+  O_("Tracks  : %zu (%u logical)\n", m.real_num_tracks, m.num_tracks);
+  O_("Channels: %u\n", m.num_channels);
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_STR[i]);
@@ -629,13 +597,13 @@ static int AMF_read(FILE *fp)
   {
     if(m.num_samples)
     {
-      O_("          :\n");
-      O_("Samples   : D.Vol  C4 Rate : Length      Loop Start  Loop End   \n");
-      O_("-------   : -----  ------- : ----------  ----------  ---------- \n");
+      O_("        :\n");
+      O_("Samples : D.Vol  C4 Rate : Length      Loop Start  Loop End   \n");
+      O_("------- : -----  ------- : ----------  ----------  ---------- \n");
       for(unsigned int i = 0; i < m.num_samples; i++)
       {
         AMF_sample &sample = m.samples[i];
-        O_("Sample %02x : %-5u  %-7u : %-10u  %-10u  %-10u\n",
+        O_("    %02x  : %-5u  %-7u : %-10u  %-10u  %-10u\n",
           i + 1, sample.volume, sample.c4speed,
           sample.length, sample.loop_start, sample.loop_end
         );
@@ -645,14 +613,14 @@ static int AMF_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
-    O_("Orders    :\n");
-    O_("------    :\n");
+    O_("        :\n");
+    O_("Orders  :\n");
+    O_("------  :\n");
 
     for(unsigned int i = 0; i < m.num_orders; i++)
     {
       AMF_order &order = m.orders[i];
-      O_("Order %02x  : %-3u rows : ", i, order.num_rows);
+      O_("    %02x  : %-3u rows : ", i, order.num_rows);
 
       for(unsigned int j = 0; j < m.num_channels; j++)
         fprintf(stderr, " %04x ", order.real_tracks[j]);
@@ -660,9 +628,9 @@ static int AMF_read(FILE *fp)
       fprintf(stderr, "\n");
     }
 
-    O_("          :\n");
-    O_("Tracks    : Offset      Events  ???  Rows :\n");
-    O_("------    : ----------  ------  ---  ---- :\n");
+    O_("        :\n");
+    O_("Tracks  : Offset      Events  ???  Rows :\n");
+    O_("------  : ----------  ------  ---  ---- :\n");
 
     for(unsigned int i = 1; i <= m.real_num_tracks; i++)
     {
@@ -670,7 +638,7 @@ static int AMF_read(FILE *fp)
       if(!track.raw_data && !track.track_data)
         continue;
 
-      O_("Track %02x  : %-10u  %-6u  %-3u  %-4u :\n",
+      O_("    %02x  : %-10u  %-6u  %-3u  %-4u :\n",
        i, track.offset_in_file, track.num_events, track.unknown, track.num_rows);
     }
 
@@ -678,7 +646,7 @@ static int AMF_read(FILE *fp)
     {
       // Raw track data.
       if(m.real_num_tracks > 1)
-        O_("          :\n");
+        O_("        :\n");
 
       for(unsigned int i = 1; i <= m.real_num_tracks; i++)
       {
@@ -686,14 +654,14 @@ static int AMF_read(FILE *fp)
         if(!track.raw_data)
           continue;
 
-        O_("Track %02x  : ", i);
+        O_("Track %02x: ", i);
         for(unsigned int j = 0; j < track.calculated_size; j += 3)
         {
           if(j && !(j % 24))
           {
             // Insert break.
             fprintf(stderr, "\n");
-            O_("          : ");
+            O_("        : ");
           }
 
           fprintf(stderr, "%02x %02x %02x  ",
@@ -706,8 +674,8 @@ static int AMF_read(FILE *fp)
       static const char *BLANK = "                             ";
       static const char *LINE  = "-----------------------------";
 
-      O_("          :\n");
-      O_("Effect Key: ");
+      O_("        :\n");
+      O_("FX Key  : ");
       for(unsigned int i = 0; i < arraysize(AMF_effect_strings); i++)
         fprintf(stderr, "%s%s=%02x", (i > 0)?",":"", AMF_effect_strings[i], i + 0x81);
       fprintf(stderr, "\n");
@@ -719,8 +687,8 @@ static int AMF_read(FILE *fp)
         AMF_track *ord_tracks[AMF_MAX_CHANNELS];
         int ord_widths[AMF_MAX_CHANNELS];
 
-        O_("          :\n");
-        O_("Order %02x  :", i);
+        O_("        :\n");
+        O_("Ord. %02x :", i);
 
         // Get track pointers, compute widths, and print header.
         for(size_t j = 0; j < m.num_channels; j++)
@@ -751,7 +719,7 @@ static int AMF_read(FILE *fp)
         }
         fprintf(stderr, "\n");
 
-        O_("--------  :");
+        O_("------- :");
         for(size_t j = 0; j < m.num_channels; j++)
         {
           int width = ord_widths[j];
@@ -767,7 +735,7 @@ static int AMF_read(FILE *fp)
         // Print pattern body.
         for(unsigned int row = 0; row < order.num_rows; row++)
         {
-          O_("      %02x  :", row);
+          O_("    %02x  :", row);
           for(unsigned int col = 0; col < m.num_channels; col++)
           {
             int width = ord_widths[col];
@@ -840,57 +808,29 @@ static int AMF_read(FILE *fp)
     }
   }
 
-  return AMF_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-static void check_AMF(const char *filename)
+
+class AMF_loader : modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  AMF_loader(): modutil::loader("AMF : DSMI") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("File      : %s\n", filename);
-
-    int err = AMF_read(fp);
-    if(err)
-      O_("Error     : %s\n\n", AMF_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Error     : failed to open '%s'.\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return AMF_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    if(!strcmp(argv[i], "-"))
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_AMF(buffer);
+    if(!total_dsmi)
+      return;
 
-        read_stdin = true;
-      }
-      continue;
-    }
-    check_AMF(argv[i]);
+    fprintf(stderr, "\n");
+    O_("Total AMF/DSMI      : %d\n", total_dsmi);
+    O_("------------------- :\n");
   }
+};
 
-  return 0;
-}
+static const AMF_loader loader;

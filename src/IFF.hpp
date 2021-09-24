@@ -21,16 +21,6 @@
 #include <vector>
 #include "common.hpp"
 
-enum IFF_error
-{
-  IFF_SUCCESS,
-  IFF_READ_ERROR      = 0x1000,
-  IFF_SEEK_ERROR      = 0x1001,
-  IFF_CONTAINER_ERROR = 0x1002,
-  IFF_NO_HANDLER      = 0x1003,
-  IFF_CONFIG_ERROR    = 0x1004,
-};
-
 enum class IFFPadding
 {
   BYTE,
@@ -44,8 +34,6 @@ enum class IFFCodeSize
   FOUR = 4,
 };
 
-const char *IFF_strerror(int err);
-
 template<class T>
 class IFFHandler
 {
@@ -53,7 +41,7 @@ public:
   const char *id;
   bool is_container;
 
-  virtual int parse(FILE *fp, size_t len, T &m) const = 0;
+  virtual modutil::error parse(FILE *fp, size_t len, T &m) const = 0;
 
   IFFHandler():
     id("IGNORE"), is_container(false) {}
@@ -120,7 +108,7 @@ public:
       handlers.push_back(handlers_in[i]);
   }
 
-  int parse_iff(FILE *fp, size_t container_len, T &m) const
+  modutil::error parse_iff(FILE *fp, size_t container_len, T &m) const
   {
     size_t start_pos = ftell(fp);
     size_t current_pos = start_pos;
@@ -135,10 +123,10 @@ public:
         break;
 
       default:
-        return IFF_CONFIG_ERROR;
+        return modutil::IFF_CONFIG_ERROR;
     }
     if(codelen + 1 > arraysize(id))
-      return IFF_CONFIG_ERROR;
+      return modutil::IFF_CONFIG_ERROR;
 
     while(!container_len || current_pos < start_pos + container_len)
     {
@@ -191,27 +179,27 @@ public:
 
       if(!handler->is_container)
       {
-        int result = handler->parse(fp, len, m);
+        modutil::error result = handler->parse(fp, len, m);
         if(result)
           return result;
       }
       else
       {
-        int result = parse_iff(fp, len, m);
+        modutil::error result = parse_iff(fp, len, m);
         if(result)
           return result;
       }
 
       if(fseek(fp, end_pos, SEEK_SET))
-        return IFF_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
 
       current_pos = ftell(fp);
     }
 
     if(container_len && current_pos > start_pos + container_len)
-      return IFF_CONTAINER_ERROR;
+      return modutil::IFF_CONTAINER_ERROR;
 
-    return IFF_SUCCESS;
+    return modutil::SUCCESS;
   }
 };
 

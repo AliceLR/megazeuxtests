@@ -87,7 +87,7 @@ static const class IFFDumpHandler final: public IFFHandler<IFFDumpData>
   mutable bool print_hex = false;
 
 public:
-  int parse(FILE *fp, size_t len, IFFDumpData &m) const override
+  modutil::error parse(FILE *fp, size_t len, IFFDumpData &m) const override
   {
     const auto *current = m.current;
     const char *current_id = current->current_id;
@@ -120,15 +120,16 @@ public:
     }
     else
       O_("%-8s : pos=%zu, len=%zu\n", current_id, current_start, len);
-    return 0;
+
+    return modutil::SUCCESS;
   }
 } iff_handler{};
 
 
-static int IFF_dump(FILE *fp)
+static modutil::error IFF_dump(FILE *fp)
 {
   if(fseek(fp, IFFConfig.offset, SEEK_SET))
-    return IFF_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   IFF<IFFDumpData> iff(IFFConfig.endian, IFFConfig.padding, IFFConfig.codesize, &iff_handler);
   IFFDumpData data{};
@@ -143,9 +144,9 @@ static void check_iff(const char *filename)
   {
     O_("File     : %s\n", filename);
 
-    int err = IFF_dump(fp);
+    modutil::error err = IFF_dump(fp);
     if(err)
-      O_("Error    : %s\n\n", IFF_strerror(err));
+      O_("Error    : %s\n\n", modutil::strerror(err));
     else
       fprintf(stderr, "\n");
 

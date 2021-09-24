@@ -21,33 +21,15 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
+
+static int total_dbm = 0;
+
 
 static const char USAGE[] =
   "A utility to dump DBM metadata and patterns.\n"
   "Usage:\n"
   "  dbmutil [options] [filenames...]\n\n";
-
-enum DBM_error
-{
-  DBM_SUCCESS,
-  DBM_READ_ERROR,
-  DBM_SEEK_ERROR,
-  DBM_NOT_A_DBM,
-  DBM_INVALID,
-};
-
-static const char *DBM_strerror(int err)
-{
-  switch(err)
-  {
-    case DBM_SUCCESS:           return "no error";
-    case DBM_READ_ERROR:        return "read error";
-    case DBM_SEEK_ERROR:        return "seek error";
-    case DBM_NOT_A_DBM:         return "not a DigiBooster Pro module";
-    case DBM_INVALID:           return "invalid DBM";
-  }
-  return IFF_strerror(err);
-}
 
 enum DBM_features
 {
@@ -285,21 +267,21 @@ static const class DBM_NAME_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_NAME_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(len < 44)
     {
-      O_("Error     : NAME chunk length %zu, expected >=44.\n", len);
-      return DBM_INVALID;
+      O_("Error   : NAME chunk length %zu, expected >=44.\n", len);
+      return modutil::INVALID;
     }
     if(m.read_name)
     {
-      O_("Error    : duplicate NAME.\n");
-      return DBM_INVALID;
+      O_("Error   : duplicate NAME.\n");
+      return modutil::INVALID;
     }
 
     if(!fread(m.name, 44, 1, fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     m.name[44] = '\0';
     m.read_name = true;
@@ -307,7 +289,7 @@ public:
     memcpy(m.name_stripped, m.name, arraysize(m.name));
     strip_module_name(m.name_stripped, arraysize(m.name_stripped));
 
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } NAME_handler("NAME", false);
 
@@ -316,17 +298,17 @@ static const class DBM_INFO_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_INFO_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(len < 10)
     {
-      O_("Error     : INFO chunk length %zu, expected >=10.\n", len);
-      return DBM_INVALID;
+      O_("Error   : INFO chunk length %zu, expected >=10.\n", len);
+      return modutil::INVALID;
     }
     if(m.read_info)
     {
-      O_("Error     : duplicate INFO.\n");
-      return DBM_INVALID;
+      O_("Error   : duplicate INFO.\n");
+      return modutil::INVALID;
     }
     m.read_info = true;
 
@@ -337,9 +319,9 @@ public:
     m.num_channels    = fget_u16be(fp);
 
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } INFO_handler("INFO", false);
 
@@ -348,31 +330,31 @@ static const class DBM_SONG_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(len < 46 * m.num_songs)
     {
-      O_("Error     : SONG chunk length < %u\n", 46 * m.num_songs);
-      return DBM_INVALID;
+      O_("Error   : SONG chunk length < %u\n", 46 * m.num_songs);
+      return modutil::INVALID;
     }
 
     for(size_t i = 0; i < m.num_songs; i++)
     {
       if(i >= MAX_SONGS)
       {
-        O_("Warning   : ignoring SONG %zu.\n", i);
+        O_("Warning : ignoring SONG %zu.\n", i);
         continue;
       }
 
       DBM_song &sng = m.songs[i];
 
       if(!fread(sng.name, 44, 1, fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
       sng.name[44] = '\0';
 
       sng.num_orders = fget_u16be(fp);
       if(feof(fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
 
       sng.orders = new uint16_t[sng.num_orders];
 
@@ -380,9 +362,9 @@ public:
         sng.orders[i] = fget_u16be(fp);
 
       if(feof(fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } SONG_handler("SONG", false);
 
@@ -391,7 +373,7 @@ static const class DBM_PATT_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -400,13 +382,13 @@ public:
     {
       if(i >= MAX_PATTERNS)
       {
-        O_("Warning   : ignoring pattern %zu.\n", i);
+        O_("Warning : ignoring pattern %zu.\n", i);
         continue;
       }
       if(len < 6)
       {
-        O_("Error     : pattern %zu header truncated.\n", i);
-        return DBM_READ_ERROR;
+        O_("Error   : pattern %zu header truncated.\n", i);
+        return modutil::READ_ERROR;
       }
 
       DBM_pattern &p = m.patterns[i];
@@ -421,20 +403,20 @@ public:
         m.uses[FT_ROWS_OVER_256] = true;
 
       if(feof(fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
 
       if(len < p.packed_data_size)
       {
-        O_("Error     : pattern %zu truncated (left=%zu, expected>=%u).\n",
+        O_("Error   : pattern %zu truncated (left=%zu, expected>=%u).\n",
           i, len, p.packed_data_size);
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
       }
 
       if(!p.num_rows)
       {
         if(p.packed_data_size)
           if(fseek(fp, p.packed_data_size, SEEK_CUR))
-            return DBM_SEEK_ERROR;
+            return modutil::SEEK_ERROR;
         continue;
       }
 
@@ -463,8 +445,8 @@ public:
         channel--;
         if(channel >= m.num_channels)
         {
-          O_("Error     : invalid pattern data.\n");
-          return DBM_INVALID;
+          O_("Error   : invalid pattern data.\n");
+          return modutil::INVALID;
         }
 
         uint8_t &sz = p.channel_size[channel];
@@ -507,22 +489,22 @@ public:
         }
 
         if(feof(fp))
-          return DBM_READ_ERROR;
+          return modutil::READ_ERROR;
       }
       if(left)
       {
         if(left < 0)
-          O_("Warning   : read %zd past end of packed data for pattern %zu.\n", -left, i);
+          O_("Warning : read %zd past end of packed data for pattern %zu.\n", -left, i);
         /* Don't print for 1 byte, this seems to be common... */
         if(left > 1)
-          O_("Warning   : %zd of packed data remaining for pattern %zu.\n", left, i);
+          O_("Warning : %zd of packed data remaining for pattern %zu.\n", left, i);
         if(fseek(fp, left, SEEK_CUR))
-          return DBM_SEEK_ERROR;
+          return modutil::SEEK_ERROR;
       }
 
       len -= p.packed_data_size;
     }
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } PATT_handler("PATT", false);
 
@@ -531,7 +513,7 @@ static const class DBM_PNAM_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_PNAM_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -555,11 +537,11 @@ public:
 
       p.name = new char[length + 1];
       if(!fread(p.name, length, 1, fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
       p.name[length] = '\0';
       left -= length;
     }
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } PNAM_handler("PNAM", false);
 
@@ -568,29 +550,29 @@ static const class DBM_INST_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
 
     if(len < 50 * m.num_instruments)
     {
-      O_("Error     : INST chunk length < %u\n", 50 * m.num_instruments);
-      return DBM_INVALID;
+      O_("Error   : INST chunk length < %u\n", 50 * m.num_instruments);
+      return modutil::INVALID;
     }
 
     for(size_t i = 0; i < m.num_instruments; i++)
     {
       if(i > MAX_INSTRUMENTS)
       {
-        O_("Warning   : ignoring instrument %zu.\n", i);
+        O_("Warning : ignoring instrument %zu.\n", i);
         continue;
       }
 
       DBM_instrument &is = m.instruments[i];
 
       if(!fread(is.name, 30, 1, fp))
-        return DBM_READ_ERROR;
+        return modutil::READ_ERROR;
       is.name[30] = '\0';
 
       is.sample_id     = fget_u16be(fp);
@@ -603,9 +585,9 @@ public:
     }
 
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } INST_handler("INST", false);
 
@@ -614,22 +596,22 @@ static const class DBM_SMPL_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_SMPL_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
 
     if(len < 8 * m.num_samples)
     {
-      O_("Error     : SMPL chunk length < %u.\n", 8 * m.num_samples);
-      return DBM_INVALID;
+      O_("Error   : SMPL chunk length < %u.\n", 8 * m.num_samples);
+      return modutil::INVALID;
     }
 
     for(size_t i = 0; i < m.num_samples; i++)
     {
       if(i >= MAX_SAMPLES)
       {
-        O_("Warning   : ignoring sample %zu.\n", i);
+        O_("Warning : ignoring sample %zu.\n", i);
         continue;
       }
 
@@ -647,13 +629,13 @@ public:
 
       /* Ignore the sample data... */
       if(fseek(fp, byte_length, SEEK_CUR))
-        return DBM_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } SMPL_handler("SMPL", false);
 
-static int read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *fp)
+static modutil::error read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *fp)
 {
   env.instrument_id    = fget_u16be(fp);
   env.flags            = fgetc(fp);
@@ -675,51 +657,51 @@ static int read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *f
   }
 
   if(feof(fp))
-    return DBM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(env.instrument_id > m.num_instruments)
   {
-    O_("Warning   : envelope %zu for invalid instrument %u\n",
+    O_("Warning : envelope %zu for invalid instrument %u\n",
       env_num, env.instrument_id);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
   if(env.num_points > DBM_envelope::MAX_POINTS)
   {
-    O_("Warning   : envelope %zu for instrument %u contains too many points (%zu)\n",
+    O_("Warning : envelope %zu for instrument %u contains too many points (%zu)\n",
       env_num, env.instrument_id, (size_t)env.num_points);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
   if(env.sustain_1_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning   : envelope %zu sustain 1 (%u) >= max points (32)\n",
+    O_("Warning : envelope %zu sustain 1 (%u) >= max points (32)\n",
       env_num, env.sustain_1_point);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
   if(env.sustain_2_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning   : envelope %zu sustain 2 (%u) >= max points (32)\n",
+    O_("Warning : envelope %zu sustain 2 (%u) >= max points (32)\n",
       env_num, env.sustain_2_point);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
   if(env.loop_start_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning   : envelope %zu loop start (%u) >= max points (32)\n",
+    O_("Warning : envelope %zu loop start (%u) >= max points (32)\n",
       env_num, env.loop_start_point);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
   if(env.loop_end_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning   : envelope %zu loop end (%u) >= max points (32)\n",
+    O_("Warning : envelope %zu loop end (%u) >= max points (32)\n",
       env_num, env.loop_end_point);
-    return DBM_INVALID;
+    return modutil::INVALID;
   }
 
-  return DBM_SUCCESS;
+  return modutil::SUCCESS;
 }
 
 static const class DBM_VENV_Handler final: public IFFHandler<DBM_data>
@@ -727,7 +709,7 @@ static const class DBM_VENV_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_VENV_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -736,32 +718,32 @@ public:
 
     if(len < 4)
     {
-      O_("Error     : VENV chunk length < 4.\n");
-      return DBM_INVALID;
+      O_("Error   : VENV chunk length < 4.\n");
+      return modutil::INVALID;
     }
 
     uint16_t num_envelopes = fget_u16be(fp);
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(!num_envelopes)
-      return DBM_SUCCESS;
+      return modutil::SUCCESS;
 
     m.num_volume_envelopes = num_envelopes;
     m.volume_envelopes = new DBM_envelope[num_envelopes];
 
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
-      O_("Error     : VENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+      O_("Error   : VENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
         num_envelopes, len, (size_t)(2 + num_envelopes * 136));
-      return DBM_SUCCESS;
+      return modutil::SUCCESS;
     }
 
     for(size_t i = 0; i < num_envelopes; i++)
     {
       DBM_envelope &env = m.volume_envelopes[i];
-      int result = read_envelope(m, env, i, fp);
-      if(result == DBM_INVALID)
+      modutil::error result = read_envelope(m, env, i, fp);
+      if(result == modutil::INVALID)
       {
         m.uses[FT_BAD_VOLUME_ENVELOPE] = true;
       }
@@ -770,7 +752,7 @@ public:
       if(result)
         return result;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } VENV_handler("VENV", false);
 
@@ -779,7 +761,7 @@ static const class DBM_PENV_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_PENV_Handler(const char *n, bool c): IFFHandler(n,c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -788,32 +770,32 @@ public:
 
     if(len < 4)
     {
-      O_("Error     : PENV chunk length < 4.\n");
-      return DBM_INVALID;
+      O_("Error   : PENV chunk length < 4.\n");
+      return modutil::INVALID;
     }
 
     uint16_t num_envelopes = fget_u16be(fp);
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(!num_envelopes)
-      return DBM_SUCCESS;
+      return modutil::SUCCESS;
 
     m.num_pan_envelopes = num_envelopes;
     m.pan_envelopes = new DBM_envelope[num_envelopes];
 
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
-      O_("Error     : PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+      O_("Error   : PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
         num_envelopes, len, (size_t)(2 + num_envelopes * 136));
-      return DBM_SUCCESS;
+      return modutil::SUCCESS;
     }
 
     for(size_t i = 0; i < num_envelopes; i++)
     {
       DBM_envelope &env = m.pan_envelopes[i];
-      int result = read_envelope(m, env, i, fp);
-      if(result == DBM_INVALID)
+      modutil::error result = read_envelope(m, env, i, fp);
+      if(result == modutil::INVALID)
       {
         m.uses[FT_BAD_PAN_ENVELOPE] = true;
       }
@@ -822,7 +804,7 @@ public:
       if(result)
         return result;
     }
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } PENV_handler("PENV", false);
 
@@ -831,32 +813,32 @@ static const class DBM_DSPE_Handler final: public IFFHandler<DBM_data>
 public:
   DBM_DSPE_Handler(const char *n, bool c): IFFHandler(n,c) {}
 
-  int parse(FILE *fp, size_t len, DBM_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
   {
     m.uses[FT_DSPE_CHUNK] = true;
 
     if(len < 10)
     {
-      O_("Error     : DSPE chunk length < 10.\n");
-      return DBM_INVALID;
+      O_("Error   : DSPE chunk length < 10.\n");
+      return modutil::INVALID;
     }
 
     m.dspe_mask_length = fget_u16be(fp);
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     m.dspe_mask = new uint8_t[m.dspe_mask_length];
     if(!fread(m.dspe_mask, m.dspe_mask_length, 1, fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     m.dspe_global_echo_delay    = fget_u16be(fp);
     m.dspe_global_echo_feedback = fget_u16be(fp);
     m.dspe_global_echo_mix      = fget_u16be(fp);
     m.dspe_cross_channel_echo   = fget_u16be(fp);
     if(feof(fp))
-      return DBM_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return DBM_SUCCESS;
+    return modutil::SUCCESS;
   }
 } DSPE_handler("DSPE", false);
 
@@ -875,9 +857,9 @@ static const IFF<DBM_data> DBM_parser({
 
 static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 {
-  O_("          :\n");
-  O_("          : Instr. #  Enabled : (...)=Loop  S=Sustain\n");
-  O_("          : --------  ------- : -------------------------\n");
+  O_("        :\n");
+  O_("%-6s  : Instr. #  Enabled : (...)=Loop  S=Sustain\n", name);
+  O_("------  : --------  ------- : -------------------------\n");
   for(unsigned int i = 0; i < num; i++)
   {
     DBM_envelope &env = envs[i];
@@ -886,8 +868,8 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
     size_t sustain_1  = (env.flags & DBM_envelope::SUSTAIN_1) ? env.sustain_1_point  : -1;
     size_t sustain_2  = (env.flags & DBM_envelope::SUSTAIN_2) ? env.sustain_2_point  : -1;
 
-    O_("%-6s %02x : %-8u  %-7s : ",
-      name, i + 1, env.instrument_id, (env.flags & DBM_envelope::ENABLED) ? "Yes" : "No"
+    O_("    %02x  : %-8u  %-7s : ",
+      i + 1, env.instrument_id, (env.flags & DBM_envelope::ENABLED) ? "Yes" : "No"
     );
     for(size_t j = 0; j < env.num_points; j++)
     {
@@ -899,7 +881,7 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
     }
     fprintf(stderr, "\n");
 
-    O_("          : %8s  %7s : ", "", "");
+    O_("        : %8s  %7s : ", "", "");
     for(size_t j = 0; j < env.num_points; j++)
     {
       fprintf(stderr, "%1s%-4d%1s%1s ",
@@ -979,43 +961,45 @@ static void print_pattern_notes(DBM_data &m, DBM_pattern &p)
   }
 }
 
-static int DBM_read(FILE *fp)
+static modutil::error DBM_read(FILE *fp)
 {
   DBM_data m{};
   DBM_parser.max_chunk_length = 0;
 
   if(!fread(m.magic, 4, 1, fp))
-    return DBM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(strncmp(m.magic, "DBM0", 4))
-    return DBM_NOT_A_DBM;
+    return modutil::FORMAT_ERROR;
+
+  total_dbm++;
 
   m.tracker_version = fget_u16be(fp);
   fget_u16be(fp);
 
-  int err = DBM_parser.parse_iff(fp, 0, m);
+  modutil::error err = DBM_parser.parse_iff(fp, 0, m);
   if(err)
     return err;
 
   if(DBM_parser.max_chunk_length > 4*1024*1024)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-  O_("Name      : %s\n",  m.name_stripped);
-  O_("Version   : %d.%02x\n", m.tracker_version >> 8, m.tracker_version & 0xFF);
-  O_("Songs     : %u\n",  m.num_songs);
+  O_("Name    : %s\n",  m.name_stripped);
+  O_("Version : %d.%02x\n", m.tracker_version >> 8, m.tracker_version & 0xFF);
+  O_("Songs   : %u\n",  m.num_songs);
   if(m.num_samples)
-    O_("Samples   : %u\n",  m.num_samples);
+    O_("Samples : %u\n",  m.num_samples);
   if(m.num_instruments)
-    O_("Instr.    : %u\n",  m.num_instruments);
+    O_("Instr.  : %u\n",  m.num_instruments);
   if(m.num_volume_envelopes)
-    O_("V.Envs.   : %u\n", m.num_volume_envelopes);
+    O_("V.Envs. : %u\n", m.num_volume_envelopes);
   if(m.num_pan_envelopes)
-    O_("P.Envs.   : %u\n", m.num_pan_envelopes);
-  O_("Channels  : %u\n",  m.num_channels);
-  O_("Patterns  : %u\n",  m.num_patterns);
-  O_("Max Chunk : %zu\n", DBM_parser.max_chunk_length);
+    O_("P.Envs. : %u\n", m.num_pan_envelopes);
+  O_("Channels: %u\n",  m.num_channels);
+  O_("Patterns: %u\n",  m.num_patterns);
+  O_("MaxChunk: %zu\n", DBM_parser.max_chunk_length);
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_STR[i]);
@@ -1025,25 +1009,25 @@ static int DBM_read(FILE *fp)
   {
     if(m.num_samples)
     {
-      O_("          :\n");
-      O_("          : Type    Length (samples)\n");
-      O_("          : ------  ----------------\n");
+      O_("        :\n");
+      O_("Samples : Type    Length (samples)\n");
+      O_("------- : ------  ----------------\n");
       for(unsigned int i = 0; i < m.num_samples; i++)
       {
         DBM_sample &s = m.samples[i];
-        O_("Sample %02x : %-6s  %-u\n", i + 1, s.type_str(), s.length);
+        O_("    %02x  : %-6s  %-u\n", i + 1, s.type_str(), s.length);
       }
     }
 
     if(m.num_instruments)
     {
-      O_("          :\n");
-      O_("          : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
-      O_("          : --------  -----  -----  ---------- : ----------  ---------- \n");
+      O_("        :\n");
+      O_("Instr.  : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
+      O_("------  : --------  -----  -----  ---------- : ----------  ---------- \n");
       for(unsigned int i = 0; i < m.num_instruments; i++)
       {
         DBM_instrument &is = m.instruments[i];
-        O_("Instr. %02x : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
+        O_("    %02x  : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
           i + 1, is.sample_id, is.volume, is.panning, is.finetune_hz,
           is.repeat_start, is.repeat_length
         );
@@ -1063,7 +1047,7 @@ static int DBM_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
+    O_("        :\n");
 
     /* Print each song + order list. */
     for(unsigned int i = 0; i < m.num_songs; i++)
@@ -1073,12 +1057,12 @@ static int DBM_read(FILE *fp)
 
       DBM_song &sng = m.songs[i];
 
-      O_("Song %02x   : '%s' (%u orders)\n", i + 1, sng.name, sng.num_orders);
-      O_("          :");
+      O_("Song %02x : '%s' (%u orders)\n", i + 1, sng.name, sng.num_orders);
+      O_("        :");
       for(size_t j = 0; j < sng.num_orders; j++)
         fprintf(stderr, " %02x", sng.orders[j]);
       fprintf(stderr, "\n");
-      O_("          :\n");
+      O_("        :\n");
     }
 
     for(unsigned int i = 0; i < m.num_patterns; i++)
@@ -1092,9 +1076,9 @@ static int DBM_read(FILE *fp)
         fprintf(stderr, "\n");
 
       if(m.pattern_names)
-        O_("Pattern %02x: %u rows, %u bytes ('%s')\n", i, p.num_rows, p.packed_data_size, p.name);
+        O_("Pat. %02x : %u rows, %u bytes ('%s')\n", i, p.num_rows, p.packed_data_size, p.name);
       else
-        O_("Pattern %02x: %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
+        O_("Pat. %02x : %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
 
       if(Config.dump_pattern_rows)
       {
@@ -1103,58 +1087,28 @@ static int DBM_read(FILE *fp)
       }
     }
   }
-  return DBM_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-void check_dbm(const char *filename)
+class DBM_loader : public modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  DBM_loader(): modutil::loader("DBM : DigiBooster Pro") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("File      : %s\n", filename);
-
-    int err = DBM_read(fp);
-    if(err)
-      O_("Error     : %s\n\n", DBM_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Error     : failed to open '%s'.\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return DBM_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_dbm(buffer);
+    if(!total_dbm)
+      return;
 
-        read_stdin = true;
-      }
-      continue;
-    }
-    check_dbm(arg);
+    fprintf(stderr, "\n");
+    O_("Total DBMs          : %d\n", total_dbm);
+    O_("------------------- :\n");
   }
+};
 
-  return 0;
-}
+static const DBM_loader loader;

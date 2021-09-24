@@ -20,11 +20,7 @@
 
 #include "Config.hpp"
 #include "common.hpp"
-
-static const char USAGE[] =
-  "Dump information about OctaMED files.\n\n"
-  "Usage:\n"
-  "  medutil [filename.ext...]\n\n";
+#include "modutil.hpp"
 
 static const char MAGIC_MED2[] = "MED\x02";
 static const char MAGIC_MED3[] = "MED\x03";
@@ -42,36 +38,10 @@ static int num_mmd0;
 static int num_mmd1;
 static int num_mmd2;
 static int num_mmd3;
-static int num_unknown;
 
 static const int MAX_BLOCKS      = 256;
 static const int MAX_INSTRUMENTS = 63;
 
-enum MED_error
-{
-  MED_SUCCESS,
-  MED_READ_ERROR,
-  MED_SEEK_ERROR,
-  MED_NOT_A_MED,
-  MED_NOT_IMPLEMENTED,
-  MED_TOO_MANY_BLOCKS,
-  MED_TOO_MANY_INSTR,
-};
-
-static const char *MED_strerror(int err)
-{
-  switch(err)
-  {
-    case MED_SUCCESS:         return "no error";
-    case MED_READ_ERROR:      return "read error";
-    case MED_SEEK_ERROR:      return "seek error";
-    case MED_NOT_A_MED:       return "not a .MED";
-    case MED_NOT_IMPLEMENTED: return "feature not implemented";
-    case MED_TOO_MANY_BLOCKS: return "only <=256 blocks supported";
-    case MED_TOO_MANY_INSTR:  return "only <=63 instruments supported";
-  }
-  return "unknown error";
-}
 
 enum MED_features
 {
@@ -212,30 +182,6 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "HybSyn(?!)",
 };
 
-struct MED_handler
-{
-  const char *magic;
-  int (*read_fn)(FILE *fp);
-};
-
-static int read_med2(FILE *fp);
-static int read_med3(FILE *fp);
-static int read_med4(FILE *fp);
-static int read_mmd0(FILE *fp);
-static int read_mmd1(FILE *fp);
-static int read_mmd2(FILE *fp);
-static int read_mmd3(FILE *fp);
-
-static const MED_handler HANDLERS[] =
-{
-  { MAGIC_MED2, read_med2 },
-  { MAGIC_MED3, read_med3 },
-  { MAGIC_MED4, read_med4 },
-  { MAGIC_MMD0, read_mmd0 },
-  { MAGIC_MMD1, read_mmd1 },
-  { MAGIC_MMD2, read_mmd2 },
-  { MAGIC_MMD3, read_mmd3 },
-};
 
 /**************** OctaMED MMD0 and MMD1 ******************/
 
@@ -531,7 +477,7 @@ struct MMD0
   }
 };
 
-static int read_mmd(FILE *fp, int mmd_version)
+static modutil::error read_mmd(FILE *fp, int mmd_version)
 {
   MMD0 m{};
   MMD0head &h = m.header;
@@ -548,7 +494,7 @@ static int read_mmd(FILE *fp, int mmd_version)
    * Header.
    */
   if(!fread(h.magic, 4, 1, fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   h.file_length         = fget_u32be(fp);
   h.song_offset         = fget_u32be(fp);
@@ -567,13 +513,13 @@ static int read_mmd(FILE *fp, int mmd_version)
   h.num_extra_songs     = fgetc(fp);
 
   if(feof(fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /**
    * Song.
    */
   if(fseek(fp, h.song_offset, SEEK_SET))
-    return MED_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   for(int i = 0; i < 63; i++)
   {
@@ -597,7 +543,7 @@ static int read_mmd(FILE *fp, int mmd_version)
   s.num_orders      = fget_u16be(fp);
 
   if(!fread(s.orders, 256, 1, fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
   /* end FIXME */
 
   s.default_tempo   = fget_u16be(fp);
@@ -611,22 +557,22 @@ static int read_mmd(FILE *fp, int mmd_version)
 
   /* FIXME MMD2/3 handles track volume separately. */
   if(!fread(s.track_volume, 16, 1, fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   s.song_volume     = fgetc(fp);
   s.num_instruments = fgetc(fp);
 
   if(feof(fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /**
    * Block array.
    */
   if(s.num_blocks > MAX_BLOCKS)
-    return MED_TOO_MANY_BLOCKS;
+    return modutil::MED_TOO_MANY_BLOCKS;
 
   if(fseek(fp, h.block_array_offset, SEEK_SET))
-    return MED_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   for(size_t i = 0; i < s.num_blocks; i++)
     m.pattern_offsets[i] = fget_u32be(fp);
@@ -641,7 +587,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       continue;
 
     if(fseek(fp, m.pattern_offsets[i], SEEK_SET))
-      return MED_SEEK_ERROR;
+      return modutil::SEEK_ERROR;
 
     MMD1block &b = m.patterns[i];
 
@@ -867,7 +813,7 @@ static int read_mmd(FILE *fp, int mmd_version)
     if(Config.dump_pattern_rows && b.blockinfo_offset)
     {
       if(fseek(fp, b.blockinfo_offset, SEEK_SET))
-        return MED_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
 
       b.highlight_offset  = fget_u32be(fp);
       b.block_name_offset = fget_u32be(fp);
@@ -877,7 +823,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       if(b.highlight_offset)
       {
         if(fseek(fp, b.highlight_offset, SEEK_SET))
-          return MED_SEEK_ERROR;
+          return modutil::SEEK_ERROR;
 
         uint32_t highlight_len = (b.num_rows + 31)/32;
         uint32_t *highlight = new uint32_t[highlight_len];
@@ -903,16 +849,16 @@ static int read_mmd(FILE *fp, int mmd_version)
    * Instruments array.
    */
   if(s.num_instruments > MAX_INSTRUMENTS)
-    return MED_TOO_MANY_INSTR;
+    return modutil::MED_TOO_MANY_INSTR;
 
   if(fseek(fp, h.sample_array_offset, SEEK_SET))
-    return MED_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   for(size_t i = 0; i < s.num_instruments; i++)
     m.instrument_offsets[i] = fget_u32be(fp);
 
   if(feof(fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /**
    * Instruments.
@@ -923,7 +869,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       continue;
 
     if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
-      return MED_SEEK_ERROR;
+      return modutil::SEEK_ERROR;
 
     MMD0instr &inst = m.instruments[i];
     inst.length = fget_u32be(fp);
@@ -947,7 +893,7 @@ static int read_mmd(FILE *fp, int mmd_version)
 
       if(!fread(syn->volume_table, 128, 1, fp) ||
        !fread(syn->waveform_table, 128, 1, fp))
-        return MED_READ_ERROR;
+        return modutil::READ_ERROR;
 
       for(int j = 0; j < 64; j++)
         syn->waveform_offsets[j] = fget_u32be(fp);
@@ -958,7 +904,7 @@ static int read_mmd(FILE *fp, int mmd_version)
 
         /* Get the size and type of the sample. */
         if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[0], SEEK_SET))
-          return MED_SEEK_ERROR;
+          return modutil::SEEK_ERROR;
 
         MMD0instr &h_inst = syn->hybrid_instrument;
 
@@ -1011,7 +957,7 @@ static int read_mmd(FILE *fp, int mmd_version)
   }
 
   if(feof(fp))
-    return MED_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /**
    * Expansion data.
@@ -1042,13 +988,13 @@ static int read_mmd(FILE *fp, int mmd_version)
     x.tag_end              = fget_u32be(fp);
 
     if(feof(fp))
-      return MED_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(x.sample_ext_entries > MAX_INSTRUMENTS)
-      return MED_TOO_MANY_INSTR;
+      return modutil::MED_TOO_MANY_INSTR;
 
     if(x.sample_ext_entries && fseek(fp, x.sample_ext_offset, SEEK_SET))
-      return MED_SEEK_ERROR;
+      return modutil::SEEK_ERROR;
 
     for(size_t i = 0; i < x.sample_ext_entries; i++)
     {
@@ -1084,7 +1030,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       }
 
       if(skip && fseek(fp, skip, SEEK_CUR))
-        return MED_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
 
       if(sx.hold)
         m.uses[FT_INST_HOLD_DECAY] = true;
@@ -1093,10 +1039,10 @@ static int read_mmd(FILE *fp, int mmd_version)
     }
 
     if(x.instr_info_entries > MAX_INSTRUMENTS)
-      return MED_TOO_MANY_INSTR;
+      return modutil::MED_TOO_MANY_INSTR;
 
     if(x.instr_info_entries && fseek(fp, x.instr_info_offset, SEEK_SET))
-      return MED_SEEK_ERROR;
+      return modutil::SEEK_ERROR;
 
     for(size_t i = 0; i < x.instr_info_entries; i++)
     {
@@ -1110,7 +1056,7 @@ static int read_mmd(FILE *fp, int mmd_version)
         skip -= 40;
       }
       if(skip && fseek(fp, skip, SEEK_CUR))
-        return MED_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
     }
   }
 
@@ -1131,34 +1077,34 @@ static int read_mmd(FILE *fp, int mmd_version)
   if(h.num_extra_songs && x.nextmod_offset)
     m.uses[FT_MULTIPLE_SONGS] = true;
 
-  O_("Type      : %4.4s\n", h.magic);
-  O_("Size      : %u\n", h.file_length);
-  O_("# Tracks  : %u\n", m.num_tracks);
-  O_("# Blocks  : %u\n", s.num_blocks);
-  O_("# Orders  : %u\n", s.num_orders);
-  O_("# Instr.  : %u\n", s.num_instruments);
+  O_("Type    : %4.4s\n", h.magic);
+  O_("Size    : %u\n", h.file_length);
+  O_("# Tracks: %u\n", m.num_tracks);
+  O_("# Blocks: %u\n", s.num_blocks);
+  O_("# Orders: %u\n", s.num_orders);
+  O_("# Instr.: %u\n", s.num_instruments);
 
   if(s.flags2 & F2_BPM)
   {
     uint8_t beat_rows = (s.flags2 & F2_BPM_MASK) + 1;
 
-    O_("BPM       : %u\n", s.default_tempo);
-    O_("Beat rows : %u\n", beat_rows);
-    O_("Speed     : %u\n", s.tempo2);
+    O_("BPM     : %u\n", s.default_tempo);
+    O_("BeatRows: %u\n", beat_rows);
+    O_("Speed   : %u\n", s.tempo2);
 
     if(beat_rows != 4)
       m.uses[FT_BEAT_ROWS_NOT_4] = true;
   }
   else
   {
-    O_("Tempo     : %u\n", s.default_tempo);
-    O_("Speed     : %u\n", s.tempo2);
+    O_("Tempo   : %u\n", s.default_tempo);
+    O_("Speed   : %u\n", s.tempo2);
 
     if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
       m.uses[FT_INIT_TEMPO_COMPAT] = true;
   }
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_DESC[i]);
@@ -1166,9 +1112,9 @@ static int read_mmd(FILE *fp, int mmd_version)
 
   if(Config.dump_samples)
   {
-    O_("          :\n");
-    O_("          : Type  Length      Loop Start  Loop Len.  : MIDI       : Vol  Tr. : Hold/Decay Fine : Name\n");
-    O_("          : ----  ----------  ----------  ---------- : ---  ----- : ---  --- : ---  ---   ---  : ----\n");
+    O_("        :\n");
+    O_("Samples : Type  Length      Loop Start  Loop Len.  : MIDI       : Vol  Tr. : Hold/Decay Fine : Name\n");
+    O_("------- : ----  ----------  ----------  ---------- : ---  ----- : ---  --- : ---  ---   ---  : ----\n");
     for(unsigned int i = 0; i < s.num_instruments; i++)
     {
       MMD0sample     &sm = s.samples[i];
@@ -1189,7 +1135,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       unsigned int decay = sx.decay;
       int finetune = sx.finetune;
 
-      O_("Sample %02x : %-4.4s  %-10u  %-10u  %-10u : %-3u  %-5u : %-3u  %-3d : %-3u  %-3u   %-3d  : %s\n",
+      O_("    %02x  : %-4.4s  %-10u  %-10u  %-10u : %-3u  %-5u : %-3u  %-3d : %-3u  %-3u   %-3d  : %s\n",
         i + 1, MED_insttype_str(si.type), length, repeat_start, repeat_length,
         midi_channel, midi_preset, default_volume, transpose, hold, decay, finetune, sxi.name
       );
@@ -1198,8 +1144,8 @@ static int read_mmd(FILE *fp, int mmd_version)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
-    O_("Sequence  :");
+    O_("        :\n");
+    O_("Sequence:");
     for(size_t i = 0; i < s.num_orders; i++)
       fprintf(stderr, " %02x", s.orders[i]);
     fprintf(stderr, "\n");
@@ -1212,7 +1158,7 @@ static int read_mmd(FILE *fp, int mmd_version)
       if(Config.dump_pattern_rows)
         fprintf(stderr, "\n");
 
-      O_("Block %02x  : %u rows, %u tracks\n", i, b.num_rows, b.num_tracks);
+      O_("Blk. %02x : %u rows, %u tracks\n", i, b.num_rows, b.num_tracks);
 
       if(!Config.dump_pattern_rows)
         continue;
@@ -1240,7 +1186,7 @@ static int read_mmd(FILE *fp, int mmd_version)
 
       if(!print_pattern)
       {
-        O_("Pattern is blank.\n");
+        O_("Block is blank.\n");
         continue;
       }
 
@@ -1282,142 +1228,120 @@ static int read_mmd(FILE *fp, int mmd_version)
     }
   }
 
-  return MED_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-static int read_med2(FILE *fp)
+
+static modutil::error read_med2(FILE *fp)
 {
-  O_("Type      : MED2\n");
+  O_("Type    : MED2\n");
   num_med2++;
-  return MED_NOT_IMPLEMENTED;
+  return modutil::NOT_IMPLEMENTED;
 }
 
-static int read_med3(FILE *fp)
+static modutil::error read_med3(FILE *fp)
 {
-  O_("Type      : MED3\n");
+  O_("Type    : MED3\n");
   num_med3++;
-  return MED_NOT_IMPLEMENTED;
+  return modutil::NOT_IMPLEMENTED;
 }
 
-static int read_med4(FILE *fp)
+static modutil::error read_med4(FILE *fp)
 {
-  O_("Type      : MED4\n");
+  O_("Type    : MED4\n");
   num_med4++;
-  return MED_NOT_IMPLEMENTED;
+  return modutil::NOT_IMPLEMENTED;
 }
 
-static int read_mmd0(FILE *fp)
+static modutil::error read_mmd0(FILE *fp)
 {
   num_mmd0++;
   return read_mmd(fp, 0);
 }
 
-static int read_mmd1(FILE *fp)
+static modutil::error read_mmd1(FILE *fp)
 {
   num_mmd1++;
   return read_mmd(fp, 1);
 }
 
-static int read_mmd2(FILE *fp)
+static modutil::error read_mmd2(FILE *fp)
 {
   num_mmd2++;
   return read_mmd(fp, 2);
 }
 
-static int read_mmd3(FILE *fp)
+static modutil::error read_mmd3(FILE *fp)
 {
   num_mmd3++;
   return read_mmd(fp, 3);
 }
 
-static int read_med(FILE *fp)
+struct MED_handler
 {
-  char magic[4];
-  if(!fread(magic, 4, 1, fp))
-    return MED_READ_ERROR;
+  const char *magic;
+  modutil::error (*read_fn)(FILE *fp);
+};
 
-  rewind(fp);
+static const MED_handler HANDLERS[] =
+{
+  { MAGIC_MED2, read_med2 },
+  { MAGIC_MED3, read_med3 },
+  { MAGIC_MED4, read_med4 },
+  { MAGIC_MMD0, read_mmd0 },
+  { MAGIC_MMD1, read_mmd1 },
+  { MAGIC_MMD2, read_mmd2 },
+  { MAGIC_MMD3, read_mmd3 },
+};
 
-  for(int i = 0; i < arraysize(HANDLERS); i++)
+class MED_loader : modutil::loader
+{
+public:
+  MED_loader(): modutil::loader("MED : MED/OctaMED") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    if(!memcmp(HANDLERS[i].magic, magic, 4))
+    char magic[4];
+    if(!fread(magic, 4, 1, fp))
+      return modutil::READ_ERROR;
+
+    rewind(fp);
+
+    for(const MED_handler &handler : HANDLERS)
     {
-      num_med++;
-      return HANDLERS[i].read_fn(fp);
-    }
-  }
-  num_unknown++;
-  return MED_NOT_A_MED;
-}
-
-static void check_med(const char *filename)
-{
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
-  {
-    setvbuf(fp, NULL, _IOFBF, 2048);
-
-    O_("File      : %s\n", filename);
-
-    int err = read_med(fp);
-    if(err)
-      O_("Error     : %s\n\n", MED_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Failed to open '%s'.\n\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
-  }
-
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
-  {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
+      if(!memcmp(handler.magic, magic, 4))
       {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_med(buffer);
-
-        read_stdin = true;
+        num_med++;
+        return handler.read_fn(fp);
       }
-      continue;
     }
-    check_med(arg);
+    return modutil::FORMAT_ERROR;
   }
-  if(num_med)
-    O_("Total .MED modules : %d\n", num_med);
-  if(num_med2)
-    O_("Total MED2         : %d\n", num_med2);
-  if(num_med3)
-    O_("Total MED3         : %d\n", num_med3);
-  if(num_med4)
-    O_("Total MED4         : %d\n", num_med4);
-  if(num_mmd0)
-    O_("Total MMD0         : %d\n", num_mmd0);
-  if(num_mmd1)
-    O_("Total MMD1         : %d\n", num_mmd1);
-  if(num_mmd2)
-    O_("Total MMD2         : %d\n", num_mmd2);
-  if(num_mmd3)
-    O_("Total MMD3         : %d\n", num_mmd3);
-  if(num_unknown)
-    O_("Total unknown      : %d\n", num_unknown);
-  return 0;
-}
+
+  virtual void report() const override
+  {
+    if(!num_med)
+      return;
+
+    fprintf(stderr, "\n");
+    O_("Total MEDs          : %d\n", num_med);
+    O_("------------------- :\n");
+
+    if(num_med2)
+      O_("Total MED2s         : %d\n", num_med2);
+    if(num_med3)
+      O_("Total MED3s         : %d\n", num_med3);
+    if(num_med4)
+      O_("Total MED4s         : %d\n", num_med4);
+    if(num_mmd0)
+      O_("Total MMD0s         : %d\n", num_mmd0);
+    if(num_mmd1)
+      O_("Total MMD1s         : %d\n", num_mmd1);
+    if(num_mmd2)
+      O_("Total MMD2s         : %d\n", num_mmd2);
+    if(num_mmd3)
+      O_("Total MMD3s         : %d\n", num_mmd3);
+  }
+};
+
+static const MED_loader loader;

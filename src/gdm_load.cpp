@@ -14,10 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
- * Utility to examine .GDM files for useful information.
- */
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,46 +21,10 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "A utility to dump GDM metadata and patterns.\n"
-  "This will print useful information, such as:\n\n"
-  "* Sample information.\n"
-  "* Pattern lengths.\n"
-  "* Uses of GDM fine tone/volume slides.\n"
-  "* Uses of GDM empty note values to retrigger instruments.\n"
-  "* Pattern dumps (with the -d option).\n\n"
-  "Usage:\n"
-  "  gdmutil [options] [filenames...]\n\n";
+static int total_gdms = 0;
 
-enum GDM_err
-{
-  GDM_SUCCESS,
-  GDM_ALLOC_ERROR,
-  GDM_READ_ERROR,
-  GDM_SEEK_ERROR,
-  GDM_BAD_SIGNATURE,
-  GDM_BAD_VERSION,
-  GDM_BAD_CHANNEL,
-  GDM_BAD_PATTERN,
-  GDM_TOO_MANY_EFFECTS,
-};
-
-static const char *GDM_strerror(int err)
-{
-  switch(err)
-  {
-    case GDM_SUCCESS:          return "no error";
-    case GDM_READ_ERROR:       return "read error";
-    case GDM_SEEK_ERROR:       return "seek error";
-    case GDM_BAD_SIGNATURE:    return "GDM signature mismatch";
-    case GDM_BAD_VERSION:      return "GDM version invalid";
-    case GDM_BAD_CHANNEL:      return "invalid GDM channel index";
-    case GDM_BAD_PATTERN:      return "invalid GDM pattern data";
-    case GDM_TOO_MANY_EFFECTS: return "note has more effects (>4) than allowed";
-  }
-  return "unknown error";
-}
 
 enum GDM_features
 {
@@ -298,10 +258,6 @@ static const char *FLAG_STR(char (&buffer)[N], uint8_t flags)
   return buffer;
 }
 
-/**
- * NOTE: sloppy header packing means this can't really be read
- * out of the file directly. Don't try it. Oh well...
- */
 struct GDM_header
 {
   char magic[4];
@@ -332,9 +288,6 @@ struct GDM_header
   uint16_t graphic_length;
 };
 
-/**
- * Same note above applies to these.
- */
 struct GDM_sample
 {
   char name[33]; // Null-terminator not stored? Array size is 1 larger than field.
@@ -450,23 +403,22 @@ static enum GDM_features get_effect_feature(uint8_t fx_effect, uint8_t fx_param)
   }
 }
 
-static int GDM_read(FILE *fp)
+static modutil::error GDM_read(FILE *fp)
 {
   GDM_data m{};
   GDM_header &h = m.header;
 
-  if(!fread(h.magic, 4, 1, fp))
-    return GDM_READ_ERROR;
-  if(memcmp(h.magic, MAGIC, 4))
-    return GDM_BAD_SIGNATURE;
-
-  if(!fread(h.name, 32, 1, fp) ||
+  if(!fread(h.magic, 4, 1, fp) ||
+     !fread(h.name, 32, 1, fp) ||
      !fread(h.author, 32, 1, fp) ||
      !fread(h.eof, 3, 1, fp) ||
      !fread(h.magic2, 4, 1, fp))
-    return GDM_READ_ERROR;
-  if(memcmp(h.eof, MAGIC_EOF, 3) || memcmp(h.magic2, MAGIC_2, 4))
-    return GDM_BAD_SIGNATURE;
+    return modutil::READ_ERROR;
+
+  if(memcmp(h.magic, MAGIC, 4) ||
+     memcmp(h.eof, MAGIC_EOF, 3) ||
+     memcmp(h.magic2, MAGIC_2, 4))
+    return modutil::FORMAT_ERROR;
 
   h.name[32] = '\0';
   h.author[32] = '\0';
@@ -476,7 +428,7 @@ static int GDM_read(FILE *fp)
   h.tracker_version     = fget_u16le(fp);
 
   if(!fread(h.panning, 32, 1, fp))
-    return GDM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   h.global_volume       = fgetc(fp);
   h.tempo               = fgetc(fp);
@@ -497,7 +449,7 @@ static int GDM_read(FILE *fp)
   h.graphic_length      = fget_u16le(fp);
 
   if(feof(fp))
-    return GDM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   // Get channel count by checking for 255 in the panning table.
   for(int i = 0; i < 32; i++)
@@ -515,20 +467,20 @@ static int GDM_read(FILE *fp)
 
   // Order list.
   if(fseek(fp, h.order_offset, SEEK_SET))
-    return GDM_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   if(!fread(m.orders, h.num_orders, 1, fp))
-    return GDM_READ_ERROR;
+    return modutil::READ_ERROR;
 
   // Samples.
   if(fseek(fp, h.sample_offset, SEEK_SET))
-    return GDM_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   for(size_t i = 0; i < h.num_samples; i++)
   {
     GDM_sample &s = m.samples[i];
     if(!fread(s.name, 32, 1, fp) || !fread(s.filename, 12, 1, fp))
-      return GDM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     s.name[32] = '\0';
     s.filename[12] = '\0';
@@ -543,7 +495,7 @@ static int GDM_read(FILE *fp)
     s.default_panning = fgetc(fp);
 
     if(feof(fp))
-      return GDM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if((s.flags & S_VOL) && s.default_volume != 255)
       m.uses[FT_SAMPLE_VOLUME] = true;
@@ -562,14 +514,14 @@ static int GDM_read(FILE *fp)
 
   // Patterns.
   if(fseek(fp, h.pattern_offset, SEEK_SET))
-    return GDM_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   for(size_t i = 0; i < h.num_patterns; i++)
   {
     GDM_pattern *p = new GDM_pattern{};
     m.patterns[i] = p;
     if(!p)
-      return GDM_ALLOC_ERROR;
+      return modutil::ALLOC_ERROR;
 
     p->raw_size = fget_u16le(fp) - 2;
 
@@ -642,14 +594,14 @@ static int GDM_read(FILE *fp)
             break;
         }
         if(j >= 4)
-          return GDM_TOO_MANY_EFFECTS;
+          return modutil::GDM_TOO_MANY_EFFECTS;
       }
     }
     if(feof(fp))
-      return GDM_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(pos != p->raw_size)
-      return GDM_BAD_PATTERN;
+      return modutil::GDM_BAD_PATTERN;
 
     p->num_rows = row;
     if(row > 64)
@@ -659,16 +611,16 @@ static int GDM_read(FILE *fp)
   }
 
   /* Print metadata. */
-  O_("Name      : %s\n", h.name);
-  O_("Type      : GDM %u.%u (%s/%s %u.%u)\n",
+  O_("Name    : %s\n", h.name);
+  O_("Type    : GDM %u.%u (%s/%s %u.%u)\n",
    VER_MAJOR(h.gdm_version), VER_MINOR(h.gdm_version), FORMAT(h.original_format),
    TRACKER(h.tracker_id), VER_MAJOR(h.tracker_version), VER_MINOR(h.tracker_version));
-  O_("Orders    : %u\n", h.num_orders);
-  O_("Patterns  : %u\n", h.num_patterns);
-  O_("Tracks    : %u\n", m.num_channels);
-  O_("Samples   : %u\n", h.num_samples);
+  O_("Orders  : %u\n", h.num_orders);
+  O_("Patterns: %u\n", h.num_patterns);
+  O_("Tracks  : %u\n", m.num_channels);
+  O_("Samples : %u\n", h.num_samples);
 
-  O_("Uses      :");
+  O_("Uses    :");
   for(int i = 0; i < NUM_FEATURES; i++)
     if(m.uses[i])
       fprintf(stderr, " %s", FEATURE_STR[i]);
@@ -680,16 +632,16 @@ static int GDM_read(FILE *fp)
   {
     char tmp[16];
 
-    O_("          :\n");
-    O_("Samples   : %-32.32s  %-12.12s : Length     LoopStart  LoopEnd    Flags    C4Rate   Vol.   Pan.  :\n",
+    O_("        :\n");
+    O_("Samples : %-32.32s  %-12.12s : Length     LoopStart  LoopEnd    Flags    C4Rate   Vol.   Pan.  :\n",
      "Name", "Filename");
-    O_("-------   : %-32.32s  %-12.12s : ---------- ---------- ---------- -------  -------  -----  ----- :\n",
+    O_("------- : %-32.32s  %-12.12s : ---------- ---------- ---------- -------  -------  -----  ----- :\n",
      LINE, LINE);
 
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
       GDM_sample &s = m.samples[i];
-      O_("Sample %02x : %-32s  %-12s : %-10u %-10u %-10u %-7s  %-7u  %-5u  %-5u :\n",
+      O_("    %02x  : %-32s  %-12s : %-10u %-10u %-10u %-7s  %-7u  %-5u  %-5u :\n",
         (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
         FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning
       );
@@ -701,8 +653,8 @@ static int GDM_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("          :\n");
-    O_("Panning   :");
+    O_("        :\n");
+    O_("Panning :");
     for(unsigned int k = 0; k < m.num_channels; k++)
     {
       if(h.panning[k] == 255)
@@ -711,7 +663,7 @@ static int GDM_read(FILE *fp)
     }
     fprintf(stderr, "\n");
 
-    O_("Order Tbl.:");
+    O_("Orders  :");
     for(unsigned int i = 0; i < h.num_orders; i++)
       fprintf(stderr, " %02x", m.orders[i]);
     fprintf(stderr, "\n");
@@ -724,7 +676,7 @@ static int GDM_read(FILE *fp)
       GDM_pattern *p = m.patterns[i];
       if(Config.dump_pattern_rows)
       {
-        O_("Pattern %02x:", i);
+        O_("Pat. %02x :", i);
         for(unsigned int k = 0; k < m.num_channels; k++)
         {
           if(h.panning[k] == 255)
@@ -737,7 +689,7 @@ static int GDM_read(FILE *fp)
         }
         fprintf(stderr, "\n");
 
-        O_("--------- :");
+        O_("------- :");
         for(unsigned int k = 0; k < m.num_channels; k++)
         {
           if(h.panning[k] == 255)
@@ -750,7 +702,7 @@ static int GDM_read(FILE *fp)
 
         for(unsigned int j = 0; j < p->num_rows; j++)
         {
-          O_("       %02x :", j);
+          O_("    %02x  :", j);
           for(unsigned int k = 0; k < m.num_channels; k++)
           {
             if(h.panning[k] == 255)
@@ -767,65 +719,31 @@ static int GDM_read(FILE *fp)
         }
       }
       else
-        O_("Pattern %02x: %u rows\n", i, p->num_rows);
+        O_("Pat. %02x : %u rows\n", i, p->num_rows);
     }
   }
-  return GDM_SUCCESS;
+  return modutil::SUCCESS;
 }
 
-static void check_gdm(const char *filename)
+class GDM_loader : modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  GDM_loader(): modutil::loader("GDM : General Digital Music") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("File      : %s\n", filename);
-
-    // Can't read entire header into a struct so add a buffer instead.
-    setvbuf(fp, NULL, _IOFBF, 4096);
-
-    int ret = GDM_read(fp);
-    if(ret)
-      O_("Error     : %s\n\n", GDM_strerror(ret));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Failed to open '%s'\n.", filename);
-}
-
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return GDM_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_gdm(buffer);
+    if(!total_gdms)
+      return;
 
-        read_stdin = true;
-      }
-      continue;
-    }
-    check_gdm(arg);
+    fprintf(stderr, "\n");
+    O_("Total GDMs          : %d\n", total_gdms);
+    O_("------------------- :\n");
   }
+};
 
-  return 0;
-}
+static const GDM_loader loader;

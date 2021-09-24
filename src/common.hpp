@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "error.hpp"
+
 #define O_(...) do { \
   fprintf(stderr, ": " __VA_ARGS__); \
   fflush(stderr); \

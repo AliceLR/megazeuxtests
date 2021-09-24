@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2020 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,17 +14,22 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "IFF.hpp"
+#ifndef MODUTIL_HPP
+#define MODUTIL_HPP
 
-const char *IFF_strerror(int err)
+#include <stdio.h>
+
+namespace modutil
 {
-  switch(err)
+  class loader
   {
-    case IFF_SUCCESS:         return "no error";
-    case IFF_READ_ERROR:      return "read error";
-    case IFF_SEEK_ERROR:      return "seek error";
-    case IFF_CONTAINER_ERROR: return "child IFF hunks exceed size of parent hunk";
-    case IFF_NO_HANDLER:      return "invalid IFF ID";
-  }
-  return "unknown error";
+  public:
+    const char *name;
+    virtual modutil::error load(FILE *fp) const = 0;
+    virtual void           report() const = 0;
+
+    loader(const char *n);
+  };
 }
+
+#endif /* MODUTIL_HPP */

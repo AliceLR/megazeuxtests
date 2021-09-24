@@ -21,33 +21,10 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "A utility to dump Epic MegaGames MASI metadata and patterns.\n"
-  "Usage:\n"
-  "  masiutil [options] [filenames...]\n\n";
+static int total_masi = 0;
 
-enum MASI_error
-{
-  MASI_SUCCESS,
-  MASI_READ_ERROR,
-  MASI_SEEK_ERROR,
-  MASI_NOT_A_MASI,
-  MASI_INVALID,
-};
-
-static const char *MASI_strerror(int err)
-{
-  switch(err)
-  {
-    case MASI_SUCCESS:           return "no error";
-    case MASI_READ_ERROR:        return "read error";
-    case MASI_SEEK_ERROR:        return "seek error";
-    case MASI_NOT_A_MASI:        return "not an Epic MegaGames MASI module";
-    case MASI_INVALID:           return "invalid MASI";
-  }
-  return IFF_strerror(err);
-}
 
 enum MASI_features
 {
@@ -109,15 +86,15 @@ static const class MASI_TITL_Handler final: public IFFHandler<MASI_data>
 public:
   MASI_TITL_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, MASI_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
   {
     m.name = new char[len + 1];
 
     if(!fread(m.name, len, 1, fp))
-      return MASI_READ_ERROR;
+      return modutil::READ_ERROR;
 
     m.name[len] = '\0';
-    return 0;
+    return modutil::SUCCESS;
   }
 } TITL_handler("TITL", false);
 
@@ -126,13 +103,13 @@ static const class MASI_SDFT_Handler final: public IFFHandler<MASI_data>
 public:
   MASI_SDFT_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, MASI_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
   {
     if(len < 8 || !fread(m.song_type, 8, 1, fp))
-      return MASI_READ_ERROR;
+      return modutil::READ_ERROR;
 
     m.song_type[8] = '\0';
-    return 0;
+    return modutil::SUCCESS;
   }
 } SDFT_handler("SDFT", false);
 
@@ -141,12 +118,12 @@ static const class MASI_PBOD_Handler final: public IFFHandler<MASI_data>
 public:
   MASI_PBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, MASI_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
   {
     if(m.num_patterns >= MAX_PATTERNS)
     {
-      O_("Warning   : ignoring pattern %zu\n", m.current_patt++);
-      return 0;
+      O_("Warning : ignoring pattern %zu\n", m.current_patt++);
+      return modutil::SUCCESS;
     }
 
     /* Ignore duplicate pattern length dword (???) */
@@ -156,13 +133,13 @@ public:
     m.num_patterns = m.current_patt;
 
     if(!fread(p.id, 4, 1, fp))
-      return MASI_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(!strncmp(p.id, "PATT", 4))
     {
       /* Older format has 8 char long pattern IDs. */
       if(!fread(p.id + 4, 4, 1, fp))
-        return MASI_READ_ERROR;
+        return modutil::READ_ERROR;
 
       p.id[8] = '\0';
     }
@@ -171,7 +148,7 @@ public:
 
     p.num_rows = fget_u16le(fp);
     if(feof(fp))
-      return MASI_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(p.num_rows > 64)
       m.uses[FT_ROWS_OVER_64] = true;
@@ -179,7 +156,7 @@ public:
       m.max_rows = p.num_rows;
 
     // TODO pattern data.
-    return 0;
+    return modutil::SUCCESS;
   }
 } PBOD_handler("PBOD", false);
 
@@ -188,10 +165,10 @@ static const class MASI_SONG_Handler final: public IFFHandler<MASI_data>
 public:
   MASI_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, MASI_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
   {
     // FIXME
-    return 0;
+    return modutil::SUCCESS;
   }
 } SONG_handler("SONG", false);
 
@@ -200,10 +177,10 @@ static const class MASI_DSMP_Handler final: public IFFHandler<MASI_data>
 public:
   MASI_DSMP_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, MASI_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
   {
     // FIXME
-    return 0;
+    return modutil::SUCCESS;
   }
 } DSMP_handler("DSMP", false);
 
@@ -216,125 +193,93 @@ static const IFF<MASI_data> MASI_parser(Endian::LITTLE, IFFPadding::BYTE,
   &DSMP_handler
 });
 
-int MASI_read(FILE *fp)
+
+class MASI_loader : modutil::loader
 {
-  MASI_data m{};
-  MASI_parser.max_chunk_length = 0;
+public:
+  MASI_loader(): modutil::loader("PSM : Epic MegaGames MASI") {}
 
-  if(!fread(m.magic, 4, 1, fp))
-    return MASI_READ_ERROR;
-
-  m.filesize = fget_u32le(fp);
-
-  if(!fread(m.magic2, 4, 1, fp))
-    return MASI_READ_ERROR;
-
-  if(!strncmp(m.magic, "PSM\xFE", 4))
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("Warning   : ignoring old-format MASI.\n");
-    return MASI_SUCCESS;
-  }
+    MASI_data m{};
+    MASI_parser.max_chunk_length = 0;
 
-  if(strncmp(m.magic, "PSM ", 4) || strncmp(m.magic2, "FILE", 4))
-    return MASI_NOT_A_MASI;
+    if(!fread(m.magic, 4, 1, fp))
+      return modutil::READ_ERROR;
 
-  int err = MASI_parser.parse_iff(fp, 0, m);
-  if(err)
-    return err;
+    m.filesize = fget_u32le(fp);
 
-  if(MASI_parser.max_chunk_length > 4*1024*1024)
-    m.uses[FT_CHUNK_OVER_4_MIB] = true;
+    if(!fread(m.magic2, 4, 1, fp))
+      return modutil::READ_ERROR;
 
-  if(m.name)
-    O_("Name      : %s\n",  m.name);
-  if(strcmp(m.song_type, "MAINSONG"))
-    O_("Song type : %s\n",  m.song_type);
-
-//  O_("Samples   : %u\n",  m.num_samples);
-//  O_("Channels  : %u\n",  m.num_channels);
-  O_("Patterns  : %zu\n",  m.num_patterns);
-  O_("Max rows  : %zu\n",  m.max_rows);
-  O_("Max Chunk : %zu\n",  MASI_parser.max_chunk_length);
-
-  O_("Uses      :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
-
-  if(Config.dump_samples)
-  {
-    // FIXME
-  }
-
-  if(Config.dump_patterns)
-  {
-    O_("          :\n");
-
-    for(unsigned int i = 0; i < m.num_patterns; i++)
+    if(!strncmp(m.magic, "PSM\xFE", 4))
     {
-      if(i >= MAX_PATTERNS)
-        break;
-
-      MASI_pattern &p = m.patterns[i];
-
-      O_("Pattern %02x: '%s', %u rows\n", i, p.id, p.num_rows);
+      O_("Warning : ignoring old-format MASI.\n");
+      total_masi++;
+      return modutil::SUCCESS;
     }
 
-    // FIXME Config.dump_pattern_rows
-  }
-  return MASI_SUCCESS;
-}
+    if(strncmp(m.magic, "PSM ", 4) || strncmp(m.magic2, "FILE", 4))
+      return modutil::FORMAT_ERROR;
 
-void check_masi(const char *filename)
-{
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
-  {
-    O_("File      : %s\n", filename);
-
-    int err = MASI_read(fp);
+    total_masi++;
+    modutil::error err = MASI_parser.parse_iff(fp, 0, m);
     if(err)
-      O_("Error     : %s\n\n", MASI_strerror(err));
-    else
-      fprintf(stderr, "\n");
+      return err;
 
-    fclose(fp);
-  }
-  else
-    O_("Error     : failed to open '%s'.\n", filename);
-}
+    if(MASI_parser.max_chunk_length > 4*1024*1024)
+      m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
+    if(m.name)
+      O_("Name    : %s\n",  m.name);
+    if(strcmp(m.song_type, "MAINSONG"))
+      O_("Song type : %s\n",  m.song_type);
 
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
-  }
+//    O_("Samples : %u\n",  m.num_samples);
+//    O_("Channels: %u\n",  m.num_channels);
+    O_("Patterns: %zu\n",  m.num_patterns);
+    O_("Max rows: %zu\n",  m.max_rows);
+    O_("MaxChunk: %zu\n",  MASI_parser.max_chunk_length);
 
-  if(!Config.init(&argc, argv))
-    return -1;
+    O_("Uses    :");
+    for(int i = 0; i < NUM_FEATURES; i++)
+      if(m.uses[i])
+        fprintf(stderr, " %s", FEATURE_STR[i]);
+    fprintf(stderr, "\n");
 
-  for(int i = 1; i < argc; i++)
-  {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
+    if(Config.dump_samples)
     {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_masi(buffer);
-
-        read_stdin = true;
-      }
-      continue;
+      // FIXME
     }
-    check_masi(arg);
+
+    if(Config.dump_patterns)
+    {
+      O_("        :\n");
+
+      for(unsigned int i = 0; i < m.num_patterns; i++)
+      {
+        if(i >= MAX_PATTERNS)
+          break;
+
+        MASI_pattern &p = m.patterns[i];
+
+        O_("Pat. %02x : '%s', %u rows\n", i, p.id, p.num_rows);
+      }
+
+      // FIXME Config.dump_pattern_rows
+    }
+    return modutil::SUCCESS;
   }
 
-  return 0;
-}
+  virtual void report() const override
+  {
+    if(!total_masi)
+      return;
+
+    fprintf(stderr, "\n");
+    O_("Total MASIs         : %d\n", total_masi);
+    O_("------------------- :\n");
+  }
+};
+
+static const MASI_loader loader;

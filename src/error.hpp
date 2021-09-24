@@ -1,0 +1,86 @@
+/**
+ * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#ifndef MODUTIL_ERROR_HPP
+#define MODUTIL_ERROR_HPP
+
+namespace modutil
+{
+  enum error
+  {
+    SUCCESS,
+    FORMAT_ERROR,
+    ALLOC_ERROR,
+    READ_ERROR,
+    SEEK_ERROR,
+    INVALID,
+    NOT_IMPLEMENTED,
+
+    /* IFF */
+    IFF_CONFIG_ERROR,
+    IFF_CONTAINER_ERROR,
+    IFF_NO_HANDLER,
+
+    /* MOD/WOW/etc */
+    MOD_INVALID_ORDER_COUNT,
+    MOD_IGNORE_ST,
+    MOD_IGNORE_ST26,
+    MOD_IGNORE_IT10,
+    MOD_IGNORE_MAGIC,
+
+    /* XM */
+    XM_INVALID_ORDER_COUNT,
+    XM_INVALID_PATTERN_COUNT,
+
+    /* IT */
+    IT_INVALID_SAMPLE,
+    IT_INVALID_INSTRUMENT,
+    IT_INVALID_ORDER_COUNT,
+    IT_INVALID_PATTERN_COUNT,
+
+    /* GDM */
+    GDM_BAD_VERSION,
+    GDM_BAD_CHANNEL,
+    GDM_BAD_PATTERN,
+    GDM_TOO_MANY_EFFECTS,
+
+    /* AMF/DSMI */
+    AMF_IS_ASYLUM,
+    AMF_BAD_SIGNATURE,
+    AMF_BAD_VERSION,
+    AMF_BAD_CHANNELS,
+    AMF_BAD_TRACKS,
+
+    /* DSIK (DSM) */
+    DSIK_OLD_FORMAT,
+
+    /* FAR */
+    FAR_BAD_VERSION,
+
+    /* MED and OctaMED */
+    MED_TOO_MANY_BLOCKS,
+    MED_TOO_MANY_INSTR,
+
+    /* STM */
+    STM_UNKNOWN_VERSION,
+    STM_INVALID_ORDERS,
+    STM_INVALID_PATTERNS,
+  };
+
+  const char *strerror(modutil::error err);
+}
+
+#endif /* MODUTIL_ERROR_HPP */

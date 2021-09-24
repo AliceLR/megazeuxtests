@@ -21,44 +21,14 @@
 
 #include "Config.hpp"
 #include "common.hpp"
-
-static const char USAGE[] =
-  "Dump various information from IT module(s).\n\n"
-  "Usage:\n"
-  "  itutil [options] [it files...]\n\n";
+#include "modutil.hpp"
 
 static int num_its;
 //static int num_it_instrument_mode;
 //static int num_it_sample_gvol;
 //static int num_it_sample_vibrato;
 
-enum IT_error
-{
-  IT_SUCCESS,
-  IT_READ_ERROR,
-  IT_SEEK_ERROR,
-  IT_INVALID_MAGIC,
-  IT_INVALID_SAMPLE,
-  IT_INVALID_INSTRUMENT,
-  IT_INVALID_ORDER_COUNT,
-  IT_INVALID_PATTERN_COUNT,
-};
 
-static const char *IT_strerror(int err)
-{
-  switch(err)
-  {
-    case IT_SUCCESS: return "no error";
-    case IT_READ_ERROR: return "read error";
-    case IT_SEEK_ERROR: return "seek error";
-    case IT_INVALID_MAGIC: return "file is not an IT";
-    case IT_INVALID_SAMPLE: return "IT sample magic mismatch";
-    case IT_INVALID_INSTRUMENT: return "IT instrument magic mismatch";
-    case IT_INVALID_ORDER_COUNT: return "invalid order count >256";
-    case IT_INVALID_PATTERN_COUNT: return "invalid pattern count >256";
-  }
-  return "unknown error";
-}
 enum IT_features
 {
   FT_OLD_FORMAT,
@@ -497,15 +467,15 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
 /**
  * Read an IT sample.
  */
-static int IT_read_sample(FILE *fp, IT_sample &s)
+static modutil::error IT_read_sample(FILE *fp, IT_sample &s)
 {
   if(!fread(s.magic, 4, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   if(strncmp(s.magic, "IMPS", 4))
-    return IT_INVALID_SAMPLE;
+    return modutil::IT_INVALID_SAMPLE;
 
   if(!fread(s.filename, 13, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   s.filename[12] = '\0';
 
   s.global_volume      = fgetc(fp);
@@ -513,7 +483,7 @@ static int IT_read_sample(FILE *fp, IT_sample &s)
   s.default_volume     = fgetc(fp);
 
   if(!fread(s.name, 26, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   s.name[25] = '\0';
 
   s.convert            = fgetc(fp);
@@ -531,15 +501,15 @@ static int IT_read_sample(FILE *fp, IT_sample &s)
   s.vibrato_rate       = fgetc(fp);
 
   if(feof(fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
-  return IT_SUCCESS;
+  return modutil::SUCCESS;
 }
 
 /**
  * Read an IT envelope.
  */
-static int IT_read_envelope(FILE *fp, IT_envelope &env)
+static modutil::error IT_read_envelope(FILE *fp, IT_envelope &env)
 {
   env.flags         = fgetc(fp);
   env.num_nodes     = fgetc(fp);
@@ -556,23 +526,23 @@ static int IT_read_envelope(FILE *fp, IT_envelope &env)
   }
   fgetc(fp); /* Padding byte. */
   if(feof(fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
-  return IT_SUCCESS;
+  return modutil::SUCCESS;
 }
 
 /**
  * Read an IT instrument.
  */
-static int IT_read_instrument(FILE *fp, IT_instrument &ins)
+static modutil::error IT_read_instrument(FILE *fp, IT_instrument &ins)
 {
   if(!fread(ins.magic, 4, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   if(strncmp(ins.magic, "IMPI", 4))
-    return IT_INVALID_INSTRUMENT;
+    return modutil::IT_INVALID_INSTRUMENT;
 
   if(!fread(ins.filename, 13, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   ins.filename[12] = '\0';
 
   ins.new_note_act          = fgetc(fp);
@@ -590,7 +560,7 @@ static int IT_read_instrument(FILE *fp, IT_instrument &ins)
   ins.pad                   = fgetc(fp);
 
   if(!fread(ins.name, 26, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   ins.name[25] = '\0';
 
   ins.init_filter_cutoff    = fgetc(fp);
@@ -605,17 +575,17 @@ static int IT_read_instrument(FILE *fp, IT_instrument &ins)
     ins.keymap[i].sample = fgetc(fp);
   }
   if(feof(fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
-  int ret;
+  modutil::error ret;
   ret = IT_read_envelope(fp, ins.env_volume);
-  if(ret != IT_SUCCESS)
+  if(ret != modutil::SUCCESS)
     return ret;
   ret = IT_read_envelope(fp, ins.env_pan);
-  if(ret != IT_SUCCESS)
+  if(ret != modutil::SUCCESS)
     return ret;
   ret = IT_read_envelope(fp, ins.env_pitch);
-  if(ret != IT_SUCCESS)
+  if(ret != modutil::SUCCESS)
     return ret;
 
   /* Fix some variables. */
@@ -623,21 +593,21 @@ static int IT_read_instrument(FILE *fp, IT_instrument &ins)
   ins.real_init_filter_cutoff = (ins.init_filter_cutoff & 0x80) ? ins.init_filter_cutoff & 0x7f : -1;
   ins.real_init_filter_resonance = (ins.init_filter_resonance & 0x80) ? ins.init_filter_resonance & 0x7f : -1;
 
-  return IT_SUCCESS;
+  return modutil::SUCCESS;
 }
 
 /**
  * Read an IT instrument (1.x).
  */
-static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
+static modutil::error IT_read_old_instrument(FILE *fp, IT_instrument &ins)
 {
   if(!fread(ins.magic, 4, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   if(strncmp(ins.magic, "IMPI", 4))
-    return IT_INVALID_INSTRUMENT;
+    return modutil::IT_INVALID_INSTRUMENT;
 
   if(!fread(ins.filename, 13, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   ins.filename[12] = '\0';
 
   IT_envelope &env = ins.env_volume;
@@ -659,7 +629,7 @@ static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
   ins.pad                  = fgetc(fp);
 
   if(!fread(ins.name, 26, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   ins.name[25] = '\0';
   fgetc(fp);
   fgetc(fp);
@@ -674,11 +644,11 @@ static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
     ins.keymap[i].sample = fgetc(fp);
   }
   if(feof(fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /* Envelope points (??) */
   if(fseek(fp, 200, SEEK_CUR))
-    return IT_SEEK_ERROR;
+    return modutil::SEEK_ERROR;
 
   static_assert(MAX_ENVELOPE >= 25, "wtf?");
   size_t num_nodes;
@@ -689,32 +659,32 @@ static int IT_read_old_instrument(FILE *fp, IT_instrument &ins)
   }
   env.num_nodes = num_nodes;
   if(feof(fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
   /* These don't exist for old instruments. */
   ins.real_default_pan = -1;
   ins.real_init_filter_cutoff = -1;
   ins.real_init_filter_resonance = -1;
 
-  return IT_SUCCESS;
+  return modutil::SUCCESS;
 }
 
 /**
  * Read an IT file.
  */
-static int IT_read(FILE *fp)
+static modutil::error IT_read(FILE *fp)
 {
   IT_data m{};
   IT_header &h = m.header;
 
   if(!fread(h.magic, 4, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(strncmp(h.magic, "IMPM", 4))
-    return IT_INVALID_MAGIC;
+    return modutil::FORMAT_ERROR;
 
   if(!fread(h.name, 26, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   h.name[25] = '\0';
 
   h.highlight        = fget_u16le(fp);
@@ -737,9 +707,9 @@ static int IT_read(FILE *fp)
   h.reserved         = fget_u32le(fp);
 
   if(!fread(h.channel_pan, 64, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
   if(!fread(h.channel_volume, 64, 1, fp))
-    return IT_READ_ERROR;
+    return modutil::READ_ERROR;
 
   if(h.format_version < 0x200)
     m.uses[FT_OLD_FORMAT] = true;
@@ -753,7 +723,7 @@ static int IT_read(FILE *fp)
   {
     m.orders = new uint8_t[h.num_orders];
     if(!fread(m.orders, h.num_orders, 1, fp))
-      return IT_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
   if(h.num_instruments && (h.flags & F_INST_MODE))
@@ -762,7 +732,7 @@ static int IT_read(FILE *fp)
     for(size_t i = 0; i < h.num_instruments; i++)
       m.instrument_offsets[i] = fget_u32le(fp);
     if(feof(fp))
-      return IT_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
   if(h.num_samples)
@@ -771,7 +741,7 @@ static int IT_read(FILE *fp)
     for(size_t i = 0; i < h.num_samples; i++)
       m.sample_offsets[i] = fget_u32le(fp);
     if(feof(fp))
-      return IT_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
   if(h.num_patterns)
@@ -780,7 +750,7 @@ static int IT_read(FILE *fp)
     for(size_t i = 0; i < h.num_patterns; i++)
       m.pattern_offsets[i] = fget_u32le(fp);
     if(feof(fp))
-      return IT_READ_ERROR;
+      return modutil::READ_ERROR;
   }
 
   /* Load instruments. */
@@ -790,20 +760,20 @@ static int IT_read(FILE *fp)
     for(size_t i = 0; i < h.num_instruments; i++)
     {
       if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
-        return IT_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
 
       IT_instrument &ins = m.instruments[i];
 
       if(h.format_version >= 0x200)
       {
-        int ret = IT_read_instrument(fp, ins);
-        if(ret != IT_SUCCESS)
+        modutil::error ret = IT_read_instrument(fp, ins);
+        if(ret != modutil::SUCCESS)
           return ret;
       }
       else
       {
-        int ret = IT_read_old_instrument(fp, ins);
-        if(ret != IT_SUCCESS)
+        modutil::error ret = IT_read_old_instrument(fp, ins);
+        if(ret != modutil::SUCCESS)
           return ret;
       }
 
@@ -830,12 +800,12 @@ static int IT_read(FILE *fp)
     for(size_t i = 0; i < h.num_samples; i++)
     {
       if(fseek(fp, m.sample_offsets[i], SEEK_SET))
-        return IT_SEEK_ERROR;
+        return modutil::SEEK_ERROR;
 
       IT_sample &s = m.samples[i];
 
-      int ret = IT_read_sample(fp, s);
-      if(ret != IT_SUCCESS)
+      modutil::error ret = IT_read_sample(fp, s);
+      if(ret != modutil::SUCCESS)
         return ret;
 
       if(s.global_volume < 0x40)
@@ -1002,60 +972,30 @@ static int IT_read(FILE *fp)
     // FIXME
   }
 
-  return IT_SUCCESS;
+  num_its++;
+  return modutil::SUCCESS;
 }
 
-static void check_it(const char *filename)
+
+class IT_loader : public modutil::loader
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+public:
+  IT_loader(): modutil::loader("IT  : Impulse Tracker") {}
+
+  virtual modutil::error load(FILE *fp) const override
   {
-    O_("File    : %s\n", filename);
-
-    setvbuf(fp, NULL, _IOFBF, 2048);
-
-    int err = IT_read(fp);
-    if(err)
-      O_("Error: %s\n\n", IT_strerror(err));
-    else
-      fprintf(stderr, "\n");
-
-    fclose(fp);
-  }
-  else
-    O_("Failed to open '%s'.\n\n", filename);
-}
-
-
-int main(int argc, char *argv[])
-{
-  if(!argv || argc < 2)
-  {
-    fprintf(stderr, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
+    return IT_read(fp);
   }
 
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  bool read_stdin = false;
-  for(int i = 1; i < argc; i++)
+  virtual void report() const override
   {
-    if(!strcmp(argv[i], "-"))
-    {
-      if(!read_stdin)
-      {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_it(buffer);
-        read_stdin = true;
-      }
-      continue;
-    }
-    check_it(argv[i]);
-  }
+    if(!num_its)
+      return;
 
-  if(num_its)
-    O_("Total ITs        : %d\n", num_its);
-  return 0;
-}
+    fprintf(stderr, "\n");
+    O_("Total ITs           : %d\n", num_its);
+    O_("------------------- :\n");
+  }
+};
+
+static const IT_loader loader;

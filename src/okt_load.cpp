@@ -21,33 +21,10 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "modutil.hpp"
 
-static const char USAGE[] =
-  "A utility to dump Amiga Oktalyzer .OKT metadata and patterns.\n"
-  "Usage:\n"
-  "  oktutil [options] [filenames...]\n\n";
+static int total_okts = 0;
 
-enum OKT_error
-{
-  OKT_SUCCESS,
-  OKT_READ_ERROR,
-  OKT_SEEK_ERROR,
-  OKT_NOT_AN_OKT,
-  OKT_INVALID,
-};
-
-static const char *OKT_strerror(int err)
-{
-  switch(err)
-  {
-    case OKT_SUCCESS:           return "no error";
-    case OKT_READ_ERROR:        return "read error";
-    case OKT_SEEK_ERROR:        return "seek error";
-    case OKT_NOT_AN_OKT:        return "not an Amiga Oktalyzer module";
-    case OKT_INVALID:           return "invalid OKT";
-  }
-  return IFF_strerror(err);
-}
 
 enum OKT_features
 {
@@ -145,7 +122,7 @@ static const class OKT_CMOD_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_CMOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     for(int i = 0; i < 4; i++)
     {
@@ -159,9 +136,9 @@ public:
     }
 
     if(feof(fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } CMOD_handler("CMOD", false);
 
@@ -170,7 +147,7 @@ static const class OKT_SAMP_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_SAMP_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     int num_samples = len / 32;
     m.num_samples = num_samples;
@@ -180,7 +157,7 @@ public:
       OKT_sample &s = m.samples[i];
 
       if(!fread(s.name, 20, 1, fp))
-        return OKT_READ_ERROR;
+        return modutil::READ_ERROR;
       s.name[20] = '\0';
 
       s.length        = fget_u32be(fp);
@@ -191,9 +168,9 @@ public:
       fget_u16be(fp);
     }
     if(feof(fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } SAMP_handler("SAMP", false);
 
@@ -202,12 +179,12 @@ static const class OKT_SPEE_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_SPEE_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     m.initial_tempo = fget_u16be(fp);
     if(feof(fp))
-      return OKT_READ_ERROR;
-    return 0;
+      return modutil::READ_ERROR;
+    return modutil::SUCCESS;
   }
 } SPEE_handler("SPEE", false);
 
@@ -216,18 +193,18 @@ static const class OKT_SLEN_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_SLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     m.num_patterns = fget_u16be(fp);
     if(feof(fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(m.num_patterns > MAX_PATTERNS)
     {
       O_("Error     : too many patterns in SLEN (%u)\n", m.num_patterns);
-      return OKT_INVALID;
+      return modutil::INVALID;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } SLEN_handler("SLEN", false);
 
@@ -236,18 +213,18 @@ static const class OKT_PLEN_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_PLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     m.num_orders = fget_u16be(fp);
     if(feof(fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
     if(m.num_orders > MAX_ORDERS)
     {
       O_("Error     : too many orders in PLEN (%u)\n", m.num_orders);
-      return OKT_INVALID;
+      return modutil::INVALID;
     }
-    return 0;
+    return modutil::SUCCESS;
   }
 } PLEN_handler("PLEN", false);
 
@@ -256,24 +233,24 @@ static const class OKT_PATT_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     if(len < m.num_orders)
     {
       O_("Error     : expected %u orders in PATT but found %zu\n", m.num_orders, len);
-      return OKT_INVALID;
+      return modutil::INVALID;
     }
 
     if(len > MAX_ORDERS)
     {
       O_("Error     : PATT chunk too long (%zu)\n", len);
-      return OKT_INVALID;
+      return modutil::INVALID;
     }
 
     if(!fread(m.orders, len, 1, fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return OKT_SUCCESS;
+    return modutil::SUCCESS;
   }
 } PATT_handler("PATT", false);
 
@@ -282,17 +259,17 @@ static const class OKT_PBOD_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_PBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     if(len < 18) /* 2 line count + 1 row, 4 channels */
     {
       O_("Error     : PBOD chunk length < 18.\n");
-      return OKT_INVALID;
+      return modutil::INVALID;
     }
     if(m.current_patt >= MAX_PATTERNS)
     {
       O_("Warning   : ignoring pattern %u.\n", m.current_patt);
-      return OKT_SUCCESS;
+      return modutil::SUCCESS;
     }
 
     OKT_pattern &p = m.patterns[m.current_patt++];
@@ -343,9 +320,9 @@ public:
       }
     }
     if(feof(fp))
-      return OKT_READ_ERROR;
+      return modutil::READ_ERROR;
 
-    return 0;
+    return modutil::SUCCESS;
   }
 } PBOD_handler("PBOD", false);
 
@@ -354,10 +331,10 @@ static const class OKT_SBOD_Handler final: public IFFHandler<OKT_data>
 public:
   OKT_SBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
 
-  int parse(FILE *fp, size_t len, OKT_data &m) const override
+  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
   {
     /* Ignore. */
-    return 0;
+    return modutil::SUCCESS;
   }
 } SBOD_handler("SBOD", false);
 
@@ -375,7 +352,7 @@ static const IFF<OKT_data> OKT_parser({
 
 static void print_headers(OKT_data &m, OKT_pattern &p)
 {
-  O_("          :");
+  O_("        :");
   for(unsigned int chn = 0; chn < m.num_channels; chn++)
   {
     if(!p.channel_cols[chn])
@@ -385,7 +362,7 @@ static void print_headers(OKT_data &m, OKT_pattern &p)
   }
   fprintf(stderr, "\n");
 
-  O_("--------- :");
+  O_("------- :");
   for(size_t i = 0; i < m.num_channels; i++)
   {
     if(!p.channel_cols[i])
@@ -398,7 +375,7 @@ static void print_headers(OKT_data &m, OKT_pattern &p)
 
 static void print_row(OKT_data &m, OKT_pattern &p, unsigned int row)
 {
-  O_(" %8u :", row);
+  O_("%6u  :", row);
 
   OKT_pattern::event *current = p.data + row * m.num_channels;
   for(size_t i = 0; i < m.num_channels; i++, current++)
@@ -422,128 +399,95 @@ static void print_row(OKT_data &m, OKT_pattern &p, unsigned int row)
   fprintf(stderr, "\n");
 }
 
-int OKT_read(FILE *fp)
+
+class OKT_loader : modutil::loader
 {
-  OKT_data m{};
-  OKT_parser.max_chunk_length = 0;
+public:
+  OKT_loader(): modutil::loader("OKT : Oktalyzer") {}
 
-  if(!fread(m.magic, 8, 1, fp))
-    return OKT_READ_ERROR;
-
-  if(strncmp(m.magic, "OKTASONG", 8))
-    return OKT_NOT_AN_OKT;
-
-  int err = OKT_parser.parse_iff(fp, 0, m);
-  if(err)
-    return err;
-
-  if(OKT_parser.max_chunk_length > 4*1024*1024)
-    m.uses[FT_CHUNK_OVER_4_MIB] = true;
-
-//  O_("Name      : %s\n",  m.name);
-  O_("Samples   : %u\n",  m.num_samples);
-  O_("Channels  : %u\n",  m.num_channels);
-  O_("Patterns  : %u\n",  m.num_patterns);
-  O_("Max Chunk : %zu\n", OKT_parser.max_chunk_length);
-
-  O_("Uses      :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
-
-  if(Config.dump_samples)
+  virtual modutil::error load(FILE *fp) const override
   {
-    // FIXME
-  }
+    OKT_data m{};
+    OKT_parser.max_chunk_length = 0;
 
-  if(Config.dump_patterns)
-  {
-    O_("          :\n");
-    O_("Orders    :");
+    if(!fread(m.magic, 8, 1, fp))
+      return modutil::READ_ERROR;
 
-    for(unsigned int i = 0; i < m.num_orders; i++)
-      fprintf(stderr, " %02u", m.orders[i]);
+    if(strncmp(m.magic, "OKTASONG", 8))
+      return modutil::FORMAT_ERROR;
+
+    total_okts++;
+    modutil::error err = OKT_parser.parse_iff(fp, 0, m);
+    if(err)
+      return err;
+
+    if(OKT_parser.max_chunk_length > 4*1024*1024)
+      m.uses[FT_CHUNK_OVER_4_MIB] = true;
+
+//    O_("Name    : %s\n",  m.name);
+    O_("Samples : %u\n",  m.num_samples);
+    O_("Channels: %u\n",  m.num_channels);
+    O_("Patterns: %u\n",  m.num_patterns);
+    O_("MaxChunk: %zu\n", OKT_parser.max_chunk_length);
+
+    O_("Uses    :");
+    for(int i = 0; i < NUM_FEATURES; i++)
+      if(m.uses[i])
+        fprintf(stderr, " %s", FEATURE_STR[i]);
     fprintf(stderr, "\n");
 
-    for(unsigned int i = 0; i < m.num_patterns; i++)
+    if(Config.dump_samples)
     {
-      if(i >= MAX_PATTERNS)
-        break;
-
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
-      OKT_pattern &p = m.patterns[i];
-
-      O_("Pattern %02x: %u rows\n", i, p.num_rows);
-
-      if(Config.dump_pattern_rows)
-      {
-        if(p.is_empty)
-        {
-          O_("          : Empty pattern data.\n");
-          continue;
-        }
-
-        print_headers(m, p);
-        for(unsigned int row = 0; row < p.num_rows; row++)
-          print_row(m, p, row);
-      }
+      // FIXME
     }
-  }
-  return OKT_SUCCESS;
-}
 
-void check_okt(const char *filename)
-{
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
-  {
-    O_("File      : %s\n", filename);
+    if(Config.dump_patterns)
+    {
+      O_("        :\n");
+      O_("Orders  :");
 
-    int err = OKT_read(fp);
-    if(err)
-      O_("Error     : %s\n\n", OKT_strerror(err));
-    else
+      for(unsigned int i = 0; i < m.num_orders; i++)
+        fprintf(stderr, " %02u", m.orders[i]);
       fprintf(stderr, "\n");
 
-    fclose(fp);
-  }
-  else
-    O_("Error     : failed to open '%s'.\n", filename);
-}
-
-int main(int argc, char *argv[])
-{
-  bool read_stdin = false;
-
-  if(!argv || argc < 2)
-  {
-    fprintf(stdout, "%s%s", USAGE, Config.COMMON_FLAGS);
-    return 0;
-  }
-
-  if(!Config.init(&argc, argv))
-    return -1;
-
-  for(int i = 1; i < argc; i++)
-  {
-    char *arg = argv[i];
-    if(arg[0] == '-' && arg[1] == '\0')
-    {
-      if(!read_stdin)
+      for(unsigned int i = 0; i < m.num_patterns; i++)
       {
-        char buffer[1024];
-        while(fgets_safe(buffer, stdin))
-          check_okt(buffer);
+        if(i >= MAX_PATTERNS)
+          break;
 
-        read_stdin = true;
+        if(Config.dump_pattern_rows)
+          fprintf(stderr, "\n");
+
+        OKT_pattern &p = m.patterns[i];
+
+        O_("Pat. %02x : %u rows\n", i, p.num_rows);
+
+        if(Config.dump_pattern_rows)
+        {
+          if(p.is_empty)
+          {
+            O_("        : Empty pattern data.\n");
+            continue;
+          }
+
+          print_headers(m, p);
+          for(unsigned int row = 0; row < p.num_rows; row++)
+            print_row(m, p, row);
+        }
       }
-      continue;
     }
-    check_okt(arg);
+    return modutil::SUCCESS;
   }
 
-  return 0;
-}
+  virtual void report() const override
+  {
+    if(!total_okts)
+      return;
+
+    fprintf(stderr, "\n");
+    O_("Total OKTs          : %d\n", total_okts);
+    O_("------------------- :\n");
+  }
+};
+
+static const OKT_loader loader;
