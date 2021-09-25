@@ -413,12 +413,12 @@ static modutil::error STM_read(FILE *fp)
     {
       STM_pattern &p = m.patterns[i];
 
-      using EVENT = format::event<format::valueNE<0xFF>, format::value, format::valueNE<0x41>, format::effectIT>;
-      format::pattern<EVENT> pattern(p.channels, p.rows);
+      using EVENT = format::event<format::value, format::value, format::value, format::effectIT>;
+      format::pattern<EVENT> pattern(i, p.channels, p.rows);
 
       if(!Config.dump_pattern_rows)
       {
-        pattern.summary("Pat.", "Pattern", i);
+        pattern.summary();
         continue;
       }
 
@@ -427,15 +427,15 @@ static modutil::error STM_read(FILE *fp)
       {
         for(unsigned int track = 0; track < p.channels; track++, current++)
         {
-          format::valueNE<0xFF> a{ current->note };
-          format::value         b{ current->instrument };
-          format::valueNE<0x41> c{ current->volume };
-          format::effectIT      d{ current->command, current->param };
+          format::value    a{ current->note, current->note != 0xFF };
+          format::value    b{ current->instrument };
+          format::value    c{ current->volume, current->volume < 0x41 };
+          format::effectIT d{ current->command, current->param };
 
           pattern.insert(EVENT(a, b, c, d));
         }
       }
-      pattern.print("Pat.", "Pattern", i);
+      pattern.print();
     }
   }
 

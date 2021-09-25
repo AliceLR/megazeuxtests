@@ -490,11 +490,11 @@ public:
       for(unsigned int i = 0; i < h.num_patterns; i++)
       {
         using EVENT = format::event<format::value, format::value, format::effect, format::effect>;
-        format::pattern<EVENT> pattern(h.num_channels, 64);
+        format::pattern<EVENT> pattern(i, h.num_channels, 64);
 
         if(!Config.dump_pattern_rows)
         {
-          pattern.summary("Pat.", "Pattern", i);
+          pattern.summary();
           break;
         }
 
@@ -514,7 +514,7 @@ public:
             pattern.insert(EVENT(a, b, c, d));
           }
         }
-        pattern.print("Pat.", "Pattern", i);
+        pattern.print();
       }
     }
 

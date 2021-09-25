@@ -665,11 +665,11 @@ static modutil::error GDM_read(FILE *fp)
 
       using EVENT = format::event<format::value, format::value, format::effectWide,
                                   format::effectWide, format::effectWide, format::effectWide>;
-      format::pattern<EVENT> pattern(m.num_channels, p->num_rows, p->raw_size);
+      format::pattern<EVENT> pattern(i, m.num_channels, p->num_rows, p->raw_size);
 
       if(!Config.dump_pattern_rows)
       {
-        pattern.summary("Pat.", "Pattern", i);
+        pattern.summary();
         continue;
       }
 
@@ -694,7 +694,7 @@ static modutil::error GDM_read(FILE *fp)
           pattern.insert(EVENT(a, b, c, d, e, f));
         }
       }
-      pattern.print("Pat.", "Pattern", i);
+      pattern.print();
     }
   }
   return modutil::SUCCESS;

@@ -48,9 +48,9 @@ namespace format
     fflush(stderr); // MinGW buffers stderr...
   }
 
-  static inline void line()
+  static inline void line(const char *label = "")
   {
-    O_("%-8.8s:", "");
+    O_("%-8.8s:", label);
     endline();
   }
 
@@ -121,16 +121,14 @@ namespace format
     endline();
   }
 
-  template<int VALUE_HIDE=0>
-  struct valueNE
+  struct value
   {
     uint8_t value;
+    uint8_t enable = true;
     static constexpr int width() { return 3; }
-    bool can_print() const { return (int)value != VALUE_HIDE; }
+    bool can_print() const { return enable && value != 0; }
     void print() const { if(can_print()) fprintf(stderr, " %02x", value); else spaces(width()); }
   };
-
-  using value = valueNE<0>;
 
   struct effect
   {
@@ -254,6 +252,9 @@ namespace format
   struct pattern
   {
     const char *name = nullptr;
+    const char *short_label = "Pat.";
+    const char *long_label = "Pattern";
+    unsigned int pattern_number;
     size_t rows;
     size_t columns;
     size_t size_in_bytes = 0;
@@ -262,11 +263,11 @@ namespace format
     bool print_elements[MAX_COLUMNS][EVENT::count()]{};
     int widths[MAX_COLUMNS];
 
-    pattern(size_t c = 4, size_t r = 64, size_t s = 0):
-     rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
+    pattern(unsigned int p, size_t c = 4, size_t r = 64, size_t s = 0):
+     pattern_number(p), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
 
-    pattern(const char *n, size_t c = 4, size_t r = 64, size_t s = 0):
-     name(n), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
+    pattern(const char *n, unsigned int p, size_t c = 4, size_t r = 64, size_t s = 0):
+     name(n), pattern_number(p), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
 
     void insert(EVENT &&ev)
     {
@@ -286,8 +287,13 @@ namespace format
       insert(EVENT{});
     }
 
-    void summary(const char *short_label, const char *long_label, unsigned int pattern_number,
-     bool blank = false)
+    void labels(const char *s, const char *l)
+    {
+      short_label = s;
+      long_label = l;
+    }
+
+    void summary(bool blank = false)
     {
       O_("%4.4s %02x :", short_label, pattern_number);
       if(name)
@@ -304,8 +310,15 @@ namespace format
         fprintf(stderr, "\n");
     }
 
-    void print(const char *short_label, const char *long_label, unsigned int pattern_number,
-     const char **column_labels = nullptr)
+    void tracks(const int *column_tracks)
+    {
+      O_("%-8.8s:", "");
+      for(size_t i = 0; i < columns; i++)
+        fprintf(stderr, " %02x ", column_tracks[i]);
+      format::endline();
+    }
+
+    void print(const char **column_labels = nullptr, const int *column_tracks = nullptr)
     {
       // Determine which columns to print...
       bool print_any = false;
@@ -319,11 +332,15 @@ namespace format
 
       if(!print_any)
       {
-        summary(short_label, long_label, pattern_number, true);
+        summary(true);
+        if(column_tracks)
+          tracks(column_tracks);
         return;
       }
 
-      summary(short_label, long_label, pattern_number);
+      summary();
+      if(column_tracks)
+        tracks(column_tracks);
       O_("\n");
 
       O_("%-8.8s:", "");
@@ -335,6 +352,14 @@ namespace format
         if(column_labels && column_labels[track])
         {
           fprintf(stderr, " %*.*s :", widths[track] - 1, widths[track] - 1, column_labels[track]);
+        }
+        else
+
+        if(column_tracks)
+        {
+          char tmp[8];
+          snprintf(tmp, sizeof(tmp), "T%02x", column_tracks[track]);
+          fprintf(stderr, " %-*s:", widths[track], tmp);
         }
         else
           fprintf(stderr, " %02x%*s:", track, widths[track] - 2, "");

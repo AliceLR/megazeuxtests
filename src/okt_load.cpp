@@ -377,11 +377,11 @@ public:
         OKT_pattern &p = m.patterns[i];
 
         using EVENT = format::event<format::value, format::value, format::effectWide>;
-        format::pattern<EVENT, 8> pattern(m.num_channels, p.num_rows);
+        format::pattern<EVENT, 8> pattern(i, m.num_channels, p.num_rows);
 
         if(!Config.dump_pattern_rows)
         {
-          pattern.summary("Pat.", "Pattern", i);
+          pattern.summary();
           continue;
         }
 
@@ -398,7 +398,7 @@ public:
             pattern.insert(EVENT(a, b, c));
           }
         }
-        pattern.print("Pat.", "Pattern", i);
+        pattern.print();
       }
     }
     return modutil::SUCCESS;

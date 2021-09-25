@@ -21,6 +21,7 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dsmi = 0;
@@ -184,7 +185,6 @@ struct AMF_track
   uint32_t   offset_in_file;
   uint16_t   num_events;
   uint8_t    unknown;
-  uint8_t    event_flag_xor;
   uint8_t   *raw_data = nullptr;
   AMF_event *track_data = nullptr;
 
@@ -272,7 +272,7 @@ static modutil::error AMF_read(FILE *fp)
   m.version = fgetc(fp);
   if(m.version != 0x01 && (m.version < 0x08 || m.version > 0x0E))
   {
-    O_("Error   : unknown AMF version %02x\n", m.version);
+    format::error("unknown AMF version %02x", m.version);
     return modutil::BAD_VERSION;
   }
 
@@ -424,7 +424,6 @@ static modutil::error AMF_read(FILE *fp)
     track.unknown         = fgetc(fp);
     track.calculated_size = track.num_events * 3;
     track.num_rows        = 64; // FIXME lol
-    track.event_flag_xor  = 0;
 
     track.init();
 
@@ -558,8 +557,6 @@ static modutil::error AMF_read(FILE *fp)
         ev.fx[fx].effect = cmd;
         ev.fx[fx].param  = param;
       }
-
-      track.event_flag_xor |= ev.flags;
     }
   }
 
@@ -582,18 +579,13 @@ static modutil::error AMF_read(FILE *fp)
   }
 
   // Print metadata.
-  O_("Name    : %s\n", m.name);
-  O_("Type    : DSMI %3.3s %02u\n", m.magic, m.version);
-  O_("Samples : %u\n", m.num_samples);
-  O_("Orders  : %u\n", m.num_orders);
-  O_("Tracks  : %zu (%u logical)\n", m.real_num_tracks, m.num_tracks);
-  O_("Channels: %u\n", m.num_channels);
-
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
+  format::line("Name",     "%s", m.name);
+  format::line("Type",     "DSMI %3.3s %02u", m.magic, m.version);
+  format::line("Samples",  "%u", m.num_samples);
+  format::line("Channels", "%u", m.num_channels);
+  format::line("Tracks",   "%zu (%u logical)", m.real_num_tracks, m.num_tracks);
+  format::line("Orders",   "%u", m.num_orders);
+  format::uses(m.uses, FEATURE_STR);
 
   if(Config.dump_samples)
   {
@@ -615,22 +607,11 @@ static modutil::error AMF_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("        :\n");
-    O_("Orders  :\n");
-    O_("------  :\n");
+    /**
+     * Tracks summary.
+     */
+    format::line();
 
-    for(unsigned int i = 0; i < m.num_orders; i++)
-    {
-      AMF_order &order = m.orders[i];
-      O_("    %02x  : %-3u rows : ", i, order.num_rows);
-
-      for(unsigned int j = 0; j < m.num_channels; j++)
-        fprintf(stderr, " %04x ", order.real_tracks[j]);
-
-      fprintf(stderr, "\n");
-    }
-
-    O_("        :\n");
     O_("Tracks  : Offset      Events  ???  Rows :\n");
     O_("------  : ----------  ------  ---  ---- :\n");
 
@@ -647,8 +628,7 @@ static modutil::error AMF_read(FILE *fp)
     if(Config.dump_pattern_rows)
     {
       // Raw track data.
-      if(m.real_num_tracks > 1)
-        O_("        :\n");
+      format::line();
 
       for(unsigned int i = 1; i <= m.real_num_tracks; i++)
       {
@@ -671,142 +651,82 @@ static modutil::error AMF_read(FILE *fp)
         }
         fprintf(stderr, "\n");
       }
+    }
 
-      // Assemble human-readable patterns.
-      static const char *BLANK = "                             ";
-      static const char *LINE  = "-----------------------------";
-
-      O_("        :\n");
+    /**
+     * Order summary.
+     * AMF doesn't have patterns. Each order has (# of channels) tracks.
+     */
+    format::line();
+    if(Config.dump_pattern_rows)
+    {
       O_("FX Key  : ");
       for(unsigned int i = 0; i < arraysize(AMF_effect_strings); i++)
         fprintf(stderr, "%s%s=%02x", (i > 0)?",":"", AMF_effect_strings[i], i + 0x81);
       fprintf(stderr, "\n");
+    }
 
-      for(unsigned int i = 0; i < m.num_orders; i++)
+    for(unsigned int i = 0; i < m.num_orders; i++)
+    {
+      AMF_order &order = m.orders[i];
+
+      AMF_track *ord_tracks[AMF_MAX_CHANNELS];
+      int ord_track_ids[AMF_MAX_CHANNELS];
+
+      // Get track pointers.
+      for(size_t j = 0; j < m.num_channels; j++)
       {
-        AMF_order &order = m.orders[i];
+        uint16_t track_id = order.real_tracks[j];
+        ord_track_ids[j] = track_id;
+        ord_tracks[j] = &m.tracks[track_id];
+      }
 
-        AMF_track *ord_tracks[AMF_MAX_CHANNELS];
-        int ord_widths[AMF_MAX_CHANNELS];
+      struct effectAMF
+      {
+        uint8_t effect;
+        uint8_t param;
+        uint8_t enable;
+        static constexpr int width() { return 5; }
+        bool can_print() const { return enable; }
+        void print() const { if(can_print()) fprintf(stderr, " %s%02X", AMF_effect_strings[effect - 0x81], param); else fprintf(stderr, "     "); }
+      };
 
-        O_("        :\n");
-        O_("Ord. %02x :", i);
+      using EVENT = format::event<format::value, format::value, format::value, effectAMF, effectAMF, effectAMF, effectAMF>;
+      format::pattern<EVENT, AMF_MAX_CHANNELS> pattern(i, m.num_channels, order.num_rows);
+      pattern.labels("Ord.", "Order");
 
-        // Get track pointers, compute widths, and print header.
-        for(size_t j = 0; j < m.num_channels; j++)
+      if(!Config.dump_pattern_rows)
+      {
+        pattern.summary();
+        pattern.tracks(ord_track_ids);
+        continue;
+      }
+
+      for(unsigned int row = 0; row < order.num_rows; row++)
+      {
+        for(unsigned int col = 0; col < m.num_channels; col++)
         {
-          uint16_t track_id = order.real_tracks[j];
-          ord_tracks[j] = &m.tracks[track_id];
-          uint8_t flags = ord_tracks[j]->event_flag_xor;
-          int width = 0;
+          AMF_track &track = *ord_tracks[col];
 
-          if(flags & AMF_event::SAMPLE)
+          if(row < track.num_rows)
           {
-            // Width needs to be at least 6, add note column.
-            flags |= AMF_event::NOTEVOL;
-            width += 3;
+            AMF_event &ev = track.track_data[row];
+            int num_fx = (ev.flags & AMF_event::FX);
+            format::value a{ ev.note, (ev.flags & AMF_event::NOTEVOL) && ev.note < 0x7f };
+            format::value b{ ev.volume, (ev.flags & AMF_event::NOTEVOL) && ev.volume < 0xff };
+            format::value c{ ev.sample, (ev.flags & AMF_event::SAMPLE) != 0 };
+            effectAMF     d{ ev.fx[0].effect, ev.fx[0].param, num_fx > 0 };
+            effectAMF     e{ ev.fx[1].effect, ev.fx[1].param, num_fx > 1 };
+            effectAMF     f{ ev.fx[2].effect, ev.fx[2].param, num_fx > 2 };
+            effectAMF     g{ ev.fx[3].effect, ev.fx[3].param, num_fx > 3 };
+
+            pattern.insert(EVENT(a, b, c, d, e, f, g));
           }
-          if(flags & AMF_event::NOTEVOL)
-            width += 6;
-          if(flags & AMF_event::FX)
-            width += 5 * (flags & AMF_event::FX);
-
-          ord_widths[j] = width;
-          if(width > 0)
-          {
-            if(width < 6)
-              width = 6;
-            fprintf(stderr, " T%04x%.*s :", track_id, width - 6, BLANK);
-          }
-        }
-        fprintf(stderr, "\n");
-
-        O_("------- :");
-        for(size_t j = 0; j < m.num_channels; j++)
-        {
-          int width = ord_widths[j];
-          if(width > 0)
-          {
-            if(width < 6)
-              width = 6;
-            fprintf(stderr, " %.*s :", width - 1, LINE);
-          }
-        }
-        fprintf(stderr, "\n");
-
-        // Print pattern body.
-        for(unsigned int row = 0; row < order.num_rows; row++)
-        {
-          O_("    %02x  :", row);
-          for(unsigned int col = 0; col < m.num_channels; col++)
-          {
-            int width = ord_widths[col];
-            if(width < 1)
-              continue;
-
-            AMF_track &track = *ord_tracks[col];
-            if(col < track.num_rows)
-            {
-              AMF_event &ev = track.track_data[row];
-              uint8_t flags = track.event_flag_xor;
-
-              if(flags & AMF_event::NOTEVOL)
-              {
-                if(ev.flags & AMF_event::NOTEVOL)
-                {
-                  if(ev.note < 0x7f)
-                    fprintf(stderr, " %02x", ev.note);
-                  else
-                    fprintf(stderr, "   ");
-
-                  if(ev.volume < 0xff)
-                    fprintf(stderr, " %02x", ev.volume);
-                  else
-                    fprintf(stderr, "   ");
-                }
-                else
-                  fprintf(stderr, "      ");
-              }
-
-              if(flags & AMF_event::SAMPLE)
-              {
-                if(ev.flags & AMF_event::SAMPLE)
-                  fprintf(stderr, " %02x", ev.sample);
-                else
-                  fprintf(stderr, "   ");
-              }
-
-              if(flags & AMF_event::FX)
-              {
-                uint8_t num_fx = (flags & AMF_event::FX);
-                uint8_t ev_fx = (ev.flags & AMF_event::FX);
-                for(unsigned int j = 0; j < num_fx; j++)
-                {
-                  char tmp[3];
-                  if(j < ev_fx)
-                  {
-                    uint8_t effect = ev.fx[j].effect;
-                    sprintf(tmp, "%02x", effect);
-                    fprintf(stderr, " %s%02X",
-                      (effect >= 0x81 && effect <= 0x97) ? AMF_effect_strings[effect - 0x81] : tmp,
-                      ev.fx[j].param
-                    );
-                  }
-                  else
-                    fprintf(stderr, "     ");
-                }
-              }
-            }
-            else
-              width = 0;
-
-            if(width < 6)
-              fprintf(stderr, "%.*s", 6 - width, BLANK);
-            fprintf(stderr, " :");
-          }
-          fprintf(stderr, "\n");
+          else
+            pattern.skip();
         }
       }
+      pattern.print(nullptr, ord_track_ids);
     }
   }
 

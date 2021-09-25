@@ -479,11 +479,11 @@ modutil::error DSIK_read(FILE *fp)
       DSIK_pattern &p = m.patterns[i];
 
       using EVENT = format::event<format::value, format::value, format::value, format::effectWide>;
-      format::pattern<EVENT> pattern(s.num_channels, p.num_rows, p.length_in_bytes);
+      format::pattern<EVENT> pattern(i, s.num_channels, p.num_rows, p.length_in_bytes);
 
       if(!Config.dump_pattern_rows)
       {
-        pattern.summary("Pat.", "Pattern", i);
+        pattern.summary();
         continue;
       }
 
@@ -501,7 +501,7 @@ modutil::error DSIK_read(FILE *fp)
           pattern.insert(EVENT(a, b, c, d));
         }
       }
-      pattern.print("Pat.", "Pattern", i);
+      pattern.print();
     }
   }
   return modutil::SUCCESS;

@@ -985,11 +985,11 @@ public:
         const char *name = m.pattern_names ? p.name : nullptr;
 
         using EVENT = format::event<format::value, format::value, format::effectXM, format::effectXM>;
-        format::pattern<EVENT> pattern(name, m.num_channels, p.num_rows, p.packed_data_size);
+        format::pattern<EVENT> pattern(name, i, m.num_channels, p.num_rows, p.packed_data_size);
 
         if(!Config.dump_pattern_rows)
         {
-          pattern.summary("Pat.", "Pattern", i);
+          pattern.summary();
           continue;
         }
 
@@ -1007,7 +1007,7 @@ public:
             pattern.insert(EVENT(a, b, c, d));
           }
         }
-        pattern.print("Pat.", "Pattern", i);
+        pattern.print();
       }
     }
     return modutil::SUCCESS;
