@@ -21,6 +21,7 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_okts = 0;
@@ -67,8 +68,6 @@ struct OKT_pattern
   };
 
   uint16_t num_rows;
-  uint8_t channel_cols[8];
-  bool is_empty;
   event *data;
 
   ~OKT_pattern()
@@ -285,7 +284,6 @@ public:
     p.data = new OKT_pattern::event[p.num_rows * m.num_channels];
     OKT_pattern::event *current = p.data;
 
-    p.is_empty = true;
     for(size_t i = 0; i < p.num_rows; i++)
     {
       for(size_t j = 0; j < m.num_channels; j++)
@@ -294,28 +292,6 @@ public:
         current->instrument = fgetc(fp);
         current->effect     = fgetc(fp);
         current->param      = fgetc(fp);
-
-        switch(p.channel_cols[j])
-        {
-          case 0:
-          case 1:
-            if(current->note || current->instrument)
-            {
-              p.channel_cols[j] = 2;
-              p.is_empty = false;
-            }
-            /* fall-through */
-          case 2:
-          case 3:
-            if(current->effect)
-            {
-              p.channel_cols[j] = 4;
-              p.is_empty = false;
-            }
-            break;
-          default:
-            break;
-        }
         current++;
       }
     }
@@ -350,55 +326,6 @@ static const IFF<OKT_data> OKT_parser({
   &SBOD_handler
 });
 
-static void print_headers(OKT_data &m, OKT_pattern &p)
-{
-  O_("        :");
-  for(unsigned int chn = 0; chn < m.num_channels; chn++)
-  {
-    if(!p.channel_cols[chn])
-      continue;
-
-    fprintf(stderr, " #%x%*s :", chn, (p.channel_cols[chn] - 1) * 3, "");
-  }
-  fprintf(stderr, "\n");
-
-  O_("------- :");
-  for(size_t i = 0; i < m.num_channels; i++)
-  {
-    if(!p.channel_cols[i])
-      continue;
-
-    fprintf(stderr, " %.*s :", (p.channel_cols[i] * 3 - 1), "------------");
-  }
-  fprintf(stderr, "\n");
-}
-
-static void print_row(OKT_data &m, OKT_pattern &p, unsigned int row)
-{
-  O_("%6u  :", row);
-
-  OKT_pattern::event *current = p.data + row * m.num_channels;
-  for(size_t i = 0; i < m.num_channels; i++, current++)
-  {
-    if(!p.channel_cols[i])
-      continue;
-
-#define P_EVENT(c,v) do{ if(c) { fprintf(stderr, " %02x", v); } else { fprintf(stderr, "   "); } }while(0)
-
-    if(p.channel_cols[i] >= 1)
-      P_EVENT(current->note, current->note);
-    if(p.channel_cols[i] >= 2)
-      P_EVENT((current->note || current->instrument), current->instrument);
-    if(p.channel_cols[i] >= 3)
-      P_EVENT(current->effect, current->effect);
-    if(p.channel_cols[i] >= 4)
-      P_EVENT(current->effect, current->param);
-
-    fprintf(stderr, " :");
-  }
-  fprintf(stderr, "\n");
-}
-
 
 class OKT_loader : modutil::loader
 {
@@ -424,17 +351,13 @@ public:
     if(OKT_parser.max_chunk_length > 4*1024*1024)
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-    O_("Type    : Oktalyzer\n");
-    O_("Samples : %u\n",  m.num_samples);
-    O_("Channels: %u\n",  m.num_channels);
-    O_("Patterns: %u\n",  m.num_patterns);
-    O_("MaxChunk: %zu\n", OKT_parser.max_chunk_length);
-
-    O_("Uses    :");
-    for(int i = 0; i < NUM_FEATURES; i++)
-      if(m.uses[i])
-        fprintf(stderr, " %s", FEATURE_STR[i]);
-    fprintf(stderr, "\n");
+    format::line("Type",     "Oktalyzer");
+    format::line("Samples",  "%u", m.num_samples);
+    format::line("Channels", "%u", m.num_channels);
+    format::line("Patterns", "%u", m.num_patterns);
+    format::line("Orders",   "%u", m.num_orders);
+    format::line("MaxChunk", "%zu", OKT_parser.max_chunk_length);
+    format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
     {
@@ -443,37 +366,39 @@ public:
 
     if(Config.dump_patterns)
     {
-      O_("        :\n");
-      O_("Orders  :");
-
-      for(unsigned int i = 0; i < m.num_orders; i++)
-        fprintf(stderr, " %02u", m.orders[i]);
-      fprintf(stderr, "\n");
+      format::line();
+      format::orders("Orders", m.orders, m.num_orders);
 
       for(unsigned int i = 0; i < m.num_patterns; i++)
       {
         if(i >= MAX_PATTERNS)
           break;
 
-        if(Config.dump_pattern_rows)
-          fprintf(stderr, "\n");
-
         OKT_pattern &p = m.patterns[i];
 
-        O_("Pat. %02x : %u rows\n", i, p.num_rows);
-
-        if(Config.dump_pattern_rows)
+        if(!Config.dump_pattern_rows)
         {
-          if(p.is_empty)
-          {
-            O_("        : Empty pattern data.\n");
-            continue;
-          }
-
-          print_headers(m, p);
-          for(unsigned int row = 0; row < p.num_rows; row++)
-            print_row(m, p, row);
+          format::pattern_summary("Pat.", i, m.num_channels, p.num_rows);
+          continue;
         }
+
+        using EVENT = format::event<format::value, format::value, format::effectWide>;
+        format::pattern<EVENT, 8> pattern(m.num_channels, p.num_rows);
+
+        OKT_pattern::event *current = p.data;
+
+        for(unsigned int row = 0; row < p.num_rows; row++)
+        {
+          for(unsigned int track = 0; track < m.num_channels; track++, current++)
+          {
+            format::value      a{ current->note };
+            format::value      b{ current->instrument };
+            format::effectWide c{ current->effect, current->param };
+
+            pattern.insert(EVENT(a, b, c));
+          }
+        }
+        pattern.print("Pat.", "Pattern", i);
       }
     }
     return modutil::SUCCESS;

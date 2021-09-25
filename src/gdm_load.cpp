@@ -21,6 +21,7 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_gdms = 0;
@@ -611,20 +612,15 @@ static modutil::error GDM_read(FILE *fp)
   }
 
   /* Print metadata. */
-  O_("Name    : %s\n", h.name);
-  O_("Type    : GDM %u.%u (%s/%s %u.%u)\n",
+  format::line("Name",     "%s", h.name);
+  format::line("Type",     "GDM %u.%u (%s/%s %u.%u)",
    VER_MAJOR(h.gdm_version), VER_MINOR(h.gdm_version), FORMAT(h.original_format),
    TRACKER(h.tracker_id), VER_MAJOR(h.tracker_version), VER_MINOR(h.tracker_version));
-  O_("Orders  : %u\n", h.num_orders);
-  O_("Patterns: %u\n", h.num_patterns);
-  O_("Tracks  : %u\n", m.num_channels);
-  O_("Samples : %u\n", h.num_samples);
-
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
+  format::line("Samples",  "%u", h.num_samples);
+  format::line("Channels", "%u", m.num_channels);
+  format::line("Patterns", "%u", h.num_patterns);
+  format::line("Orders",   "%u", h.num_orders);
+  format::uses(m.uses, FEATURE_STR);
 
   /* Print samples. */
   static const char LINE[] = "--------------------------------";
@@ -648,12 +644,10 @@ static modutil::error GDM_read(FILE *fp)
     }
   }
 
-#define P_PRINT(x)   do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define E_PRINT(x,y) do{ if(x) fprintf(stderr, " %2x%02x", x, y); else fprintf(stderr, "     "); }while(0)
-
   if(Config.dump_patterns)
   {
-    O_("        :\n");
+    format::line();
+
     O_("Panning :");
     for(unsigned int k = 0; k < m.num_channels; k++)
     {
@@ -663,63 +657,42 @@ static modutil::error GDM_read(FILE *fp)
     }
     fprintf(stderr, "\n");
 
-    O_("Orders  :");
-    for(unsigned int i = 0; i < h.num_orders; i++)
-      fprintf(stderr, " %02x", m.orders[i]);
-    fprintf(stderr, "\n");
+    format::orders("Orders", m.orders, h.num_orders);
 
     for(unsigned int i = 0; i < h.num_patterns; i++)
     {
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
       GDM_pattern *p = m.patterns[i];
-      if(Config.dump_pattern_rows)
+      if(!Config.dump_pattern_rows)
       {
-        O_("Pat. %02x :", i);
-        for(unsigned int k = 0; k < m.num_channels; k++)
+        format::pattern_summary("Pat.", i, m.num_channels, p->num_rows);
+        continue;
+      }
+
+      using EVENT = format::event<format::value, format::value, format::effectWide, format::effectWide, format::effectWide, format::effectWide>;
+      format::pattern<EVENT> pattern(m.num_channels, p->num_rows);
+
+      for(unsigned int row = 0; row < p->num_rows; row++)
+      {
+        for(unsigned int track = 0; track < m.num_channels; track++)
         {
-          if(h.panning[k] == 255)
-            continue;
-
-          fprintf(stderr, " Ch.%02x", k);
-          for(unsigned int x = 0; x < p->max_track_effects[k]; x++)
-            fprintf(stderr, "     ");
-          fprintf(stderr, ":");
-        }
-        fprintf(stderr, "\n");
-
-        O_("------- :");
-        for(unsigned int k = 0; k < m.num_channels; k++)
-        {
-          if(h.panning[k] == 255)
-            continue;
-
-          int len = p->max_track_effects[k] * 5 + 4;
-          fprintf(stderr, " %*.*s :", len, len, LINE);
-        }
-        fprintf(stderr, "\n");
-
-        for(unsigned int j = 0; j < p->num_rows; j++)
-        {
-          O_("    %02x  :", j);
-          for(unsigned int k = 0; k < m.num_channels; k++)
+          if(h.panning[track] == 255)
           {
-            if(h.panning[k] == 255)
-              continue;
-
-            GDM_note &n = p->rows[j][k];
-            P_PRINT(n.note);
-            P_PRINT(n.sample);
-            for(size_t x = 0; x < p->max_track_effects[k]; x++)
-              E_PRINT(n.effects[x].effect, n.effects[x].param);
-            fprintf(stderr, ":");
+            pattern.skip();
+            continue;
           }
-          fprintf(stderr, "\n");
+
+          GDM_note &n = p->rows[row][track];
+          format::value      a{ n.note };
+          format::value      b{ n.sample };
+          format::effectWide c{ n.effects[0].effect, n.effects[0].param };
+          format::effectWide d{ n.effects[1].effect, n.effects[1].param };
+          format::effectWide e{ n.effects[2].effect, n.effects[2].param };
+          format::effectWide f{ n.effects[3].effect, n.effects[3].param };
+
+          pattern.insert(EVENT(a, b, c, d, e, f));
         }
       }
-      else
-        O_("Pat. %02x : %u rows\n", i, p->num_rows);
+      pattern.print("Pat.", "Pattern", i);
     }
   }
   return modutil::SUCCESS;

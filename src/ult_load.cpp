@@ -20,6 +20,7 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_ults = 0;
@@ -456,18 +457,13 @@ public:
     /**
      * Print info.
      */
-    O_("Name    : %s\n", m.title);
-    O_("Type    : ULT V00%d\n", m.version);
-    O_("Samples : %u\n", h.num_samples);
-    O_("Channels: %u\n", h.num_channels);
-    O_("Patterns: %u\n", h.num_patterns);
-    O_("Orders  : %u\n", m.num_orders);
-
-    O_("Uses    :");
-    for(int i = 0; i < NUM_FEATURES; i++)
-      if(m.uses[i])
-        fprintf(stderr, " %s", FEATURE_DESC[i]);
-    fprintf(stderr, "\n");
+    format::line("Name",     "%s", m.title);
+    format::line("Type",     "ULT V00%d", m.version);
+    format::line("Samples",  "%u", h.num_samples);
+    format::line("Channels", "%u", h.num_channels);
+    format::line("Patterns", "%u", h.num_patterns);
+    format::line("Orders",   "%u", m.num_orders);
+    format::uses(m.uses, FEATURE_DESC);
 
     if(Config.dump_samples)
     {
@@ -488,89 +484,33 @@ public:
 
     if(Config.dump_patterns)
     {
-      O_("        :\n");
-      O_("Orders  :");
-      for(size_t i = 0; i < m.num_orders; i++)
-        fprintf(stderr, " %02x", h.orders[i]);
-      fprintf(stderr, "\n");
+      format::line();
+      format::orders("Orders", h.orders, m.num_orders);
 
       for(unsigned int i = 0; i < h.num_patterns; i++)
       {
         if(!Config.dump_pattern_rows)
           break;
 
+        using EVENT = format::event<format::value, format::value, format::effect, format::effect>;
+        format::pattern<EVENT> pattern(h.num_channels, 64);
+
         ULT_pattern &p = m.patterns[i];
-
-        bool p_note[256]{};
-        bool p_inst[256]{};
-        bool p_eff[256]{};
-        bool p_eff2[256]{};
-        int p_sz[256]{};
-        bool print_pattern = false;
-
-        // Do a quick scan of the block to see how much info to print...
         ULT_event *current = p.events;
+
         for(unsigned int row = 0; row < p.rows; row++)
         {
           for(unsigned int track = 0; track < p.channels; track++, current++)
           {
-            p_eff2[track] |= (current->effect2 != 0) || (current->param2 != 0);
-            p_eff[track]  |= (current->effect != 0)  || (current->param != 0) || p_eff2[track];
-            p_inst[track] |= current->sample != 0 || p_eff[track];
-            p_note[track] |= current->note != 0 || p_inst[track];
+            format::value  a{ current->note };
+            format::value  b{ current->sample };
+            format::effect c{ current->effect, current->param };
+            format::effect d{ current->effect2, current->param2 };
 
-            p_sz[track] = (p_note[track] * 3) + (p_inst[track] * 3) + (p_eff[track] * 4) + (p_eff2[track] * 4);
-            print_pattern |= (p_sz[track] > 0);
+            pattern.insert(EVENT(a, b, c, d));
           }
         }
-
-        if(!print_pattern)
-        {
-          O_("Pat. %02x : pattern is blank. \n", i);
-          continue;
-        }
-
-        fprintf(stderr, "\n");
-        O_("Pat. %02x :\n", i);
-        O_("\n");
-
-        O_("");
-        for(unsigned int track = 0; track < p.channels; track++)
-          if(p_sz[track])
-            fprintf(stderr, " %02x%*s:", track, p_sz[track] - 2, "");
-        fprintf(stderr, "\n");
-
-        O_("");
-        for(unsigned int track = 0; track < p.channels; track++)
-          if(p_sz[track])
-            fprintf(stderr, "%.*s:", p_sz[track] + 1, "----------------");
-        fprintf(stderr, "\n");
-
-        current = p.events;
-        for(unsigned int row = 0; row < p.rows; row++)
-        {
-          fprintf(stderr, ": ");
-
-          for(unsigned int track = 0; track < p.channels; track++, current++)
-          {
-            if(!p_sz[track])
-              continue;
-
-#define P_PRINT(x) do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define P_PRINTX(x,y) do{ if(x || y) fprintf(stderr, " %X%02x", x, y); else fprintf(stderr, "    "); }while(0)
-
-            if(p_note[track])
-              P_PRINT(current->note);
-            if(p_inst[track])
-              P_PRINT(current->sample);
-            if(p_eff[track])
-              P_PRINTX(current->effect, current->param);
-            if(p_eff2[track])
-              P_PRINTX(current->effect2, current->param2);
-            fprintf(stderr, " :");
-          }
-          fprintf(stderr, "\n");
-        }
+        pattern.print("Pat.", "Pattern", i);
       }
     }
 

@@ -28,6 +28,7 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dsik = 0;
@@ -127,8 +128,6 @@ struct DSIK_pattern
   uint16_t length_in_bytes;
   uint16_t num_rows; /* should always be 64 ? */
 
-  uint8_t channel_cols[16];
-  bool is_empty;
   event *data;
 
   ~DSIK_pattern()
@@ -312,7 +311,6 @@ public:
     // Prescan row count.
     size_t i;
     p.num_rows = 0;
-    p.is_empty = true;
     for(i = 0; i < p.length_in_bytes;)
     {
       uint8_t f = buffer[i++];
@@ -326,29 +324,16 @@ public:
         }
 
         if(f & DSIK_pattern::NOTE)
-        {
-          p.channel_cols[ch] = MAX(p.channel_cols[ch], (uint8_t)1);
-          p.is_empty = false;
           i++;
-        }
+
         if(f & DSIK_pattern::INSTRUMENT)
-        {
-          p.channel_cols[ch] = MAX(p.channel_cols[ch], (uint8_t)2);
-          p.is_empty = false;
           i++;
-        }
+
         if(f & DSIK_pattern::VOLUME)
-        {
-          p.channel_cols[ch] = MAX(p.channel_cols[ch], (uint8_t)3);
-          p.is_empty = false;
           i++;
-        }
+
         if(f & DSIK_pattern::EFFECT)
-        {
-          p.channel_cols[ch] = MAX(p.channel_cols[ch], (uint8_t)5);
-          p.is_empty = false;
           i += 2;
-        }
       }
       else
         p.num_rows++;
@@ -406,58 +391,6 @@ static const IFF<DSIK_data> DSIK_parser(Endian::LITTLE, IFFPadding::BYTE,
 });
 
 
-static void print_headers(DSIK_song &s, DSIK_pattern &p)
-{
-  O_("        :");
-  for(unsigned int chn = 0; chn < s.num_channels; chn++)
-  {
-    if(!p.channel_cols[chn])
-      continue;
-
-    fprintf(stderr, " #%x%*s :", chn, (p.channel_cols[chn] - 1) * 3, "");
-  }
-  fprintf(stderr, "\n");
-
-  O_("------- :");
-  for(size_t i = 0; i < s.num_channels; i++)
-  {
-    if(!p.channel_cols[i])
-      continue;
-
-    fprintf(stderr, " %.*s :", (p.channel_cols[i] * 3 - 1), "----------------");
-  }
-  fprintf(stderr, "\n");
-}
-
-static void print_row(DSIK_song &s, DSIK_pattern &p, unsigned int row)
-{
-  O_("%6u  :", row);
-
-  DSIK_pattern::event *current = p.data + row * s.num_channels;
-  for(size_t i = 0; i < s.num_channels; i++, current++)
-  {
-    if(!p.channel_cols[i])
-      continue;
-
-#define P_EVENT(c,v) do{ if(c) { fprintf(stderr, " %02x", v); } else { fprintf(stderr, "   "); } }while(0)
-
-    if(p.channel_cols[i] >= 1)
-      P_EVENT((current->flags & DSIK_pattern::NOTE), current->note);
-    if(p.channel_cols[i] >= 2)
-      P_EVENT((current->flags & DSIK_pattern::INSTRUMENT), current->instrument);
-    if(p.channel_cols[i] >= 3)
-      P_EVENT((current->flags & DSIK_pattern::VOLUME), current->volume);
-    if(p.channel_cols[i] >= 4)
-      P_EVENT((current->flags & DSIK_pattern::EFFECT), current->effect);
-    if(p.channel_cols[i] >= 5)
-      P_EVENT((current->flags & DSIK_pattern::EFFECT), current->param);
-
-    fprintf(stderr, " :");
-  }
-  fprintf(stderr, "\n");
-}
-
-
 modutil::error DSIK_read(FILE *fp)
 {
   DSIK_data m{};
@@ -499,19 +432,14 @@ modutil::error DSIK_read(FILE *fp)
   if(DSIK_parser.max_chunk_length > 4*1024*1024)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
-  O_("Name    : %s\n",  s.name);
-  O_("Type    : DSM %04u\n",s.format_version);
-  O_("Samples : %u\n",  s.num_samples);
-  O_("Orders  : %u\n",  s.num_orders);
-  O_("Patterns: %u\n",  s.num_patterns);
-  O_("Channels: %u\n",  s.num_channels);
-  O_("MaxChunk: %zu\n", DSIK_parser.max_chunk_length);
-
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
+  format::line("Name",     "%s", s.name);
+  format::line("Type",     "DSM %04u", s.format_version);
+  format::line("Samples",  "%u", s.num_samples);
+  format::line("Channels", "%u", s.num_channels);
+  format::line("Patterns", "%u", s.num_patterns);
+  format::line("Orders",   "%u", s.num_orders);
+  format::line("MaxChunk", "%zu", DSIK_parser.max_chunk_length);
+  format::uses(m.uses, FEATURE_STR);
 
   if(Config.dump_samples)
   {
@@ -536,40 +464,44 @@ modutil::error DSIK_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("        :\n");
-    O_("Orders  :");
-
-    for(unsigned int i = 0; i < s.num_orders; i++)
-      fprintf(stderr, " %02u", s.orders[i]);
-    fprintf(stderr, "\n");
+    format::line();
+    format::orders("Orders", s.orders, s.num_orders);
 
     if(!Config.dump_pattern_rows)
-      O_("        :\n");
+      format::line();
 
     for(unsigned int i = 0; i < s.num_patterns; i++)
     {
       if(i >= MAX_PATTERNS)
         break;
 
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
       DSIK_pattern &p = m.patterns[i];
 
-      O_("Pat. %02x : %u rows, %u bytes\n", i, p.num_rows, p.length_in_bytes);
-
-      if(Config.dump_pattern_rows)
+      if(!Config.dump_pattern_rows)
       {
-        if(p.is_empty)
-        {
-          O_("        : Empty pattern data.\n");
-          continue;
-        }
-
-        print_headers(s, p);
-        for(unsigned int row = 0; row < p.num_rows; row++)
-          print_row(s, p, row);
+        // p.length_in_bytes
+        format::pattern_summary("Pat.", i, s.num_channels, p.num_rows);
+        continue;
       }
+
+      using EVENT = format::event<format::value, format::value, format::value, format::effectWide>;
+      format::pattern<EVENT> pattern(s.num_channels, p.num_rows);
+
+      DSIK_pattern::event *current = p.data;
+
+      for(unsigned int row = 0; row < p.num_rows; row++)
+      {
+        for(unsigned int track = 0; track < s.num_channels; track++, current++)
+        {
+          format::value      a{ current->note };
+          format::value      b{ current->instrument };
+          format::value      c{ current->volume };
+          format::effectWide d{ current->effect, current->param };
+
+          pattern.insert(EVENT(a, b, c, d));
+        }
+      }
+      pattern.print("Pat.", "Pattern", i);
     }
   }
   return modutil::SUCCESS;

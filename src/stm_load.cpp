@@ -20,6 +20,7 @@
 
 #include "Config.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_stms = 0;
@@ -379,18 +380,13 @@ static modutil::error STM_read(FILE *fp)
   /**
    * Print dump.
    */
-  O_("Name    : %s\n",       m.name);
-  O_("Type    : STM %u.%02u\n", h.version_maj, h.version_min);
-  O_("Tracker : %8.8s\n",    h.tracker);
-  O_("Samples : %u\n",       h.num_instruments);
-  O_("Orders  : %u\n",       h.num_orders);
-  O_("Patterns: %u\n",       h.num_patterns);
-
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_DESC[i]);
-  fprintf(stderr, "\n");
+  format::line("Name",     "%s", m.name);
+  format::line("Type",     "STM %u.%02u", h.version_maj, h.version_min);
+  format::line("Tracker",  "%8.8s", h.tracker);
+  format::line("Samples",  "%u", h.num_instruments);
+  format::line("Patterns", "%u", h.num_patterns);
+  format::line("Orders",   "%u (%zu stored)", h.num_orders, m.stored_orders);
+  format::uses(m.uses, FEATURE_DESC);
 
   if(Config.dump_samples)
   {
@@ -410,93 +406,36 @@ static modutil::error STM_read(FILE *fp)
 
   if(Config.dump_patterns)
   {
-    O_("        :\n");
-    O_("Orders  :");
-    for(size_t i = 0; i < h.num_orders; i++)
-      fprintf(stderr, " %02x", m.orders[i]);
-    fprintf(stderr, " (%zu stored)\n", m.stored_orders);
+    format::line();
+    format::orders("Orders", m.orders, h.num_orders);
 
     for(unsigned int i = 0; i < h.num_patterns; i++)
     {
       STM_pattern &p = m.patterns[i];
 
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
-      O_("Pat. %02x : %u rows, %u channels\n", i, p.rows, p.channels);
-
       if(!Config.dump_pattern_rows)
+      {
+        format::pattern_summary("Pat.", i, p.channels, p.rows);
         continue;
+      }
 
-      uint8_t p_note[256]{};
-      uint8_t p_vol[256]{};
-      uint8_t p_inst[256]{};
-      uint8_t p_eff[256]{};
-      int p_sz[256]{};
-      bool print_pattern = false;
+      using EVENT = format::event<format::valueNE<0xFF>, format::value, format::valueNE<0x41>, format::effectIT>;
+      format::pattern<EVENT> pattern(p.channels, p.rows);
 
-      // Do a quick scan of the block to see how much info to print...
       STM_event *current = p.events;
       for(unsigned int row = 0; row < p.rows; row++)
       {
         for(unsigned int track = 0; track < p.channels; track++, current++)
         {
-          p_eff[track]  |= (current->command != 0) || (current->param != 0);
-          p_vol[track]  |= current->volume <= 0x40 || p_eff[track];
-          p_inst[track] |= current->instrument != 0 || p_vol[track];
-          p_note[track] |= current->note < 0xff || p_inst[track];
+          format::valueNE<0xFF> a{ current->note };
+          format::value         b{ current->instrument };
+          format::valueNE<0x41> c{ current->volume };
+          format::effectIT      d{ current->command, current->param };
 
-          p_sz[track] = (p_note[track] * 3) + (p_inst[track] * 3) + (p_vol[track] * 3) + (p_eff[track] * 4);
-          print_pattern |= (p_sz[track] > 0);
+          pattern.insert(EVENT(a, b, c, d));
         }
       }
-
-      if(!print_pattern)
-      {
-        O_("Pattern is blank.\n");
-        continue;
-      }
-      fprintf(stderr, "\n");
-
-      O_("");
-      for(unsigned int track = 0; track < p.channels; track++)
-        if(p_sz[track])
-          fprintf(stderr, " %02x%*s:", track, p_sz[track] - 2, "");
-      fprintf(stderr, "\n");
-
-      O_("");
-      for(unsigned int track = 0; track < p.channels; track++)
-        if(p_sz[track])
-          fprintf(stderr, "%.*s:", p_sz[track] + 1, "--------------");
-      fprintf(stderr, "\n");
-
-      current = p.events;
-      for(unsigned int row = 0; row < p.rows; row++)
-      {
-        fprintf(stderr, ": ");
-
-        for(unsigned int track = 0; track < p.channels; track++, current++)
-        {
-          if(!p_sz[track])
-            continue;
-
-#define P_PRINT(x) do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define P_PRINTN(x) do{ if(x != 0xff) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define P_PRINTV(x) do{ if(x <= 0x40) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define P_PRINTX(x,y) do{ if(x || y) fprintf(stderr, " %c%02x", x + '@', y); else fprintf(stderr, "    "); }while(0)
-
-          if(p_note[track])
-            P_PRINTN(current->note);
-          if(p_inst[track])
-            P_PRINT(current->instrument);
-          if(p_vol[track])
-            P_PRINTV(current->volume);
-          if(p_eff[track])
-            P_PRINTX(current->command, current->param);
-          fprintf(stderr, " :");
-        }
-        fprintf(stderr, "\n");
-      }
+      pattern.print("Pat.", "Pattern", i);
     }
   }
 
