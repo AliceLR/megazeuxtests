@@ -200,7 +200,7 @@ public:
 
     if(m.num_patterns > MAX_PATTERNS)
     {
-      O_("Error     : too many patterns in SLEN (%u)\n", m.num_patterns);
+      format::error("too many patterns in SLEN (%u)", m.num_patterns);
       return modutil::INVALID;
     }
     return modutil::SUCCESS;
@@ -220,7 +220,7 @@ public:
 
     if(m.num_orders > MAX_ORDERS)
     {
-      O_("Error     : too many orders in PLEN (%u)\n", m.num_orders);
+      format::error("too many orders in PLEN (%u)", m.num_orders);
       return modutil::INVALID;
     }
     return modutil::SUCCESS;
@@ -236,13 +236,13 @@ public:
   {
     if(len < m.num_orders)
     {
-      O_("Error     : expected %u orders in PATT but found %zu\n", m.num_orders, len);
+      format::error("expected %u orders in PATT but found %zu", m.num_orders, len);
       return modutil::INVALID;
     }
 
     if(len > MAX_ORDERS)
     {
-      O_("Error     : PATT chunk too long (%zu)\n", len);
+      format::error("PATT chunk too long (%zu)", len);
       return modutil::INVALID;
     }
 
@@ -262,12 +262,12 @@ public:
   {
     if(len < 18) /* 2 line count + 1 row, 4 channels */
     {
-      O_("Error     : PBOD chunk length < 18.\n");
+      format::error("PBOD chunk length < 18.");
       return modutil::INVALID;
     }
     if(m.current_patt >= MAX_PATTERNS)
     {
-      O_("Warning   : ignoring pattern %u.\n", m.current_patt);
+      format::warning("ignoring pattern %u.", m.current_patt);
       return modutil::SUCCESS;
     }
 
@@ -376,14 +376,14 @@ public:
 
         OKT_pattern &p = m.patterns[i];
 
-        if(!Config.dump_pattern_rows)
-        {
-          format::pattern_summary("Pat.", i, m.num_channels, p.num_rows);
-          continue;
-        }
-
         using EVENT = format::event<format::value, format::value, format::effectWide>;
         format::pattern<EVENT, 8> pattern(m.num_channels, p.num_rows);
+
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary("Pat.", "Pattern", i);
+          continue;
+        }
 
         OKT_pattern::event *current = p.data;
 

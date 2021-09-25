@@ -315,7 +315,7 @@ public:
     total_ults++;
     if(h.magic[14] < '1' || h.magic[14] > '4')
     {
-      O_("Error   : unknown ULT version 0x%02x\n", h.magic[14]);
+      format::error("unknown ULT version 0x%02x", h.magic[14]);
       return modutil::BAD_VERSION;
     }
     m.version = h.magic[14] - '0';
@@ -467,7 +467,7 @@ public:
 
     if(Config.dump_samples)
     {
-      O_("        :\n");
+      format::line();
       O_("Samples : Name                             Filename     : Length     LoopStart  LoopEnd    : Vol Flg Speed Fine   :\n");
       O_("------- : -------------------------------- ------------ : ---------- ---------- ---------- : --- --- ----- ------ :\n");
       for(unsigned int i = 0; i < h.num_samples; i++)
@@ -489,13 +489,17 @@ public:
 
       for(unsigned int i = 0; i < h.num_patterns; i++)
       {
-        if(!Config.dump_pattern_rows)
-          break;
-
         using EVENT = format::event<format::value, format::value, format::effect, format::effect>;
         format::pattern<EVENT> pattern(h.num_channels, 64);
 
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary("Pat.", "Pattern", i);
+          break;
+        }
+
         ULT_pattern &p = m.patterns[i];
+
         ULT_event *current = p.events;
 
         for(unsigned int row = 0; row < p.rows; row++)

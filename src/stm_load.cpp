@@ -269,7 +269,7 @@ static modutil::error STM_read(FILE *fp)
   }
   else
   {
-    O_("Error   : unknown STM version %02x.%02x\n", h.version_maj, h.version_min);
+    format::error("unknown STM version %02x.%02x", h.version_maj, h.version_min);
     return modutil::BAD_VERSION;
   }
 
@@ -390,7 +390,7 @@ static modutil::error STM_read(FILE *fp)
 
   if(Config.dump_samples)
   {
-    O_("        :\n");
+    format::line();
     O_("Samples : Filename      Seg.   Length Start  End   : Vol  C2Spd :\n");
     O_("------- : ------------  -----  -----  -----  ----- : ---  ----- :\n");
     for(unsigned int i = 0; i < h.num_instruments; i++)
@@ -413,14 +413,14 @@ static modutil::error STM_read(FILE *fp)
     {
       STM_pattern &p = m.patterns[i];
 
-      if(!Config.dump_pattern_rows)
-      {
-        format::pattern_summary("Pat.", i, p.channels, p.rows);
-        continue;
-      }
-
       using EVENT = format::event<format::valueNE<0xFF>, format::value, format::valueNE<0x41>, format::effectIT>;
       format::pattern<EVENT> pattern(p.channels, p.rows);
+
+      if(!Config.dump_pattern_rows)
+      {
+        pattern.summary("Pat.", "Pattern", i);
+        continue;
+      }
 
       STM_event *current = p.events;
       for(unsigned int row = 0; row < p.rows; row++)

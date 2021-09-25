@@ -21,15 +21,11 @@
 #include "Config.hpp"
 #include "IFF.hpp"
 #include "common.hpp"
+#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dbm = 0;
 
-
-static const char USAGE[] =
-  "A utility to dump DBM metadata and patterns.\n"
-  "Usage:\n"
-  "  dbmutil [options] [filenames...]\n\n";
 
 enum DBM_features
 {
@@ -135,11 +131,6 @@ struct DBM_pattern
     PARAM_2    = (1 << 5)
   };
 
-  static const uint8_t NOTE_SIZE       = 2;
-  static const uint8_t INSTRUMENT_SIZE = NOTE_SIZE + 3;
-  static const uint8_t EFFECT_1_SIZE   = INSTRUMENT_SIZE + 5;
-  static const uint8_t EFFECT_2_SIZE   = EFFECT_1_SIZE + 5;
-
   struct note
   {
     uint8_t note;
@@ -152,13 +143,11 @@ struct DBM_pattern
 
   uint16_t num_rows;
   uint32_t packed_data_size;
-  uint8_t  *channel_size;
   note     *data;
   char     *name; /* From PNAM. */
 
   ~DBM_pattern()
   {
-    delete[] channel_size;
     delete[] data;
     delete[] name;
   }
@@ -271,12 +260,12 @@ public:
   {
     if(len < 44)
     {
-      O_("Error   : NAME chunk length %zu, expected >=44.\n", len);
+      format::error("NAME chunk length %zu, expected >=44.", len);
       return modutil::INVALID;
     }
     if(m.read_name)
     {
-      O_("Error   : duplicate NAME.\n");
+      format::error("duplicate NAME.");
       return modutil::INVALID;
     }
 
@@ -302,12 +291,12 @@ public:
   {
     if(len < 10)
     {
-      O_("Error   : INFO chunk length %zu, expected >=10.\n", len);
+      format::error("INFO chunk length %zu, expected >=10.", len);
       return modutil::INVALID;
     }
     if(m.read_info)
     {
-      O_("Error   : duplicate INFO.\n");
+      format::error("duplicate INFO.");
       return modutil::INVALID;
     }
     m.read_info = true;
@@ -334,7 +323,7 @@ public:
   {
     if(len < 46 * m.num_songs)
     {
-      O_("Error   : SONG chunk length < %u\n", 46 * m.num_songs);
+      format::error("SONG chunk length < %u", 46 * m.num_songs);
       return modutil::INVALID;
     }
 
@@ -342,7 +331,7 @@ public:
     {
       if(i >= MAX_SONGS)
       {
-        O_("Warning : ignoring SONG %zu.\n", i);
+        format::warning("ignoring SONG %zu.", i);
         continue;
       }
 
@@ -382,12 +371,12 @@ public:
     {
       if(i >= MAX_PATTERNS)
       {
-        O_("Warning : ignoring pattern %zu.\n", i);
+        format::warning("ignoring pattern %zu", i);
         continue;
       }
       if(len < 6)
       {
-        O_("Error   : pattern %zu header truncated.\n", i);
+        format::error("pattern %zu header truncated.", i);
         return modutil::READ_ERROR;
       }
 
@@ -407,7 +396,7 @@ public:
 
       if(len < p.packed_data_size)
       {
-        O_("Error   : pattern %zu truncated (left=%zu, expected>=%u).\n",
+        format::error("pattern %zu truncated (left=%zu, expected>=%u).",
           i, len, p.packed_data_size);
         return modutil::READ_ERROR;
       }
@@ -422,7 +411,6 @@ public:
 
       size_t num_notes = m.num_channels * p.num_rows;
       p.data = new DBM_pattern::note[num_notes]{};
-      p.channel_size = new uint8_t[m.num_channels]{};
 
       DBM_pattern::note *row = p.data;
       DBM_pattern::note *end = p.data + num_notes;
@@ -445,46 +433,38 @@ public:
         channel--;
         if(channel >= m.num_channels)
         {
-          O_("Error   : invalid pattern data.\n");
+          format::error("invalid pattern data.");
           return modutil::INVALID;
         }
-
-        uint8_t &sz = p.channel_size[channel];
 
         if(flags & DBM_pattern::NOTE)
         {
           row[channel].note = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::NOTE_SIZE);
           left--;
         }
         if(flags & DBM_pattern::INSTRUMENT)
         {
           row[channel].instrument = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::INSTRUMENT_SIZE);
           left--;
         }
         if(flags & DBM_pattern::EFFECT_1)
         {
           row[channel].effect_1 = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::EFFECT_1_SIZE);
           left--;
         }
         if(flags & DBM_pattern::PARAM_1)
         {
           row[channel].param_1 = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::EFFECT_1_SIZE);
           left--;
         }
         if(flags & DBM_pattern::EFFECT_2)
         {
           row[channel].effect_2 = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::EFFECT_2_SIZE);
           left--;
         }
         if(flags & DBM_pattern::PARAM_2)
         {
           row[channel].param_2 = fgetc(fp);
-          sz = MAX(sz, DBM_pattern::EFFECT_2_SIZE);
           left--;
         }
 
@@ -494,10 +474,10 @@ public:
       if(left)
       {
         if(left < 0)
-          O_("Warning : read %zd past end of packed data for pattern %zu.\n", -left, i);
+          format::warning("read %zd past end of packed data for pattern %zu.", -left, i);
         /* Don't print for 1 byte, this seems to be common... */
         if(left > 1)
-          O_("Warning : %zd of packed data remaining for pattern %zu.\n", left, i);
+          format::warning("%zd of packed data remaining for pattern %zu.", left, i);
         if(fseek(fp, left, SEEK_CUR))
           return modutil::SEEK_ERROR;
       }
@@ -557,7 +537,7 @@ public:
 
     if(len < 50 * m.num_instruments)
     {
-      O_("Error   : INST chunk length < %u\n", 50 * m.num_instruments);
+      format::error("INST chunk length < %u", 50 * m.num_instruments);
       return modutil::INVALID;
     }
 
@@ -565,7 +545,7 @@ public:
     {
       if(i > MAX_INSTRUMENTS)
       {
-        O_("Warning : ignoring instrument %zu.\n", i);
+        format::warning("ignoring instrument %zu.", i);
         continue;
       }
 
@@ -603,7 +583,7 @@ public:
 
     if(len < 8 * m.num_samples)
     {
-      O_("Error   : SMPL chunk length < %u.\n", 8 * m.num_samples);
+      format::error("SMPL chunk length < %u.", 8 * m.num_samples);
       return modutil::INVALID;
     }
 
@@ -611,7 +591,7 @@ public:
     {
       if(i >= MAX_SAMPLES)
       {
-        O_("Warning : ignoring sample %zu.\n", i);
+        format::warning("ignoring sample %zu.", i);
         continue;
       }
 
@@ -661,42 +641,42 @@ static modutil::error read_envelope(DBM_data &m, DBM_envelope &env, size_t env_n
 
   if(env.instrument_id > m.num_instruments)
   {
-    O_("Warning : envelope %zu for invalid instrument %u\n",
+    format::warning("envelope %zu for invalid instrument %u",
       env_num, env.instrument_id);
     return modutil::INVALID;
   }
 
   if(env.num_points > DBM_envelope::MAX_POINTS)
   {
-    O_("Warning : envelope %zu for instrument %u contains too many points (%zu)\n",
+    format::warning("envelope %zu for instrument %u contains too many points (%zu)",
       env_num, env.instrument_id, (size_t)env.num_points);
     return modutil::INVALID;
   }
 
   if(env.sustain_1_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning : envelope %zu sustain 1 (%u) >= max points (32)\n",
+    format::warning("envelope %zu sustain 1 (%u) >= max points (32)",
       env_num, env.sustain_1_point);
     return modutil::INVALID;
   }
 
   if(env.sustain_2_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning : envelope %zu sustain 2 (%u) >= max points (32)\n",
+    format::warning("envelope %zu sustain 2 (%u) >= max points (32)",
       env_num, env.sustain_2_point);
     return modutil::INVALID;
   }
 
   if(env.loop_start_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning : envelope %zu loop start (%u) >= max points (32)\n",
+    format::warning("envelope %zu loop start (%u) >= max points (32)",
       env_num, env.loop_start_point);
     return modutil::INVALID;
   }
 
   if(env.loop_end_point >= DBM_envelope::MAX_POINTS)
   {
-    O_("Warning : envelope %zu loop end (%u) >= max points (32)\n",
+    format::warning("envelope %zu loop end (%u) >= max points (32)",
       env_num, env.loop_end_point);
     return modutil::INVALID;
   }
@@ -718,7 +698,7 @@ public:
 
     if(len < 4)
     {
-      O_("Error   : VENV chunk length < 4.\n");
+      format::error("VENV chunk length < 4.");
       return modutil::INVALID;
     }
 
@@ -734,7 +714,7 @@ public:
 
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
-      O_("Error   : VENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+      format::warning("VENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).",
         num_envelopes, len, (size_t)(2 + num_envelopes * 136));
       return modutil::SUCCESS;
     }
@@ -770,7 +750,7 @@ public:
 
     if(len < 4)
     {
-      O_("Error   : PENV chunk length < 4.\n");
+      format::error("PENV chunk length < 4.");
       return modutil::INVALID;
     }
 
@@ -786,7 +766,7 @@ public:
 
     if(len < (size_t)(num_envelopes * 136 + 2))
     {
-      O_("Error   : PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).\n",
+      format::warning("PENV chunk truncated (envelopes=%u, size=%zu, expected=%zu).",
         num_envelopes, len, (size_t)(2 + num_envelopes * 136));
       return modutil::SUCCESS;
     }
@@ -819,7 +799,7 @@ public:
 
     if(len < 10)
     {
-      O_("Error   : DSPE chunk length < 10.\n");
+      format::error("DSPE chunk length < 10.");
       return modutil::INVALID;
     }
 
@@ -857,7 +837,7 @@ static const IFF<DBM_data> DBM_parser({
 
 static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 {
-  O_("        :\n");
+  format::line();
   O_("%-6s  : Instr. #  Enabled : (...)=Loop  S=Sustain\n", name);
   O_("------  : --------  ------- : -------------------------\n");
   for(unsigned int i = 0; i < num; i++)
@@ -895,200 +875,6 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
   }
 }
 
-static void print_pattern_head(DBM_data &m, DBM_pattern &p)
-{
-  fprintf(stderr, "\n");
-  O_("");
-  for(unsigned int i = 0; i < m.num_channels; i++)
-  {
-    int size = p.channel_size[i];
-    if(size)
-      fprintf(stderr, " %02x%*s :", i, size - 2, "");
-  }
-  fprintf(stderr, "\n");
-  O_("");
-  for(size_t i = 0; i < m.num_channels; i++)
-  {
-    int size = p.channel_size[i];
-    if(size)
-      fprintf(stderr, " %.*s :", size, "--------------------");
-  }
-  fprintf(stderr, "\n");
-}
-
-static void print_pattern_notes(DBM_data &m, DBM_pattern &p)
-{
-  DBM_pattern::note *current = p.data;
-
-  for(size_t i = 0; i < p.num_rows; i++)
-  {
-    O_("");
-    for(size_t j = 0; j < m.num_channels; j++, current++)
-    {
-      uint8_t size = p.channel_size[j];
-      if(size >= DBM_pattern::NOTE_SIZE)
-      {
-        if(current->note)
-          fprintf(stderr, " %02x", current->note);
-        else
-          fprintf(stderr, "   ");
-      }
-      if(size >= DBM_pattern::INSTRUMENT_SIZE)
-      {
-        if(current->instrument)
-          fprintf(stderr, " %02x", current->instrument);
-        else
-          fprintf(stderr, "   ");
-      }
-      if(size >= DBM_pattern::EFFECT_1_SIZE)
-      {
-        if(current->effect_1 || current->param_1)
-          fprintf(stderr, " %2x%02x", current->effect_1, current->param_1);
-        else
-          fprintf(stderr, "     ");
-      }
-      if(size >= DBM_pattern::EFFECT_2_SIZE)
-      {
-        if(current->effect_2 || current->param_2)
-          fprintf(stderr, " %2x%02x", current->effect_2, current->param_2);
-        else
-          fprintf(stderr, "     ");
-      }
-      if(size)
-        fprintf(stderr, " :");
-    }
-    fprintf(stderr, "\n");
-  }
-}
-
-static modutil::error DBM_read(FILE *fp)
-{
-  DBM_data m{};
-  DBM_parser.max_chunk_length = 0;
-
-  if(!fread(m.magic, 4, 1, fp))
-    return modutil::READ_ERROR;
-
-  if(strncmp(m.magic, "DBM0", 4))
-    return modutil::FORMAT_ERROR;
-
-  total_dbm++;
-
-  m.tracker_version = fget_u16be(fp);
-  fget_u16be(fp);
-
-  modutil::error err = DBM_parser.parse_iff(fp, 0, m);
-  if(err)
-    return err;
-
-  if(DBM_parser.max_chunk_length > 4*1024*1024)
-    m.uses[FT_CHUNK_OVER_4_MIB] = true;
-
-  O_("Name    : %s\n",  m.name_stripped);
-  O_("Version : %d.%02x\n", m.tracker_version >> 8, m.tracker_version & 0xFF);
-  O_("Songs   : %u\n",  m.num_songs);
-  if(m.num_samples)
-    O_("Samples : %u\n",  m.num_samples);
-  if(m.num_instruments)
-    O_("Instr.  : %u\n",  m.num_instruments);
-  if(m.num_volume_envelopes)
-    O_("V.Envs. : %u\n", m.num_volume_envelopes);
-  if(m.num_pan_envelopes)
-    O_("P.Envs. : %u\n", m.num_pan_envelopes);
-  O_("Channels: %u\n",  m.num_channels);
-  O_("Patterns: %u\n",  m.num_patterns);
-  O_("MaxChunk: %zu\n", DBM_parser.max_chunk_length);
-
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
-
-  if(Config.dump_samples)
-  {
-    if(m.num_samples)
-    {
-      O_("        :\n");
-      O_("Samples : Type    Length (samples)\n");
-      O_("------- : ------  ----------------\n");
-      for(unsigned int i = 0; i < m.num_samples; i++)
-      {
-        DBM_sample &s = m.samples[i];
-        O_("    %02x  : %-6s  %-u\n", i + 1, s.type_str(), s.length);
-      }
-    }
-
-    if(m.num_instruments)
-    {
-      O_("        :\n");
-      O_("Instr.  : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
-      O_("------  : --------  -----  -----  ---------- : ----------  ---------- \n");
-      for(unsigned int i = 0; i < m.num_instruments; i++)
-      {
-        DBM_instrument &is = m.instruments[i];
-        O_("    %02x  : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
-          i + 1, is.sample_id, is.volume, is.panning, is.finetune_hz,
-          is.repeat_start, is.repeat_length
-        );
-      }
-    }
-
-    if(m.num_volume_envelopes)
-    {
-      print_envelopes("V.Env.", m.num_volume_envelopes, m.volume_envelopes);
-    }
-
-    if(m.num_pan_envelopes)
-    {
-      print_envelopes("P.Env.", m.num_pan_envelopes, m.pan_envelopes);
-    }
-  }
-
-  if(Config.dump_patterns)
-  {
-    O_("        :\n");
-
-    /* Print each song + order list. */
-    for(unsigned int i = 0; i < m.num_songs; i++)
-    {
-      if(i >= MAX_SONGS)
-        break;
-
-      DBM_song &sng = m.songs[i];
-
-      O_("Song %02x : '%s' (%u orders)\n", i + 1, sng.name, sng.num_orders);
-      O_("        :");
-      for(size_t j = 0; j < sng.num_orders; j++)
-        fprintf(stderr, " %02x", sng.orders[j]);
-      fprintf(stderr, "\n");
-      O_("        :\n");
-    }
-
-    for(unsigned int i = 0; i < m.num_patterns; i++)
-    {
-      if(i >= MAX_PATTERNS)
-        break;
-
-      DBM_pattern &p = m.patterns[i];
-
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
-      if(m.pattern_names)
-        O_("Pat. %02x : %u rows, %u bytes ('%s')\n", i, p.num_rows, p.packed_data_size, p.name);
-      else
-        O_("Pat. %02x : %u rows, %u bytes\n", i, p.num_rows, p.packed_data_size);
-
-      if(Config.dump_pattern_rows)
-      {
-        print_pattern_head(m, p);
-        print_pattern_notes(m, p);
-      }
-    }
-  }
-  return modutil::SUCCESS;
-}
 
 class DBM_loader : public modutil::loader
 {
@@ -1097,7 +883,134 @@ public:
 
   virtual modutil::error load(FILE *fp) const override
   {
-    return DBM_read(fp);
+    DBM_data m{};
+    DBM_parser.max_chunk_length = 0;
+
+    if(!fread(m.magic, 4, 1, fp))
+      return modutil::READ_ERROR;
+
+    if(strncmp(m.magic, "DBM0", 4))
+      return modutil::FORMAT_ERROR;
+
+    total_dbm++;
+
+    m.tracker_version = fget_u16be(fp);
+    fget_u16be(fp);
+
+    modutil::error err = DBM_parser.parse_iff(fp, 0, m);
+    if(err)
+      return err;
+
+    if(DBM_parser.max_chunk_length > 4*1024*1024)
+      m.uses[FT_CHUNK_OVER_4_MIB] = true;
+
+    format::line("Name",      "%s", m.name_stripped);
+    format::line("Type",      "DBM %d.%02x", m.tracker_version >> 8, m.tracker_version & 0xFF);
+    format::line("Songs",     "%u", m.num_songs);
+    if(m.num_samples)
+      format::line("Samples", "%u", m.num_samples);
+    if(m.num_instruments)
+      format::line("Instr.",  "%u", m.num_instruments);
+    if(m.num_volume_envelopes)
+      format::line("V.Envs.", "%u", m.num_volume_envelopes);
+    if(m.num_pan_envelopes)
+      format::line("P.Envs.", "%u", m.num_pan_envelopes);
+    format::line("Channels",  "%u", m.num_channels);
+    format::line("Patterns",  "%u", m.num_patterns);
+    format::line("MaxChunk",  "%zu", DBM_parser.max_chunk_length);
+    format::uses(m.uses, FEATURE_STR);
+
+    if(Config.dump_samples)
+    {
+      if(m.num_samples)
+      {
+        format::line();
+        O_("Samples : Type    Length (samples)\n");
+        O_("------- : ------  ----------------\n");
+        for(unsigned int i = 0; i < m.num_samples; i++)
+        {
+          DBM_sample &s = m.samples[i];
+          O_("    %02x  : %-6s  %-u\n", i + 1, s.type_str(), s.length);
+        }
+      }
+
+      if(m.num_instruments)
+      {
+        format::line();
+        O_("Instr.  : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
+        O_("------  : --------  -----  -----  ---------- : ----------  ---------- \n");
+        for(unsigned int i = 0; i < m.num_instruments; i++)
+        {
+          DBM_instrument &is = m.instruments[i];
+          O_("    %02x  : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
+            i + 1, is.sample_id, is.volume, is.panning, is.finetune_hz,
+            is.repeat_start, is.repeat_length
+          );
+        }
+      }
+
+      if(m.num_volume_envelopes)
+      {
+        print_envelopes("V.Env.", m.num_volume_envelopes, m.volume_envelopes);
+      }
+
+      if(m.num_pan_envelopes)
+      {
+        print_envelopes("P.Env.", m.num_pan_envelopes, m.pan_envelopes);
+      }
+    }
+
+    if(Config.dump_patterns)
+    {
+      format::line();
+
+      /* Print each song + order list. */
+      for(unsigned int i = 0; i < m.num_songs; i++)
+      {
+        if(i >= MAX_SONGS)
+          break;
+
+        DBM_song &sng = m.songs[i];
+
+        format::song("Song", "Orders", i + 1, sng.name, sng.orders, sng.num_orders);
+        format::line();
+      }
+
+      for(unsigned int i = 0; i < m.num_patterns; i++)
+      {
+        if(i >= MAX_PATTERNS)
+          break;
+
+        DBM_pattern &p = m.patterns[i];
+        const char *name = m.pattern_names ? p.name : nullptr;
+
+        using EVENT = format::event<format::value, format::value, format::effectXM, format::effectXM>;
+        format::pattern<EVENT> pattern(name, m.num_channels, p.num_rows, p.packed_data_size);
+
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary("Pat.", "Pattern", i);
+          continue;
+        }
+
+        DBM_pattern::note *current = p.data;
+
+        for(size_t row = 0; row < p.num_rows; row++)
+        {
+          for(size_t track = 0; track < m.num_channels; track++, current++)
+          {
+            format::value    a{ current->note };
+            format::value    b{ current->instrument };
+            format::effectXM c{ current->effect_1, current->param_1 };
+            format::effectXM d{ current->effect_2, current->param_2 };
+
+            pattern.insert(EVENT(a, b, c, d));
+          }
+        }
+        pattern.print("Pat.", "Pattern", i);
+      }
+    }
+    return modutil::SUCCESS;
   }
 
   virtual void report() const override

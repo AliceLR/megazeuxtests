@@ -628,7 +628,7 @@ static modutil::error GDM_read(FILE *fp)
   {
     char tmp[16];
 
-    O_("        :\n");
+    format::line();
     O_("Samples : %-32.32s  %-12.12s : Length     LoopStart  LoopEnd    Flags    C4Rate   Vol.   Pan.  :\n",
      "Name", "Filename");
     O_("------- : %-32.32s  %-12.12s : ---------- ---------- ---------- -------  -------  -----  ----- :\n",
@@ -662,14 +662,16 @@ static modutil::error GDM_read(FILE *fp)
     for(unsigned int i = 0; i < h.num_patterns; i++)
     {
       GDM_pattern *p = m.patterns[i];
+
+      using EVENT = format::event<format::value, format::value, format::effectWide,
+                                  format::effectWide, format::effectWide, format::effectWide>;
+      format::pattern<EVENT> pattern(m.num_channels, p->num_rows, p->raw_size);
+
       if(!Config.dump_pattern_rows)
       {
-        format::pattern_summary("Pat.", i, m.num_channels, p->num_rows);
+        pattern.summary("Pat.", "Pattern", i);
         continue;
       }
-
-      using EVENT = format::event<format::value, format::value, format::effectWide, format::effectWide, format::effectWide, format::effectWide>;
-      format::pattern<EVENT> pattern(m.num_channels, p->num_rows);
 
       for(unsigned int row = 0; row < p->num_rows; row++)
       {

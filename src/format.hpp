@@ -65,6 +65,28 @@ namespace format
     endline();
   }
 
+  ATTRIBUTE_PRINTF(1, 2)
+  static inline void warning(const char *fmt, ...)
+  {
+    O_("%-8.8s: ", "Warning");
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    endline();
+  }
+
+  ATTRIBUTE_PRINTF(1, 2)
+  static inline void error(const char *fmt, ...)
+  {
+    O_("%-8.8s: ", "Error");
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    endline();
+  }
+
   template<int N>
   static inline void uses(const bool (&uses)[N], const char * const (&desc)[N])
   {
@@ -75,7 +97,8 @@ namespace format
     endline();
   }
 
-  static inline void orders(const char *label, uint8_t *orders, size_t count)
+  template <typename T>
+  static inline void orders(const char *label, const T *orders, size_t count)
   {
     O_("%-8.8s:", label);
     for(size_t i = 0; i < count; i++)
@@ -83,9 +106,16 @@ namespace format
     endline();
   }
 
-  static inline void orders(const char *label, uint16_t *orders, size_t count)
+  template <typename T>
+  static inline void song(const char *song_label, const char *order_label, unsigned int song_num,
+   const char *name, const T *orders, size_t count)
   {
-    O_("%-8.8s:", label);
+    if(name)
+      O_("%-4.4s %02x : '%s', %zu %s\n", song_label, song_num, name, count, order_label);
+    else
+      O_("%-4.4s %02x : %zu %s\n", song_label, song_num, count, order_label);
+
+    O_("%-8.8s:", "");
     for(size_t i = 0; i < count; i++)
       fprintf(stderr, " %02x", orders[i]);
     endline();
@@ -109,6 +139,16 @@ namespace format
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0 || param > 0; }
     void print() const { if(can_print()) fprintf(stderr, " %1x%02x", effect, param); else spaces(width()); }
+  };
+
+  struct effectXM
+  {
+    uint8_t effect;
+    uint8_t param;
+    static constexpr int width() { return 4; }
+    bool can_print() const { return effect > 0 || param > 0; }
+    char effect_char() const { return (effect < 10) ? effect + '0' : effect - 10 + 'A'; }
+    void print() const { if(can_print()) fprintf(stderr, " %c%02x", effect_char(), param); else spaces(width()); }
   };
 
   struct effectIT
@@ -210,30 +250,29 @@ namespace format
     }
   };
 
-  static inline void pattern_summary(const char *short_label, unsigned int pattern_number, size_t columns, size_t rows)
-  {
-    O_("%4.4s %02x : %zu columns, %zu rows\n", short_label, pattern_number, columns, rows);
-  }
-
-  template<class EVENT, int MAX_COLUMNS=256>
+  template<class EVENT, size_t MAX_COLUMNS=256>
   struct pattern
   {
+    const char *name = nullptr;
     size_t rows;
     size_t columns;
+    size_t size_in_bytes = 0;
     size_t current_column = 0;
     std::vector<EVENT> events;
     bool print_elements[MAX_COLUMNS][EVENT::count()]{};
     int widths[MAX_COLUMNS];
 
-    pattern(size_t c = 4, size_t r = 64)
-    {
-      rows = r;
-      columns = (c < MAX_COLUMNS) ? c : MAX_COLUMNS;
-      events.reserve(rows * columns);
-    }
+    pattern(size_t c = 4, size_t r = 64, size_t s = 0):
+     rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
+
+    pattern(const char *n, size_t c = 4, size_t r = 64, size_t s = 0):
+     name(n), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
 
     void insert(EVENT &&ev)
     {
+      if(!events.size())
+        events.reserve(rows * columns);
+
       ev.get_print_elements(print_elements[current_column]);
       events.push_back(std::move(ev));
 
@@ -245,6 +284,24 @@ namespace format
     void skip()
     {
       insert(EVENT{});
+    }
+
+    void summary(const char *short_label, const char *long_label, unsigned int pattern_number,
+     bool blank = false)
+    {
+      O_("%4.4s %02x :", short_label, pattern_number);
+      if(name)
+        fprintf(stderr, " '%s'", name);
+
+      fprintf(stderr, " %zu columns, %zu rows", columns, rows);
+
+      if(size_in_bytes)
+        fprintf(stderr, " (%zu bytes)", size_in_bytes);
+
+      if(blank)
+        fprintf(stderr, "; %s is blank.\n", long_label);
+      else
+        fprintf(stderr, "\n");
     }
 
     void print(const char *short_label, const char *long_label, unsigned int pattern_number,
@@ -262,13 +319,11 @@ namespace format
 
       if(!print_any)
       {
-        O_("%4.4s %02x : %zu columns, %zu rows; %s is blank.\n",
-         short_label, pattern_number, columns, rows, long_label);
+        summary(short_label, long_label, pattern_number, true);
         return;
       }
 
-      O_("%4.4s %02x : %zu columns, %zu rows\n",
-       short_label, pattern_number, columns, rows);
+      summary(short_label, long_label, pattern_number);
       O_("\n");
 
       O_("%-8.8s:", "");

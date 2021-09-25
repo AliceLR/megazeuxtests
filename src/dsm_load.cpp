@@ -179,7 +179,7 @@ public:
   {
     if(len < 192)
     {
-      O_("Error   : SONG chunk length < 192.\n");
+      format::error("SONG chunk length < 192.");
       return modutil::INVALID;
     }
 
@@ -203,22 +203,22 @@ public:
 
     if(s.num_orders > MAX_ORDERS)
     {
-      O_("Error   : order count %u > %u.\n", s.num_orders, MAX_ORDERS);
+      format::error("order count %u > %u.", s.num_orders, MAX_ORDERS);
       return modutil::INVALID;
     }
     if(s.num_samples > MAX_SAMPLES)
     {
-      O_("Error   : sample count %u > %u.\n", s.num_samples, MAX_SAMPLES);
+      format::error("sample count %u > %u.", s.num_samples, MAX_SAMPLES);
       return modutil::INVALID;
     }
     if(s.num_patterns > MAX_PATTERNS)
     {
-      O_("Error   : pattern count %u > %u.\n", s.num_patterns, MAX_PATTERNS);
+      format::error("pattern count %u > %u.", s.num_patterns, MAX_PATTERNS);
       return modutil::INVALID;
     }
     if(s.num_channels > MAX_CHANNELS)
     {
-      O_("Error   : channel count %u > %u.\n", s.num_channels, MAX_CHANNELS);
+      format::error("channel count %u > %u.", s.num_channels, MAX_CHANNELS);
       return modutil::INVALID;
     }
 
@@ -241,12 +241,12 @@ public:
   {
     if(len < 64)
     {
-      O_("Error   : INST chunk length < 64.\n");
+      format::error("INST chunk length < 64.");
       return modutil::INVALID;
     }
     if(m.current_sample >= MAX_SAMPLES)
     {
-      O_("Warning : ignoring sample %u.\n", m.current_sample);
+      format::warning("ignoring sample %u.", m.current_sample);
       return modutil::SUCCESS;
     }
 
@@ -285,12 +285,12 @@ public:
     DSIK_song &s = m.song;
     if(len < 2)
     {
-      O_("Error   : PATT chunk length < 2.\n");
+      format::error("PATT chunk length < 2.");
       return modutil::INVALID;
     }
     if(m.current_pattern >= MAX_PATTERNS)
     {
-      O_("Warning : ignoring pattern %u.\n", m.current_pattern);
+      format::warning("ignoring pattern %u.", m.current_pattern);
       return modutil::SUCCESS;
     }
 
@@ -299,7 +299,8 @@ public:
     p.length_in_bytes = fget_u16le(fp);
     if(p.length_in_bytes < 2)
     {
-      O_("Error   : pattern %u length field invalid %d.\n", m.current_pattern - 1, static_cast<int>(p.length_in_bytes) - 2);
+      format::error("pattern %u length field invalid %d.",
+        m.current_pattern - 1, static_cast<int>(p.length_in_bytes) - 2);
       return modutil::INVALID;
     }
     p.length_in_bytes -= 2;
@@ -319,7 +320,7 @@ public:
         size_t ch = f & DSIK_pattern::CHANNEL;
         if(ch > s.num_channels)
         {
-          O_("Error   : invalid channel %zu referenced in pattern %u.\n", ch, m.current_pattern - 1);
+          format::error("invalid channel %zu referenced in pattern %u.", ch, m.current_pattern - 1);
           return modutil::INVALID;
         }
 
@@ -341,7 +342,7 @@ public:
 
     if(i > p.length_in_bytes)
     {
-      O_("Error   : invalid pattern data in pattern %u.\n", m.current_pattern - 1);
+      format::error("invalid pattern data in pattern %u.", m.current_pattern - 1);
       return modutil::INVALID;
     }
 
@@ -443,7 +444,7 @@ modutil::error DSIK_read(FILE *fp)
 
   if(Config.dump_samples)
   {
-    O_("        :\n");
+    format::line();
 
     static const char PAD[] = "------------------------------";
     O_("Samples : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : Vol  C4Rate  Period  Flags :\n",
@@ -477,15 +478,14 @@ modutil::error DSIK_read(FILE *fp)
 
       DSIK_pattern &p = m.patterns[i];
 
+      using EVENT = format::event<format::value, format::value, format::value, format::effectWide>;
+      format::pattern<EVENT> pattern(s.num_channels, p.num_rows, p.length_in_bytes);
+
       if(!Config.dump_pattern_rows)
       {
-        // p.length_in_bytes
-        format::pattern_summary("Pat.", i, s.num_channels, p.num_rows);
+        pattern.summary("Pat.", "Pattern", i);
         continue;
       }
-
-      using EVENT = format::event<format::value, format::value, format::value, format::effectWide>;
-      format::pattern<EVENT> pattern(s.num_channels, p.num_rows);
 
       DSIK_pattern::event *current = p.data;
 
