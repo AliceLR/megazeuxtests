@@ -19,12 +19,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.hpp"
 #include "modutil.hpp"
 
 static int num_xms;
 static int num_invalid_orders;
-static int num_without_skip;
 static int num_with_skip;
 static int num_with_pat_fe;
 
@@ -105,17 +103,15 @@ public:
     else
     if(mpt_extension)
       num_with_skip++;
-    else
-      num_without_skip++;
 
     if(has_fe)
       num_with_pat_fe++;
     num_xms++;
 
-    O_("Type    : XM %04x\n", h.version);
-    O_("Orders  : %u\n", h.num_orders);
-    O_("Patterns: %u%s\n", h.num_patterns, has_fe ? " (uses 0xFE)" : "");
-    O_("Invalid?: %s\n",
+    format::line("Type",     "XM %04x", h.version);
+    format::line("Orders",   "%u", h.num_orders);
+    format::line("Patterns", "%u%s", h.num_patterns, has_fe ? " (uses 0xFE)" : "");
+    format::line("Invalid?", "%s",
       invalid ? mpt_extension ? "YES (incl. 0xFE)" : "YES" :
       mpt_extension ? "ModPlug skip" :
       "NO"
@@ -129,18 +125,14 @@ public:
     if(!num_xms)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total XMs           : %d\n", num_xms);
-    O_("------------------- :\n");
+    format::report("Total XMs", num_xms);
 
-    if(num_without_skip)
-      O_("XMs without skip    : %d\n", num_without_skip);
     if(num_with_skip)
-      O_("XMs with skip       : %d\n", num_with_skip);
+      format::reportline("XMs with skip", "%d", num_with_skip);
     if(num_invalid_orders)
-      O_("XMs with inval.     : %d\n", num_invalid_orders);
+      format::reportline("XMs with inval.", "%d", num_invalid_orders);
     if(num_with_pat_fe)
-      O_("XMs with pat. FE    : %d\n", num_with_pat_fe);
+      format::reportline("XMs with pat. FE", "%d", num_with_pat_fe);
   }
 };
 

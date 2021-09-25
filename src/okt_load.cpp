@@ -18,10 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
 #include "IFF.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_okts = 0;
@@ -409,9 +406,7 @@ public:
     if(!total_okts)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total OKTs          : %d\n", total_okts);
-    O_("------------------- :\n");
+    format::report("Total OKTs", total_okts);
   }
 };
 

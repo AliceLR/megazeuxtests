@@ -19,9 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dsmi = 0;
@@ -749,9 +746,7 @@ public:
     if(!total_dsmi)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total AMF/DSMI      : %d\n", total_dsmi);
-    O_("------------------- :\n");
+    format::report("Total AMF/DSMI", total_dsmi);
   }
 };
 

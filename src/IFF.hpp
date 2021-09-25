@@ -20,6 +20,8 @@
 #include <stdio.h>
 #include <vector>
 #include "common.hpp"
+#include "error.hpp"
+#include "format.hpp"
 
 enum class IFFPadding
 {
@@ -172,7 +174,7 @@ public:
       const IFFHandler<T> *handler = find_handler(id);
       if(!handler)
       {
-        O_("Warning : ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
+        format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
          (int)codelen, (int)codelen, id, ftell(fp) - 8);
       }
       else

@@ -18,9 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
 #include "IFF.hpp"
-#include "common.hpp"
 #include "modutil.hpp"
 
 static int total_masi = 0;
@@ -276,9 +274,7 @@ public:
     if(!total_masi)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total MASIs         : %d\n", total_masi);
-    O_("------------------- :\n");
+    format::report("Total MASIs", total_masi);
   }
 };
 

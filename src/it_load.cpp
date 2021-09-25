@@ -19,8 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
 #include "modutil.hpp"
 
 static int num_its;
@@ -992,9 +990,7 @@ public:
     if(!num_its)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total ITs           : %d\n", num_its);
-    O_("------------------- :\n");
+    format::report("Total ITs", num_its);
   }
 };
 

@@ -18,10 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
 #include "IFF.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dbm = 0;
@@ -1018,9 +1015,7 @@ public:
     if(!total_dbm)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total DBMs          : %d\n", total_dbm);
-    O_("------------------- :\n");
+    format::report("Total DBMs", total_dbm);
   }
 };
 

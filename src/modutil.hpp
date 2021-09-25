@@ -19,6 +19,11 @@
 
 #include <stdio.h>
 
+#include "Config.hpp"
+#include "common.hpp"
+#include "error.hpp"
+#include "format.hpp"
+
 namespace modutil
 {
   class loader

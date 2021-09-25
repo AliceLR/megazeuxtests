@@ -19,9 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_gdms = 0;
@@ -715,9 +712,7 @@ public:
     if(!total_gdms)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total GDMs          : %d\n", total_gdms);
-    O_("------------------- :\n");
+    format::report("Total GDMs", total_gdms);
   }
 };
 

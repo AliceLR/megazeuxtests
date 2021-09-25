@@ -21,7 +21,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.hpp"
 #include "modutil.hpp"
 
 enum MOD_type
@@ -539,18 +538,22 @@ public:
     if(!total_files)
       return;
 
-    fprintf(stderr, "\n");
-    O_("%-19s : %d\n", "Total MODs", total_files);
-    O_("%-19s :\n", "-------------------");
+    format::report("Total MODs", total_files);
     if(total_files_nonzero_diff)
-      O_("%-19s : %d\n", "Nonzero difference", total_files_nonzero_diff);
+      format::reportline("Nonzero difference", "%d", total_files_nonzero_diff);
     if(total_files_fp_diff)
-      O_("%-19s : %d\n", "False positive?", total_files_fp_diff);
-    O_("%-19s :\n", "");
+      format::reportline("False positive?", "%d", total_files_fp_diff);
+    format::reportline();
 
     for(int i = 0; i < NUM_MOD_TYPES; i++)
+    {
+      char label[21];
       if(type_count[i])
-        O_("%-14s %4.4s : %d\n", TYPES[i].source, TYPES[i].magic, type_count[i]);
+      {
+        snprintf(label, sizeof(label), "%-14s %4.4s", TYPES[i].source, TYPES[i].magic);
+        format::reportline(label, "%d", type_count[i]);
+      }
+    }
   }
 };
 

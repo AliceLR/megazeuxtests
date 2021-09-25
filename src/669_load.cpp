@@ -18,7 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common.hpp"
 #include "modutil.hpp"
 
 static int num_669;
@@ -39,14 +38,14 @@ public:
 
     if(!memcmp(magic, "if", 2))
     {
-      O_("Type    : Composer 669\n");
+      format::line("Type", "Composer 669");
       num_composer++;
     }
     else
 
     if(!memcmp(magic, "JN", 2))
     {
-      O_("Type    : UNIS 669\n");
+      format::line("Type", "UNIS 669");
       num_unis++;
     }
     else
@@ -61,14 +60,11 @@ public:
     if(!num_669)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total 669s          : %d\n", num_669);
-    O_("------------------- :\n");
-
+    format::report("Total 669s", num_669);
     if(num_composer)
-      O_("Composer 669s       : %d\n", num_composer);
+      format::reportline("Composer 669s", "%d", num_composer);
     if(num_unis)
-      O_("UNIS 669s           : %d\n", num_unis);
+      format::reportline("UNIS 669",      "%d", num_unis);
   }
 };
 

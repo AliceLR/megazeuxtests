@@ -15,7 +15,7 @@
  */
 
 #include "Config.hpp"
-#include "common.hpp"
+#include "modutil.hpp"
 
 ConfigInfo Config;
 
@@ -79,7 +79,7 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           }
           break;
       }
-      O_("Error     : unknown option '%s'!\n", argv[i]);
+      format::error("unknown option '%s'!", argv[i]);
       return false;
     }
     argv[new_argc++] = argv[i];

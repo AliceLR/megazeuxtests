@@ -18,8 +18,6 @@
 #include <algorithm>
 #include <vector>
 
-#include "Config.hpp"
-#include "common.hpp"
 #include "modutil.hpp"
 
 #define USAGE \
@@ -73,7 +71,7 @@ static void check_module(const char *filename)
 
     // FIXME standardize message spacing (10 is most common).
 
-    O_("File    : %s\n", filename);
+    format::line("File", "%s", filename);
 
     modutil::error err;
     bool has_format = false;
@@ -89,22 +87,23 @@ static void check_module(const char *filename)
 
       has_format = true;
       if(err)
-        O_("Error   : in '%s' loader: %s\n\n", loader->name, modutil::strerror(err));
+        format::error("in loader '%s': %s", loader->name, modutil::strerror(err));
       else
-        fprintf(stderr, "\n");
+        format::endline();
 
       break;
     }
     if(!has_format)
     {
-      O_("Error   : unknown format.\n\n");
+      format::error("unknown format.");
+      format::endline();
       total_unidentified++;
     }
 
     fclose(fp);
   }
   else
-    O_("Error   : failed to open '%s'.\n", filename);
+    format::error("failed to open '%s'.", filename);
 }
 
 } /* namespace modutil */
@@ -151,11 +150,7 @@ int main(int argc, char *argv[])
     loader->report();
 
   if(total_unidentified)
-  {
-    fprintf(stderr, "\n");
-    O_("Total unidentified  : %d\n", total_unidentified);
-    O_("------------------- :\n");
-  }
+    format::report("Total unidentified", total_unidentified);
 
   return 0;
 }

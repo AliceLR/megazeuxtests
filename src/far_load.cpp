@@ -19,8 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
 #include "modutil.hpp"
 
 static int total_far = 0;
@@ -221,9 +219,7 @@ public:
     if(!total_far)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total FARs          : %d\n", total_far);
-    O_("------------------- :\n");
+    format::report("Total FARs", total_far);
   }
 };
 

@@ -18,9 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_stms = 0;
@@ -458,9 +455,7 @@ public:
     if(!total_stms)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total STMs          : %d\n", total_stms);
-    O_("------------------- :\n");
+    format::report("Total STMs", total_stms);
   }
 };
 

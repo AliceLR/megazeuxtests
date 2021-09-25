@@ -18,9 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_ults = 0;
@@ -526,9 +523,7 @@ public:
     if(!total_ults)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total ULTs          : %d\n", total_ults);
-    O_("------------------- :\n");
+    format::report("Total ULTs", total_ults);
   }
 };
 

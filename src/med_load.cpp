@@ -18,8 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
-#include "common.hpp"
 #include "modutil.hpp"
 
 static const char MAGIC_MED2[] = "MED\x02";
@@ -1323,24 +1321,22 @@ public:
     if(!num_med)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total MEDs          : %d\n", num_med);
-    O_("------------------- :\n");
+    format::report("Total MEDs", num_med);
 
     if(num_med2)
-      O_("Total MED2s         : %d\n", num_med2);
+      format::reportline("Total MED2s", "%d", num_med2);
     if(num_med3)
-      O_("Total MED3s         : %d\n", num_med3);
+      format::reportline("Total MED3s", "%d", num_med3);
     if(num_med4)
-      O_("Total MED4s         : %d\n", num_med4);
+      format::reportline("Total MED4s", "%d", num_med4);
     if(num_mmd0)
-      O_("Total MMD0s         : %d\n", num_mmd0);
+      format::reportline("Total MMD0s", "%d", num_mmd0);
     if(num_mmd1)
-      O_("Total MMD1s         : %d\n", num_mmd1);
+      format::reportline("Total MMD1s", "%d", num_mmd1);
     if(num_mmd2)
-      O_("Total MMD2s         : %d\n", num_mmd2);
+      format::reportline("Total MMD2s", "%d", num_mmd2);
     if(num_mmd3)
-      O_("Total MMD3s         : %d\n", num_mmd3);
+      format::reportline("Total MMD3s", "%d", num_mmd3);
   }
 };
 

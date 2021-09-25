@@ -27,6 +27,15 @@
 
 namespace format
 {
+#define O_(...) do { \
+  fprintf(stderr, ": " __VA_ARGS__); \
+  fflush(stderr); \
+} while(0)
+
+  /**
+   * Common line printing functions.
+   */
+
   static inline void spaces(int count)
   {
     fprintf(stderr, "%*s", count, "");
@@ -120,6 +129,34 @@ namespace format
       fprintf(stderr, " %02x", orders[i]);
     endline();
   }
+
+  static inline void report(const char *label, size_t count)
+  {
+    endline();
+    O_("%-20.20s: %zu\n", label, count);
+    O_("%-20.20s:\n", "--------------------");
+  }
+
+  static inline void reportline(const char *label = "")
+  {
+    O_("%-20.20s:", label);
+    endline();
+  }
+
+  ATTRIBUTE_PRINTF(2, 3)
+  static inline void reportline(const char *label, const char *fmt, ...)
+  {
+    O_("%-20.20s: ", label);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    endline();
+  }
+
+  /**
+   * Pattern printing classes.
+   */
 
   struct value
   {

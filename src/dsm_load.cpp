@@ -25,10 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Config.hpp"
 #include "IFF.hpp"
-#include "common.hpp"
-#include "format.hpp"
 #include "modutil.hpp"
 
 static int total_dsik = 0;
@@ -522,9 +519,7 @@ public:
     if(!total_dsik)
       return;
 
-    fprintf(stderr, "\n");
-    O_("Total DSM           : %d\n", total_dsik);
-    O_("------------------- :\n");
+    format::report("Total DSMs", total_dsik);
   }
 };
 
