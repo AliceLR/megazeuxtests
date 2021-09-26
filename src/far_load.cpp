@@ -24,55 +24,135 @@
 static int total_far = 0;
 
 
-static const char magic[] = "FAR\xFE";
+static const char MAGIC[] = "FAR\xFE";
+static const char MAGIC_EOF[] = "\x0d\x0a\x1a";
+
+static constexpr const int MAX_ORDERS = 256;
+static constexpr const int MAX_PATTERNS = 256;
+static constexpr const int MAX_INSTRUMENTS = 64;
+
+enum FAR_editor_memory
+{
+  CURRENT_OCTAVE,
+  CURRENT_VOICE,
+  CURRENT_ROW,
+  CURRENT_PATTERN,
+  CURRENT_ORDER,
+  CURRENT_SAMPLE,
+  CURRENT_VOLUME,
+  CURRENT_DISPLAY,
+  CURRENT_EDITING,
+  CURRENT_TEMPO,
+  MAX_EDITOR_MEMORY
+};
+enum FAR_editor_memory_2
+{
+  MARK_TOP,
+  MARK_BOTTOM,
+  GRID_SIZE,
+  EDIT_MODE,
+  MAX_EDITOR_MEMORY_2
+};
+
+#define HAS_INSTRUMENT(x) (!!(h.sample_mask[x >> 3] & (1 << (x & 3))))
 
 struct FAR_header
 {
   char magic[4];
   char name[40];
   char eof[3];
-  uint8_t header_length[2];
+  uint16_t header_length;
   uint8_t version;
   uint8_t track_enabled[16];
-  uint8_t current_oct;
-  uint8_t current_voice;
-  uint8_t current_row;
-  uint8_t current_pat;
-  uint8_t current_ord;
-  uint8_t current_sam;
-  uint8_t current_vol;
-  uint8_t current_display;
-  uint8_t current_editing;
-  uint8_t current_tempo;
+  uint8_t editor_memory[MAX_EDITOR_MEMORY];
   uint8_t track_panning[16];
-  uint8_t mark_top;
-  uint8_t mark_bottom;
-  uint8_t grid_size;
-  uint8_t edit_mode;
+  uint8_t editor_memory_2[MAX_EDITOR_MEMORY_2];
   uint16_t text_length;
-};
 
-struct FAR_orders
-{
-  uint8_t orders[256];
+  uint8_t orders[MAX_ORDERS];
   uint8_t num_patterns;
   uint8_t num_orders;
   uint8_t loop_to_position;
+  uint16_t pattern_length[MAX_PATTERNS];
+
+  uint8_t sample_mask[8];
 };
 
-struct FAR_pattern_metadata
+struct FAR_event
 {
-  uint16_t expected_rows;
+  uint8_t note;
+  uint8_t instrument;
+  uint8_t volume;
+  uint8_t effect; /* hi: effect, lo: param */
+
+  FAR_event() {}
+  FAR_event(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
+  {
+    note = a;
+    instrument = b;
+    volume = c;
+    effect = d;
+  }
+};
+
+struct FAR_pattern
+{
+  FAR_event *events = nullptr;
+  uint16_t columns;
+  uint16_t rows;
   uint8_t break_location;
+  uint8_t tempo;
+
+  FAR_pattern(uint16_t c=0, uint16_t r=0): columns(c), rows(r)
+  {
+    if(c && r)
+      events = new FAR_event[c * r];
+  }
+  ~FAR_pattern()
+  {
+    delete[] events;
+  }
+  FAR_pattern &operator=(FAR_pattern &&p)
+  {
+    columns = p.columns;
+    rows = p.rows;
+    events = p.events;
+    p.events = nullptr;
+    p.columns = 0;
+    p.rows = 0;
+    return *this;
+  }
+};
+
+enum FAR_instrument_flags
+{
+  // Type flags.
+  S_16BIT = (1<<0),
+  // Loop flags.
+  S_LOOP  = (1<<3),
+};
+
+struct FAR_instrument
+{
+  char name[32];
+  uint32_t length;
+  uint8_t finetune; // "not supported"
+  uint8_t volume; // "yet another unsupported feature"
+  uint32_t loop_start;
+  uint32_t loop_end;
+  uint8_t type_flags;
+  uint8_t loop_flags;
 };
 
 struct FAR_data
 {
-  struct FAR_header h;
-  struct FAR_orders o;
-  uint16_t pattern_length[256];
-  struct FAR_pattern_metadata p[256];
+  FAR_header     header;
+  FAR_pattern    patterns[MAX_PATTERNS];
+  FAR_instrument instruments[MAX_INSTRUMENTS];
   char *text = nullptr;
+
+  char name[41];
+  size_t num_instruments;
 
   ~FAR_data()
   {
@@ -88,129 +168,193 @@ public:
 
   virtual modutil::error load(FILE *fp) const override
   {
-    FAR_data d{};
-    FAR_header &h = d.h;
+    FAR_data m{};
+    FAR_header &h = m.header;
     size_t len;
     int num_patterns;
     int i;
 
-    if(!fread(&h, sizeof(struct FAR_header), 1, fp))
+    if(!fread(h.magic, sizeof(h.magic), 1, fp) ||
+       !fread(h.name, sizeof(h.name), 1, fp) ||
+       !fread(h.eof, sizeof(h.eof), 1, fp))
       return modutil::READ_ERROR;
 
-    if(memcmp(h.magic, magic, 4))
+    if(memcmp(h.magic, MAGIC, sizeof(h.magic)))
       return modutil::FORMAT_ERROR;
+    if(memcmp(h.eof, MAGIC_EOF, sizeof(h.eof)))
+      format::warning("EOF area invalid!");
 
     total_far++;
 
-    O_("Type    : FAR %x\n", h.version);
+    memcpy(m.name, h.name, sizeof(h.name));
+    m.name[sizeof(h.name)] = '\0';
+    strip_module_name(m.name, sizeof(m.name));
+
+    h.header_length = fget_u16le(fp);
+    h.version       = fgetc(fp);
+
+    if(!fread(h.track_enabled, sizeof(h.track_enabled), 1, fp) ||
+       !fread(h.editor_memory, sizeof(h.editor_memory), 1, fp) ||
+       !fread(h.track_panning, sizeof(h.track_panning), 1, fp) ||
+       !fread(h.editor_memory_2, sizeof(h.editor_memory_2), 1, fp))
+      return modutil::READ_ERROR;
+
     if(h.version != 0x10)
     {
-      O_("Error   : unknown FAR version %02x\n", h.version);
+      format::error("unknown FAR version %02x", h.version);
       return modutil::BAD_VERSION;
     }
 
-    fix_u16le(h.text_length);
+    h.text_length = fget_u16le(fp);
+    if(feof(fp))
+      return modutil::READ_ERROR;
 
     len = h.text_length;
-    //O_("FAR text length: %u\n", (unsigned int)len);
     if(len)
     {
-      d.text = new char[len + 1];
-      if(!fread(d.text, len, 1, fp))
+      m.text = new char[len + 1];
+      if(!fread(m.text, len, 1, fp))
         return modutil::READ_ERROR;
-      d.text[len] = '\0';
+      m.text[len] = '\0';
     }
 
-    if(!fread(&(d.o), sizeof(struct FAR_orders), 1, fp))
+    if(!fread(h.orders, sizeof(h.orders), 1, fp))
       return modutil::READ_ERROR;
 
-    if(!fread(d.pattern_length, sizeof(d.pattern_length), 1, fp))
+    h.num_patterns     = fgetc(fp);
+    h.num_orders       = fgetc(fp);
+    h.loop_to_position = fgetc(fp);
+
+    for(i = 0; i < MAX_PATTERNS; i++)
+      h.pattern_length[i] = fget_u16le(fp);
+
+    if(feof(fp))
       return modutil::READ_ERROR;
 
-    // This value isn't always correct...
-    num_patterns = d.o.num_patterns;
-    for(i = 0; i < 256; i++)
+    /* The documentation claims h.num_patterns it the pattern count but
+     * most commonly it seems to have a value of "1". The actual pattern
+     * count needs to be calculated manually.
+     */
+    num_patterns = h.num_patterns;
+    for(i = 0; i < MAX_PATTERNS; i++)
     {
-      fix_u16le(d.pattern_length[i]);
-      if(d.pattern_length[i])
+      if(h.pattern_length[i])
       {
-        size_t rows = (d.pattern_length[i] - 2) >> 6;
+        size_t rows = (h.pattern_length[i] - 2) >> 6;
         if(i < num_patterns && rows > 256)
-          O_("warning: pattern %02x expects %u rows >256\n", i, (unsigned int)rows);
+          format::warning("pattern %02x expects %zu rows >256", i, rows);
 
-        d.p[i].expected_rows = rows;
+        m.patterns[i] = FAR_pattern(16, rows);
 
         if(num_patterns < i + 1)
           num_patterns = i + 1;
       }
     }
-    O_("Patterns: %d (claims %d)\n", num_patterns, d.o.num_patterns);
+
+    /* Load patterns. */
+    for(i = 0; i < num_patterns; i++)
+    {
+      FAR_pattern &p = m.patterns[i];
+
+      // The break location is badly documented--it claims to be "length in rows",
+      // but it's actually the last row to play MINUS 1 i.e. it is actually (length - 2) in rows.
+      // Pattern tempo is unused like numerous other features.
+      p.break_location = fgetc(fp);
+      p.tempo = fgetc(fp);
+
+      FAR_event *current = p.events;
+      for(size_t row = 0; row < p.rows; row++)
+      {
+        for(size_t track = 0; track < p.columns; track++)
+        {
+          uint8_t ev[4];
+          if(!fread(ev, 4, 1, fp))
+          {
+            format::error("read error for pattern %02x", i);
+            return modutil::READ_ERROR;
+          }
+          *(current++) = FAR_event(ev[0], ev[1], ev[2], ev[3]);
+        }
+      }
+    }
+
+    /* Load instruments. */
+    if(!fread(h.sample_mask, sizeof(h.sample_mask), 1, fp))
+      return modutil::READ_ERROR;
+
+    for(i = 0; i < MAX_INSTRUMENTS; i++)
+    {
+      if(!HAS_INSTRUMENT(i))
+        continue;
+
+      FAR_instrument &ins = m.instruments[i];
+      m.num_instruments++;
+
+      if(!fread(ins.name, sizeof(ins.name), 1, fp))
+        return modutil::READ_ERROR;
+
+      ins.length     = fget_u32le(fp);
+      ins.finetune   = fgetc(fp);
+      ins.volume     = fgetc(fp);
+      ins.loop_start = fget_u32le(fp);
+      ins.loop_end   = fget_u32le(fp);
+      ins.type_flags = fgetc(fp);
+      ins.loop_flags = fgetc(fp);
+
+      if(feof(fp))
+        return modutil::READ_ERROR;
+    }
+
+    /* Print summary. */
+    format::line("Name",     "%s", m.name);
+    format::line("Type",     "FAR %x", h.version);
+    format::line("Instr.",   "%zu", m.num_instruments);
+    format::line("Patterns", "%d (claims %d)", num_patterns, h.num_patterns);
+    format::line("Orders",   "%d", h.num_orders);
+
+    if(Config.dump_samples)
+    {
+      // FIXME
+    }
 
     if(Config.dump_patterns)
     {
-      O_("        :\n");
-      O_("Patterns:\n");
-      O_("------- :\n");
+      format::line();
+      format::orders("Orders", h.orders, h.num_orders);
+
+      if(!Config.dump_pattern_rows)
+        format::line();
+
       for(i = 0; i < num_patterns; i++)
       {
-        int pattern_len = d.pattern_length[i];
-        int expected_rows = d.p[i].expected_rows;
-        int break_location;
-        if(!pattern_len)
+        FAR_pattern &p = m.patterns[i];
+        int pattern_len = h.pattern_length[i];
+
+        using EVENT = format::event<format::value, format::value, format::value, format::value>;
+        format::pattern<EVENT, 16> pattern(i, p.columns, p.rows, pattern_len);
+        // TODO also print break.
+
+        if(!Config.dump_pattern_rows || !pattern_len)
         {
-          O_("    %02x  : length=%u, ignoring.\n", i, pattern_len);
+          pattern.summary(!pattern_len);
           continue;
         }
 
-        break_location = fgetc(fp);
-        if(feof(fp))
+        FAR_event *current = p.events;
+        for(size_t row = 0; row < p.rows; row++)
         {
-          O_("Error   : read error for pattern %02x!\n", i);
-          return modutil::READ_ERROR;
-        }
-
-        d.p[i].break_location = break_location;
-
-        O_("    %02x  : length=%u, expected_rows=%u, break byte=%u, difference=%d\n",
-          i, pattern_len, expected_rows, break_location, expected_rows - break_location
-        );
-
-        if(Config.dump_pattern_rows)
-        {
-          fgetc(fp); // Pattern tempo byte. "DO NOT SUPPORT IT!!".
-
-          for(int j = 0; j < expected_rows; j++)
+          for(size_t track = 0; track < p.columns; track++, current++)
           {
-            fprintf(stderr, ":");
-            for(int k = 0; k < 16; k++)
-            {
-              int note = fgetc(fp);
-              int inst = fgetc(fp);
-              int vol  = fgetc(fp);
-              int fx   = fgetc(fp);
-              if(feof(fp))
-              {
-                O_("pattern read error for pattern %02x!\n", i);
-                return modutil::READ_ERROR;
-              }
-
-#define P_PRINT(x) if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   ");
-              P_PRINT(note);
-              P_PRINT(inst);
-              P_PRINT(vol);
-              P_PRINT(fx);
-              fprintf(stderr, ":");
-            }
-            fprintf(stderr, "\n");
+            format::value a{ current->note };
+            format::value b{ current->instrument };
+            format::value c{ current->volume };
+            format::value d{ current->effect };
+            pattern.insert(EVENT(a, b, c, d));
           }
-          fprintf(stderr, "\n");
-          fflush(stderr);
         }
-        else
-          fseek(fp, d.pattern_length[i] - 1, SEEK_CUR);
+        pattern.print();
       }
     }
-    // ignore samples
     return modutil::SUCCESS;
   }
 
