@@ -17,10 +17,12 @@
 #ifndef MODUTIL_FORMAT_HPP
 #define MODUTIL_FORMAT_HPP
 
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <vector>
 #include <tuple>
+#include <type_traits>
 
 #include "attribute.hpp"
 #include "common.hpp"
@@ -31,6 +33,8 @@ namespace format
   fprintf(stderr, ": " __VA_ARGS__); \
   fflush(stderr); \
 } while(0)
+
+#define DASHES "----------------------------------------------------------------"
 
   /**
    * Common line printing functions.
@@ -45,8 +49,9 @@ namespace format
   {
     while(count > 0)
     {
-      int n = count > 32 ? 32 : count;
-      fprintf(stderr, "%*.*s", n, n, "--------------------------------");
+      constexpr int L = strlen(DASHES);
+      int n = count > L ? L : count;
+      fprintf(stderr, "%*.*s", n, n, DASHES);
       count -= n;
     }
   }
@@ -153,6 +158,131 @@ namespace format
     va_end(args);
     endline();
   }
+
+  /**
+   * Sample/instrument/envelope printing classes.
+   */
+  enum table_flags
+  {
+    LEFT  = (0<<0),
+    RIGHT = (1<<0),
+    HEX   = (2<<0),
+  };
+
+  struct spacer
+  {
+    static void label(const char *)
+    {
+      fprintf(stderr, ": ");
+    }
+    static void print()
+    {
+      fprintf(stderr, ": ");
+    }
+  };
+
+  template<typename T, int N, int F=LEFT>
+  struct element
+  {
+    T value;
+    element(T v): value(v) {}
+
+    static void label(const char *label)
+    {
+      fprintf(stderr, "%-*.*s ", N, N, label);
+    }
+
+    template<typename T2 = T>
+    typename std::enable_if<std::is_convertible<T2,const char *>::value>::type print() const
+    {
+      if(F & RIGHT)
+        fprintf(stderr, "%*.*s ", N, N, value);
+      else
+        fprintf(stderr, "%-*.*s ", N, N, value);
+    }
+
+    template<typename T2 = T>
+    typename std::enable_if<std::is_integral<T2>::value>::type print() const
+    {
+      if(F & HEX)
+      {
+        if(F & RIGHT)
+          fprintf(stderr, "%*" PRIx64 " ", N, (int64_t)value);
+        else
+          fprintf(stderr, "%-*" PRIx64 " ", N, (int64_t)value);
+      }
+      else
+      {
+        if(F & RIGHT)
+          fprintf(stderr, "%*" PRId64 " ", N, (int64_t)value);
+        else
+          fprintf(stderr, "%-*" PRId64 " ", N, (int64_t)value);
+      }
+    }
+  };
+
+  template<typename... ELEMENTS>
+  class table
+  {
+  public:
+    void header(const char *title, const char **labels) const
+    {
+      int len = strlen(title);
+      O_("%-8.8s: ", title);
+      _header<0, ELEMENTS...>(labels);
+      fprintf(stderr, ":");
+      endline();
+      O_("%-*.*s%*s: ", len, len, DASHES, 8 - len, "");
+      _dashes<0, ELEMENTS...>();
+      fprintf(stderr, ":");
+      endline();
+    }
+
+    void row(unsigned int index, const ELEMENTS... args) const
+    {
+      char head[11];
+      sprintf(head, "%02x", index);
+      O_("%6.6s  : ", head);
+      _row<0, ELEMENTS...>(args...);
+      fprintf(stderr, ":");
+      endline();
+    }
+
+  private:
+    template<int N>
+    void _header(const char **labels) const {}
+
+    template<int N, typename T, typename... REST>
+    void _header(const char **labels) const
+    {
+      T::label(*labels);
+
+      if(!std::is_same<T, spacer>::value)
+        labels++;
+
+      _header<N + 1, REST...>(labels);
+    }
+
+    template<int N>
+    void _dashes() const {}
+
+    template<int N, typename T, typename... REST>
+    void _dashes() const
+    {
+      T::label(DASHES);
+      _dashes<N + 1, REST...>();
+    }
+
+    template<int N>
+    void _row() const {}
+
+    template<int N, typename T, typename... REST>
+    void _row(const T &a, REST... args) const
+    {
+      a.print();
+      _row<N + 1, REST...>(args...);
+    }
+  };
 
   /**
    * Pattern printing classes.
@@ -286,7 +416,7 @@ namespace format
   };
 
   template<class EVENT, size_t MAX_COLUMNS=256>
-  struct pattern
+  class pattern
   {
     const char *name = nullptr;
     const char *short_label = "Pat.";
@@ -300,6 +430,7 @@ namespace format
     bool print_elements[MAX_COLUMNS][EVENT::count()]{};
     int widths[MAX_COLUMNS];
 
+  public:
     pattern(unsigned int p, size_t c = 4, size_t r = 64, size_t s = 0):
      pattern_number(p), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
 

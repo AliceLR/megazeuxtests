@@ -620,24 +620,36 @@ static modutil::error GDM_read(FILE *fp)
   format::uses(m.uses, FEATURE_STR);
 
   /* Print samples. */
-  static const char LINE[] = "--------------------------------";
   if(Config.dump_samples)
   {
     char tmp[16];
 
     format::line();
-    O_("Samples : %-32.32s  %-12.12s : Length     LoopStart  LoopEnd    Flags    C4Rate   Vol.   Pan.  :\n",
-     "Name", "Filename");
-    O_("------- : %-32.32s  %-12.12s : ---------- ---------- ---------- -------  -------  -----  ----- :\n",
-     LINE, LINE);
+
+    static const char *labels[] =
+    {
+      "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Flags", "C4Rate", "Vol", "Pan"
+    };
+
+    format::table<
+      format::element<const char *, 32>,
+      format::element<const char *, 12>,
+      format::spacer,
+      format::element<unsigned, 10>,
+      format::element<unsigned, 10>,
+      format::element<unsigned, 10>,
+      format::element<const char *, 7>,
+      format::element<unsigned, 7>,
+      format::element<unsigned, 4>,
+      format::element<unsigned, 4>> table;
+
+    table.header("Samples", labels);
 
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
       GDM_sample &s = m.samples[i];
-      O_("    %02x  : %-32s  %-12s : %-10u %-10u %-10u %-7s  %-7u  %-5u  %-5u :\n",
-        (unsigned int)i, s.name, s.filename, s.length, s.loopstart, s.loopend,
-        FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning
-      );
+      table.row(i, s.name, s.filename, {}, s.length, s.loopstart, s.loopend,
+        FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning);
     }
   }
 
