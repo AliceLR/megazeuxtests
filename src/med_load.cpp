@@ -1075,44 +1075,63 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   if(h.num_extra_songs && x.nextmod_offset)
     m.uses[FT_MULTIPLE_SONGS] = true;
 
-  O_("Type    : %4.4s\n", h.magic);
-  O_("Size    : %u\n", h.file_length);
-  O_("# Tracks: %u\n", m.num_tracks);
-  O_("# Blocks: %u\n", s.num_blocks);
-  O_("# Orders: %u\n", s.num_orders);
-  O_("# Instr.: %u\n", s.num_instruments);
+  format::line("Type",     "%4.4s", h.magic);
+  format::line("Size",     "%u", h.file_length);
+  format::line("Instr.",   "%u", s.num_instruments);
+  format::line("Tracks",   "%u", m.num_tracks);
+  format::line("Blocks",   "%u", s.num_blocks);
+  format::line("Sequence", "%u", s.num_orders);
 
   if(s.flags2 & F2_BPM)
   {
     uint8_t beat_rows = (s.flags2 & F2_BPM_MASK) + 1;
 
-    O_("BPM     : %u\n", s.default_tempo);
-    O_("BeatRows: %u\n", beat_rows);
-    O_("Speed   : %u\n", s.tempo2);
+    format::line("BPM",      "%u", s.default_tempo);
+    format::line("BeatRows", "%u", beat_rows);
+    format::line("Speed",    "%u", s.tempo2);
 
     if(beat_rows != 4)
       m.uses[FT_BEAT_ROWS_NOT_4] = true;
   }
   else
   {
-    O_("Tempo   : %u\n", s.default_tempo);
-    O_("Speed   : %u\n", s.tempo2);
+    format::line("Tempo", "%u", s.default_tempo);
+    format::line("Speed", "%u", s.tempo2);
 
     if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
       m.uses[FT_INIT_TEMPO_COMPAT] = true;
   }
 
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_DESC[i]);
-  fprintf(stderr, "\n");
+  format::uses(m.uses, FEATURE_DESC);
 
   if(Config.dump_samples)
   {
-    O_("        :\n");
-    O_("Samples : Type  Length      Loop Start  Loop Len.  : MIDI       : Vol  Tr. : Hold/Decay Fine : Name\n");
-    O_("------- : ----  ----------  ----------  ---------- : ---  ----- : ---  --- : ---  ---   ---  : ----\n");
+    namespace table = format::table;
+
+    static const char *labels[] =
+    {
+      "Name", "Type", "Length", "LoopStart", "LoopLen", "MIDI", "", "Vol", "Tr.", "Hold/", "Decay", "Fine"
+    };
+
+    table::table<
+      table::string<40>,
+      table::string<4>,
+      table::spacer,
+      table::number<10>,
+      table::number<10>,
+      table::number<10>,
+      table::spacer,
+      table::number<4>,
+      table::number<5>,
+      table::spacer,
+      table::number<4>,
+      table::number<4>,
+      table::number<4>,
+      table::number<5>,
+      table::number<4>>s_table;
+
+    format::line();
+    s_table.header("Instr.", labels);
     for(unsigned int i = 0; i < s.num_instruments; i++)
     {
       MMD0sample     &sm = s.samples[i];
@@ -1133,96 +1152,49 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       unsigned int decay = sx.decay;
       int finetune = sx.finetune;
 
-      O_("    %02x  : %-4.4s  %-10u  %-10u  %-10u : %-3u  %-5u : %-3u  %-3d : %-3u  %-3u   %-3d  : %s\n",
-        i + 1, MED_insttype_str(si.type), length, repeat_start, repeat_length,
-        midi_channel, midi_preset, default_volume, transpose, hold, decay, finetune, sxi.name
-      );
+      s_table.row(i + 1, sxi.name, MED_insttype_str(si.type), {},
+       length, repeat_start, repeat_length, {},
+       midi_channel, midi_preset, {},
+       default_volume, transpose, hold, decay, finetune);
     }
   }
 
   if(Config.dump_patterns)
   {
-    O_("        :\n");
-    O_("Sequence:");
-    for(size_t i = 0; i < s.num_orders; i++)
-      fprintf(stderr, " %02x", s.orders[i]);
-    fprintf(stderr, "\n");
+    format::line();
+    format::orders("Sequence", s.orders, s.num_orders);
+
+    if(!Config.dump_pattern_rows)
+      format::line();
 
     for(unsigned int i = 0; i < s.num_blocks; i++)
     {
       MMD1block &b = m.patterns[i];
-      MMD0note *data = m.pattern_data[i];
 
-      if(Config.dump_pattern_rows)
-        fprintf(stderr, "\n");
-
-      O_("Blk. %02x : %u rows, %u tracks\n", i, b.num_rows, b.num_tracks);
+      // TODO: MMD1+ supports up to 256(?) effect channels via blockinfo.
+      using EVENT = format::event<format::value, format::value, format::effectWide>;
+      format::pattern<EVENT> pattern(i, b.num_tracks, b.num_rows);
+      pattern.labels("Blk.", "Block");
 
       if(!Config.dump_pattern_rows)
+      {
+        pattern.summary();
         continue;
+      }
 
-      uint8_t p_note[256]{};
-      uint8_t p_inst[256]{};
-      uint8_t p_eff[256]{};
-      int p_sz[256]{};
-      bool print_pattern = false;
-
-      /* Do a quick scan of the block to see how much info to print... */
-      MMD0note *current = data;
+      MMD0note *current = m.pattern_data[i];
       for(unsigned int row = 0; row < b.num_rows; row++)
       {
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
         {
-          p_eff[track]  |= (current->effect != 0) || (current->param != 0);
-          p_inst[track] |= current->instrument != 0 || p_eff[track];
-          p_note[track] |= current->note != 0 || p_inst[track];
+          format::value      a{ current->note };
+          format::value      b{ current->instrument };
+          format::effectWide c{ current->effect, current->param };
 
-          p_sz[track] = (p_note[track] * 3) + (p_inst[track] * 3) + (p_eff[track] * 6);
-          print_pattern |= (p_sz[track] > 0);
+          pattern.insert(EVENT(a, b, c));
         }
       }
-
-      if(!print_pattern)
-      {
-        O_("Block is blank.\n");
-        continue;
-      }
-
-      O_("");
-      for(unsigned int track = 0; track < b.num_tracks; track++)
-        if(p_sz[track])
-          fprintf(stderr, " %02x%*s:", track, p_sz[track] - 2, "");
-      fprintf(stderr, "\n");
-
-      O_("");
-      for(unsigned int track = 0; track < b.num_tracks; track++)
-        if(p_sz[track])
-          fprintf(stderr, "%.*s:", p_sz[track] + 1, "-------------");
-      fprintf(stderr, "\n");
-
-      current = data;
-      for(unsigned int row = 0; row < b.num_rows; row++)
-      {
-        fprintf(stderr, m.highlight(i, row) ? "X " : ": ");
-
-        for(unsigned int track = 0; track < b.num_tracks; track++, current++)
-        {
-          if(!p_sz[track])
-            continue;
-
-#define P_PRINT(x) do{ if(x) fprintf(stderr, " %02x", x); else fprintf(stderr, "   "); }while(0)
-#define P_PRINT2(x,y) do{ if(x || y) fprintf(stderr, " %02x %02x", x, y); else fprintf(stderr, "      "); }while(0)
-
-          if(p_note[track])
-            P_PRINT(current->note);
-          if(p_inst[track])
-            P_PRINT(current->instrument);
-          if(p_eff[track])
-            P_PRINT2(current->effect, current->param);
-          fprintf(stderr, " :");
-        }
-        fprintf(stderr, "\n");
-      }
+      pattern.print();
     }
   }
 
@@ -1232,21 +1204,21 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
 static modutil::error read_med2(FILE *fp)
 {
-  O_("Type    : MED2\n");
+  format::line("Type", "MED2");
   num_med2++;
   return modutil::NOT_IMPLEMENTED;
 }
 
 static modutil::error read_med3(FILE *fp)
 {
-  O_("Type    : MED3\n");
+  format::line("Type", "MED3");
   num_med3++;
   return modutil::NOT_IMPLEMENTED;
 }
 
 static modutil::error read_med4(FILE *fp)
 {
-  O_("Type    : MED4\n");
+  format::line("Type", "MED4");
   num_med4++;
   return modutil::NOT_IMPLEMENTED;
 }

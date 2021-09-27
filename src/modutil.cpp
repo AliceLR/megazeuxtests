@@ -88,9 +88,8 @@ static void check_module(const char *filename)
       has_format = true;
       if(err)
         format::error("in loader '%s': %s", loader->name, modutil::strerror(err));
-      else
-        format::endline();
 
+      format::endline();
       break;
     }
     if(!has_format)
