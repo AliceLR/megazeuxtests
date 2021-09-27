@@ -104,11 +104,21 @@ namespace format
   template<int N>
   static inline void uses(const bool (&uses)[N], const char * const (&desc)[N])
   {
-    O_("%-8.8s:", "Uses");
+    bool printed = false;
     for(int i = 0; i < N; i++)
+    {
       if(uses[i])
+      {
+        if(!printed)
+        {
+          O_("%-8.8s:", "Uses");
+          printed = true;
+        }
         fprintf(stderr, " %s", desc[i]);
-    endline();
+      }
+    }
+    if(printed)
+      endline();
   }
 
   template <typename T>

@@ -919,30 +919,50 @@ public:
 
     if(Config.dump_samples)
     {
+      namespace table = format::table;
+
       if(m.num_samples)
       {
+        static const char *labels[] = { "Type", "Length (samples)" };
+
         format::line();
-        O_("Samples : Type    Length (samples)\n");
-        O_("------- : ------  ----------------\n");
+        table::table<
+          table::string<6>,
+          table::number<16>> s_table;
+
+        s_table.header("Samples", labels);
         for(unsigned int i = 0; i < m.num_samples; i++)
         {
           DBM_sample &s = m.samples[i];
-          O_("    %02x  : %-6s  %-u\n", i + 1, s.type_str(), s.length);
+          s_table.row(i + 1, s.type_str(), s.length);
         }
       }
 
       if(m.num_instruments)
       {
+        static const char *labels[] =
+        {
+          "Name", "Sample #", "Vol", "Pan", "C4 Rate", "LoopStart", "LoopLen",
+        };
         format::line();
-        O_("Instr.  : Sample #  D.Vol  Pan    C4 Rate    : Loop Start  Loop Len.  \n");
-        O_("------  : --------  -----  -----  ---------- : ----------  ---------- \n");
+        table::table<
+          table::string<30>,
+          table::spacer,
+          table::number<8>,
+          table::number<4>,
+          table::number<4>,
+          table::number<10>,
+          table::spacer,
+          table::number<10>,
+          table::number<10>> i_table;
+
+        i_table.header("Instr.", labels);
         for(unsigned int i = 0; i < m.num_instruments; i++)
         {
           DBM_instrument &is = m.instruments[i];
-          O_("    %02x  : %-8u  %-5u  %-5d  %-10u : %-10u %-10u\n",
-            i + 1, is.sample_id, is.volume, is.panning, is.finetune_hz,
-            is.repeat_start, is.repeat_length
-          );
+          i_table.row(i + 1, is.name, {},
+           is.sample_id, is.volume, is.panning, is.finetune_hz, {},
+           is.repeat_start, is.repeat_length);
         }
       }
 
