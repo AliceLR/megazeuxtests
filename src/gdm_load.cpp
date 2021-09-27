@@ -584,7 +584,7 @@ static modutil::error GDM_read(FILE *fp)
           {
             enum GDM_features fx_feature = get_effect_feature(fx_effect, fx_param);
             if(fx_feature == FT_FX_UNKNOWN)
-              fprintf(stderr, "wtf is this effect: %02x %02x\n", fx_effect, fx_param);
+              format::warning("unknown effect: %02x %02x", fx_effect, fx_param);
             m.uses[fx_feature] = true;
           }
 
@@ -631,24 +631,25 @@ static modutil::error GDM_read(FILE *fp)
       "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Flags", "C4Rate", "Vol", "Pan"
     };
 
-    format::table<
-      format::element<const char *, 32>,
-      format::element<const char *, 12>,
-      format::spacer,
-      format::element<unsigned, 10>,
-      format::element<unsigned, 10>,
-      format::element<unsigned, 10>,
-      format::element<const char *, 7>,
-      format::element<unsigned, 7>,
-      format::element<unsigned, 4>,
-      format::element<unsigned, 4>> table;
+    namespace table = format::table;
+    table::table<
+      table::string<32>,
+      table::string<12>,
+      table::spacer,
+      table::number<10, table::LEFT>,
+      table::number<10, table::LEFT>,
+      table::number<10, table::LEFT>,
+      table::string<7>,
+      table::number<7>,
+      table::number<4>,
+      table::number<4>> s_table;
 
-    table.header("Samples", labels);
+    s_table.header("Samples", labels);
 
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
       GDM_sample &s = m.samples[i];
-      table.row(i, s.name, s.filename, {}, s.length, s.loopstart, s.loopend,
+      s_table.row(i, s.name, s.filename, {}, s.length, s.loopstart, s.loopend,
         FLAG_STR(tmp, s.flags), s.c4rate, s.default_volume, s.default_panning);
     }
   }

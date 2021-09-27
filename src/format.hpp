@@ -162,6 +162,8 @@ namespace format
   /**
    * Sample/instrument/envelope printing classes.
    */
+  namespace table
+  {
   enum table_flags
   {
     LEFT  = (0<<0),
@@ -181,28 +183,38 @@ namespace format
     }
   };
 
-  template<typename T, int N, int F=LEFT>
+  template<int N>
   struct element
   {
-    T value;
-    element(T v): value(v) {}
-
     static void label(const char *label)
     {
       fprintf(stderr, "%-*.*s ", N, N, label);
     }
+  };
 
-    template<typename T2 = T>
-    typename std::enable_if<std::is_convertible<T2,const char *>::value>::type print() const
+
+  template<int N, int F=LEFT>
+  struct string: public element<N>
+  {
+    const char *value;
+    string(const char *v): value(v) {}
+
+    void print() const
     {
       if(F & RIGHT)
         fprintf(stderr, "%*.*s ", N, N, value);
       else
         fprintf(stderr, "%-*.*s ", N, N, value);
     }
+  };
 
-    template<typename T2 = T>
-    typename std::enable_if<std::is_integral<T2>::value>::type print() const
+  template<int N, int F=RIGHT>
+  struct number: public element<N>
+  {
+    int64_t value;
+    number(int64_t v): value(v) {}
+
+    void print() const
     {
       if(F & HEX)
       {
@@ -283,6 +295,7 @@ namespace format
       _row<N + 1, REST...>(args...);
     }
   };
+  } /* namespace table */
 
   /**
    * Pattern printing classes.

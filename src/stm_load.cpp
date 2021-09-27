@@ -388,14 +388,31 @@ static modutil::error STM_read(FILE *fp)
   if(Config.dump_samples)
   {
     format::line();
-    O_("Samples : Filename      Seg.   Length Start  End   : Vol  C2Spd :\n");
-    O_("------- : ------------  -----  -----  -----  ----- : ---  ----- :\n");
+
+    static const char *labels[] =
+    {
+      "Filename", "Seg.", "Length", "Start", "End", "Vol", "C2Spd",
+    };
+
+    namespace table = format::table;
+    table::table<
+      table::string<12>,
+      table::spacer,
+      table::number<6>,
+      table::number<6>,
+      table::number<6>,
+      table::number<6>,
+      table::spacer,
+      table::number<4>,
+      table::number<6>> s_table;
+
+    s_table.header("Samples", labels);
+
     for(unsigned int i = 0; i < h.num_instruments; i++)
     {
       STM_instrument &ins = m.instruments[i];
-      O_("    %02x  : %-12.12s  %-5u  %-5u  %-5u  %-5u : %-3u  %-5u :\n",
-        i + 1, ins.filename, ins.segment,
-        ins.length, ins.loop_start, ins.loop_end,
+      s_table.row(i + 1, ins.filename, {}, ins.segment,
+        ins.length, ins.loop_start, ins.loop_end, {},
         ins.default_volume, ins.c2speed
       );
     }

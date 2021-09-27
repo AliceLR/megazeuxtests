@@ -465,15 +465,33 @@ public:
     if(Config.dump_samples)
     {
       format::line();
-      O_("Samples : Name                             Filename     : Length     LoopStart  LoopEnd    : Vol Flg Speed Fine   :\n");
-      O_("------- : -------------------------------- ------------ : ---------- ---------- ---------- : --- --- ----- ------ :\n");
+
+      static const char *labels[] =
+      {
+        "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Vol", "Flg", "Speed", "Fine"
+      };
+
+      namespace table = format::table;
+      table::table<
+        table::string<32>,
+        table::string<12>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
+        table::number<4>,
+        table::number<4>,
+        table::number<5>,
+        table::number<6>> s_table;
+
+      s_table.header("Samples", labels);
+
       for(unsigned int i = 0; i < h.num_samples; i++)
       {
         ULT_sample &ins = m.samples[i];
-
-        O_("    %02x  : %-32.32s %-12.12s : %10u %10u %10u : %3u %3u %5u %6d :\n",
-          i + 1, ins.name, ins.filename,
-          ins.length, ins.loop_start, ins.loop_end,
+        s_table.row(i + 1, ins.name, ins.filename, {},
+          ins.length, ins.loop_start, ins.loop_end, {},
           ins.default_volume, ins.bidi, ins.c2speed, ins.finetune
         );
       }

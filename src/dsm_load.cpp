@@ -443,18 +443,32 @@ modutil::error DSIK_read(FILE *fp)
   {
     format::line();
 
-    static const char PAD[] = "------------------------------";
-    O_("Samples : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : Vol  C4Rate  Period  Flags :\n",
-      "Name", "Filename", "Length", "LoopStart", "LoopEnd");
-    O_("------- : %-27.27s  %-12.12s : %-10.10s %-10.10s %-10.10s : ---  ------  ------  ----- :\n",
-      PAD, PAD, PAD, PAD, PAD);
+    static const char *labels[] =
+    {
+      "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Vol", "C4Rate", "Period", "Flags"
+    };
+
+    namespace table = format::table;
+    table::table<
+      table::string<27>,
+      table::string<12>,
+      table::spacer,
+      table::number<10>,
+      table::number<10>,
+      table::number<10>,
+      table::spacer,
+      table::number<4>,
+      table::number<6>,
+      table::number<6>,
+      table::number<5>> s_table;
+
+    s_table.header("Samples", labels);
 
     for(unsigned int i = 0; i < s.num_samples; i++)
     {
       DSIK_sample &sm = m.samples[i];
-      O_("    %02x  : %-27.27s  %-12.12s : %-10u %-10u %-10u : %-3u  %-6u  %-6u  %-5u :\n",
-        i + 1, sm.name, sm.filename,
-        sm.length, sm.loop_start, sm.loop_end,
+      s_table.row(i + 1, sm.name, sm.filename, {},
+        sm.length, sm.loop_start, sm.loop_end, {},
         sm.default_volume, sm.c4rate, sm.period, sm.flags
       );
     }

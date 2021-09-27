@@ -584,18 +584,35 @@ static modutil::error AMF_read(FILE *fp)
   format::line("Orders",   "%u", m.num_orders);
   format::uses(m.uses, FEATURE_STR);
 
+  namespace table = format::table;
+
   if(Config.dump_samples)
   {
+    /**
+     * Samples summary.
+     */
     if(m.num_samples)
     {
-      O_("        :\n");
-      O_("Samples : D.Vol  C4 Rate : Length      Loop Start  Loop End   \n");
-      O_("------- : -----  ------- : ----------  ----------  ---------- \n");
+      format::line();
+
+      static const char *labels[] =
+      {
+        "Vol", "C4 Rate", "Length", "LoopStart", "LoopEnd"
+      };
+      table::table<
+        table::number<4>,
+        table::number<7>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>> s_table;
+
+      s_table.header("Samples", labels);
+
       for(unsigned int i = 0; i < m.num_samples; i++)
       {
         AMF_sample &sample = m.samples[i];
-        O_("    %02x  : %-5u  %-7u : %-10u  %-10u  %-10u\n",
-          i + 1, sample.volume, sample.c4speed,
+        s_table.row(i + 1, sample.volume, sample.c4speed, {},
           sample.length, sample.loop_start, sample.loop_end
         );
       }
@@ -609,8 +626,18 @@ static modutil::error AMF_read(FILE *fp)
      */
     format::line();
 
-    O_("Tracks  : Offset      Events  ???  Rows :\n");
-    O_("------  : ----------  ------  ---  ---- :\n");
+    static const char *labels[] =
+    {
+      "Offset", "Events", "???", "Rows"
+    };
+
+    table::table<
+      table::number<10>,
+      table::number<6>,
+      table::number<4>,
+      table::number<5>> t_table;
+
+    t_table.header("Tracks", labels);
 
     for(unsigned int i = 1; i <= m.real_num_tracks; i++)
     {
@@ -618,8 +645,7 @@ static modutil::error AMF_read(FILE *fp)
       if(!track.raw_data && !track.track_data)
         continue;
 
-      O_("    %02x  : %-10u  %-6u  %-3u  %-4u :\n",
-       i, track.offset_in_file, track.num_events, track.unknown, track.num_rows);
+      t_table.row(i, track.offset_in_file, track.num_events, track.unknown, track.num_rows);
     }
 
     if(Config.dump_pattern_rows)
@@ -685,7 +711,18 @@ static modutil::error AMF_read(FILE *fp)
         uint8_t enable;
         static constexpr int width() { return 5; }
         bool can_print() const { return enable; }
-        void print() const { if(can_print()) fprintf(stderr, " %s%02X", AMF_effect_strings[effect - 0x81], param); else fprintf(stderr, "     "); }
+        void print() const
+        {
+          if(can_print())
+          {
+            if(effect - 0x81 >= arraysize(AMF_effect_strings))
+              fprintf(stderr, " %02x%02x", effect - 0x81, param);
+            else
+              fprintf(stderr, " %s%02X", AMF_effect_strings[effect - 0x81], param);
+          }
+          else
+            fprintf(stderr, "     ");
+        }
       };
 
       using EVENT = format::event<format::value, format::value, format::value, effectAMF, effectAMF, effectAMF, effectAMF>;
