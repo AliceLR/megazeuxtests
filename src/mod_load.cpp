@@ -74,7 +74,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "LARD", "Unknown 4ch",  4,  false },
   { "NSMS", "Unknown 4ch",  4,  false },
   { "M.K.", "Mod's Grave",  8,  true  },
-  { "",     "SoundTracker", 4,  false },
+  { "",     "Soundtracker", 4,  false },
   { "",     "ST 2.6",       -1, false },
   { "",     "IceTracker",   -1, false },
   { "",     "unknown",      -1, false },
@@ -82,7 +82,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 
 static int total_files;
 static int total_files_nonzero_diff;
-static int total_files_fp_diff;
+static int total_files_wow_fp_diff;
 static int type_count[NUM_MOD_TYPES];
 
 static constexpr uint32_t pattern_size(uint32_t num_channels)
@@ -97,7 +97,7 @@ enum MOD_features
   NUM_FEATURES
 };
 
-static const char *feature_str[NUM_FEATURES] =
+static const char *FEATURE_STR[NUM_FEATURES] =
 {
   "RetrigNoNote",
   "Retrig0",
@@ -139,44 +139,41 @@ enum MOD_effects
 };
 
 
-/**
- * Structs for raw data as provided in the files.
- * uint16_ts need to be byteswapped on little-endian machines.
- */
 struct MOD_sample
 {
-  char name[22];          // NOTE: null-padded, but not necessarily null-terminated.
-  uint16_t length;        // Half the actual length.
-  uint8_t finetune;
-  uint8_t volume;
-  uint16_t repeat_start;  // Half the actual repeat start.
-  uint16_t repeat_length; // Half the actual repeat length.
+  /*  0 */ char name[22];             // NOTE: null-padded, but not necessarily null-terminated.
+  /* 22 */ uint16_t half_length;      // Half the actual length.
+  /* 24 */ uint8_t finetune;
+  /* 25 */ uint8_t volume;
+  /* 26 */ uint16_t half_loop_start;  // Half the actual repeat start.
+  /* 28 */ uint16_t half_loop_length; // Half the actual repeat length.
+  /* 30 */
+
+  uint32_t length;
+  uint32_t loop_start;
+  uint32_t loop_length;
 };
 
 struct MOD_header
 {
-  // NOTE: space-padded, not null-terminated.
-  char name[20];
-  MOD_sample samples[31];
-  uint8_t num_orders;
-  uint8_t restart_byte;
-  uint8_t orders[128];
-  unsigned char magic[4];
+  /*    0 */ char name[20]; // NOTE: space-padded, not null-terminated.
+  /*   20 */ MOD_sample samples[31];
+  /*  950 */ uint8_t num_orders;
+  /*  951 */ uint8_t restart_byte;
+  /*  952 */ uint8_t orders[128];
+  /* 1080 */ unsigned char magic[4];
+  /* 1084 */
 };
 
+/* For reference only. Load data to the regular MOD_header. */
 struct ST_header
 {
-  char name[20];
-  MOD_sample samples[15];
-  uint8_t num_orders;
-  uint8_t song_speed;
-  uint8_t orders[128];
-};
-
-struct MOD_sample_data
-{
-  char name[23];
-  uint32_t real_length;
+  /*   0 */ char name[20];
+  /*  20 */ MOD_sample samples[15];
+  /* 470 */ uint8_t num_orders;
+  /* 471 */ uint8_t song_speed;
+  /* 472 */ uint8_t orders[128];
+  /* 600 */
 };
 
 struct MOD_note
@@ -190,22 +187,19 @@ struct MOD_note
 struct MOD_data
 {
   char name[21];
-  char name_clean[21];
-  unsigned char magic[4];
-  const char *type_source;
-  enum MOD_type type;
+  MOD_type type;
   int type_channels;
+  int type_instruments;
   int pattern_count;
   ssize_t real_length;
   ssize_t expected_length;
   ssize_t samples_length;
-  MOD_sample_data samples[31];
 
-  MOD_header file_data;
+  MOD_header header;
   MOD_note *patterns[256];
   uint8_t *pattern_buffer;
 
-  uint8_t uses[NUM_FEATURES];
+  bool uses[NUM_FEATURES];
 
   ~MOD_data()
   {
@@ -214,37 +208,123 @@ struct MOD_data
     delete[] pattern_buffer;
   }
 
-  void use(enum MOD_features f)
+  void use(MOD_features f)
   {
-    if(uses[f] < 255)
-      uses[f]++;
+    uses[f] = true;
   }
 };
 
-bool is_ST_mod(ST_header *h)
+static modutil::error MOD_ST_check(MOD_data &m)
 {
+  MOD_header &h = m.header;
   // Try to filter out ST mods based on sample data bounding.
-  for(int i = 0; i < 15; i++)
+  for(int i = 0; i < m.type_instruments; i++)
   {
-    uint16_t sample_length = h->samples[i].length;
-    fix_u16be(sample_length);
+    MOD_sample &ins = h.samples[i];
+    uint16_t sample_length = ins.length;
 
-    if(h->samples[i].finetune || h->samples[i].volume > 64 ||
-     sample_length > 32768)
-      return false;
+    if(ins.finetune || ins.volume > 64 || sample_length > 32768)
+      return modutil::FORMAT_ERROR;
   }
   // Make sure the order count and pattern numbers aren't nonsense.
-  if(!h->num_orders || h->num_orders > 128)
-    return false;
+  if(!h.num_orders || h.num_orders > 128)
+    return modutil::FORMAT_ERROR;
 
   for(int i = 0; i < 128; i++)
-    if(h->orders[i] >= 0x80)
-      return false;
+    if(h.orders[i] >= 0x80)
+      return modutil::FORMAT_ERROR;
 
-  return true;
+  return modutil::SUCCESS;
 }
 
-modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp)
+static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
+{
+  unsigned char magic[4];
+
+  /* Normal MOD magic is located at 1080. */
+  if(fseek(fp, 1080, SEEK_SET))
+    return modutil::SEEK_ERROR;
+
+  if(!fread(magic, 4, 1, fp))
+    return modutil::READ_ERROR;
+
+  // Determine initial guess for what the mod type is.
+  for(int i = 0; i < MOD_UNKNOWN; i++)
+  {
+    if(TYPES[i].magic[0] && !memcmp(magic, TYPES[i].magic, 4) && TYPES[i].channels)
+    {
+      m.type = static_cast<MOD_type>(i);
+      m.type_channels = TYPES[i].channels;
+      m.type_instruments = 31;
+      return modutil::SUCCESS;
+    }
+  }
+
+  // Check for FastTracker xCHN and xxCH magic formats.
+  if(isdigit(magic[0]) && !memcmp(magic + 1, "CHN", 3))
+  {
+    m.type = MOD_FASTTRACKER_XCHN;
+    m.type_channels = magic[0] - '0';
+    return modutil::SUCCESS;
+  }
+  else
+
+  if(isdigit(magic[0]) && isdigit(magic[1]) && magic[2] == 'C' && magic[3] == 'H')
+  {
+    m.type = MOD_FASTTRACKER_XXCH;
+    m.type_channels = (magic[0] - '0') * 10 + (magic[1] - '0');
+    m.type_instruments = 31;
+    return modutil::SUCCESS;
+  }
+
+  // Check for Soundtracker 2.6 and IceTracker modules.
+  if(fseek(fp, 1464, SEEK_SET))
+    return modutil::SEEK_ERROR;
+
+  if(!fread(magic, 4, 1, fp))
+    return modutil::READ_ERROR;
+  if(!memcmp(magic, "MTN\x00", 4))
+  {
+    type_count[MOD_SOUNDTRACKER_26]++;
+    return modutil::MOD_IGNORE_ST26;
+  }
+  if(!memcmp(magic, "IT10", 4))
+  {
+    type_count[MOD_ICETRACKER_IT10]++;
+    return modutil::MOD_IGNORE_IT10;
+  }
+
+  // Isn't a MOD, or maybe is a Soundtracker 15-instrument MOD.
+  // Assume the latter. If it isn't correct it will be detected early during load.
+  m.type = MOD_SOUNDTRACKER;
+  m.type_channels = 4;
+  m.type_instruments = 15;
+
+  //format::error("unknown/invalid magic %2x %2x %2x %2x", h.magic[0], h.magic[1], h.magic[2], h.magic[3]);
+  //type_count[MOD_UNKNOWN]++;
+  return modutil::SUCCESS;
+}
+
+static modutil::error MOD_read_sample(MOD_data &m, size_t sample_num, FILE *fp)
+{
+  MOD_sample &ins = m.header.samples[sample_num];
+  if(!fread(ins.name, sizeof(ins.name), 1, fp))
+    return modutil::READ_ERROR;
+
+  ins.half_length      = fget_u16be(fp);
+  ins.finetune         = fgetc(fp);
+  ins.volume           = fgetc(fp);
+  ins.half_loop_start  = fget_u16be(fp);
+  ins.half_loop_length = fget_u16be(fp);
+
+  ins.length = ins.half_length << 1;
+  ins.loop_start = ins.half_loop_start << 1;
+  ins.loop_length = ins.half_loop_length << 1;
+
+  return modutil::SUCCESS;
+}
+
+static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp)
 {
   if(!m.pattern_buffer)
     m.pattern_buffer = new uint8_t[m.type_channels * 64 * 4];
@@ -281,134 +361,91 @@ modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp)
   return modutil::SUCCESS;
 }
 
-modutil::error MOD_read(FILE *fp)
+static modutil::error MOD_read(FILE *fp)
 {
-  MOD_data d{};
-  MOD_header &h = d.file_data;
+  MOD_data m{};
+  MOD_header &h = m.header;
   bool maybe_wow = true;
   ssize_t samples_length = 0;
   ssize_t running_length;
   int i;
 
-  total_files++;
+  modutil::error ret = MOD_check_format(m, fp);
+  if(ret != modutil::SUCCESS)
+    return ret;
 
   if(fseek(fp, 0, SEEK_END))
     return modutil::SEEK_ERROR;
 
-  d.real_length = ftell(fp);
+  m.real_length = ftell(fp);
   errno = 0;
   rewind(fp);
   if(errno)
     return modutil::SEEK_ERROR;
 
-  if(!fread(&(h), sizeof(MOD_header), 1, fp))
+  if(!fread(h.name, sizeof(h.name), 1, fp))
     return modutil::READ_ERROR;
 
-  memcpy(d.name, h.name, arraysize(h.name));
-  d.name[arraysize(d.name) - 1] = '\0';
-  memcpy(d.name_clean, d.name, arraysize(d.name));
-  memcpy(d.magic, h.magic, 4);
-  if(!strip_module_name(d.name_clean, arraysize(d.name_clean)))
-    d.name_clean[0] = '\0';
-
-  // Determine initial guess for what the mod type is.
-  for(i = 0; i < MOD_UNKNOWN; i++)
+  for(i = 0; i < m.type_instruments; i++)
   {
-    if(TYPES[i].magic[0] && !memcmp(h.magic, TYPES[i].magic, 4))
-      break;
+    modutil::error ret = MOD_read_sample(m, i, fp);
+    if(ret != modutil::SUCCESS)
+      return ret;
   }
+  h.num_orders = fgetc(fp);
+  h.restart_byte = fgetc(fp);
 
-  // Check for FastTracker xCHN and xxCH magic formats.
-  if(isdigit(h.magic[0]) && !memcmp(h.magic + 1, "CHN", 3))
-  {
-    d.type = MOD_FASTTRACKER_XCHN;
-    d.type_source = TYPES[d.type].source;
-    d.type_channels = h.magic[0] - '0';
-  }
-  else
+  if(!fread(h.orders, sizeof(h.orders), 1, fp))
+    return modutil::READ_ERROR;
 
-  if(h.magic[0] >= '1' && h.magic[0] <= '3' && isdigit(h.magic[1]) && h.magic[2] == 'C' && h.magic[3] == 'H')
+  // If this was "detected" as Soundtracker, make sure it actually is one...
+  if(m.type == MOD_SOUNDTRACKER)
   {
-    d.type = MOD_FASTTRACKER_XXCH;
-    d.type_source = TYPES[d.type].source;
-    d.type_channels = (h.magic[0] - '0') * 10 + (h.magic[1] - '0');
+    ret = MOD_ST_check(m);
+    if(ret != modutil::SUCCESS)
+      return ret;
+
+    maybe_wow = false;
+    running_length = 600;
   }
   else
+    running_length = 1084;
 
-  if(i < MOD_UNKNOWN)
+  total_files++;
+
+  memcpy(m.name, h.name, arraysize(h.name));
+  m.name[arraysize(m.name) - 1] = '\0';
+
+  if(!strip_module_name(m.name, arraysize(m.name)))
+    m.name[0] = '\0';
+
+  if(m.type_channels <= 0 || m.type_channels > 32)
   {
-    d.type = static_cast<MOD_type>(i);
-    d.type_source = TYPES[i].source;
-    d.type_channels = TYPES[i].channels;
-  }
-  else
-  {
-    if(is_ST_mod(reinterpret_cast<ST_header *>(&h)))
-    {
-      type_count[MOD_SOUNDTRACKER]++;
-      return modutil::MOD_IGNORE_ST;
-    }
-
-    // No? Maybe an ST 2.6 mod...
-    if(fseek(fp, 1464, SEEK_SET))
-      return modutil::SEEK_ERROR;
-    uint8_t tmp[4];
-    if(!fread(tmp, 4, 1, fp))
-      return modutil::READ_ERROR;
-    if(!memcmp(tmp, "MTN\x00", 4))
-    {
-      type_count[MOD_SOUNDTRACKER_26]++;
-      return modutil::MOD_IGNORE_ST26;
-    }
-    if(!memcmp(tmp, "IT10", 4))
-    {
-      type_count[MOD_ICETRACKER_IT10]++;
-      return modutil::MOD_IGNORE_IT10;
-    }
-
-    //O_("unknown/invalid magic %2x %2x %2x %2x\n", h.magic[0], h.magic[1], h.magic[2], h.magic[3]);
-    //type_count[MOD_UNKNOWN]++;
-    total_files--;
-    return modutil::FORMAT_ERROR;
-  }
-
-  if(d.type_channels <= 0 || d.type_channels > 32)
-  {
-    O_("unsupported .MOD variant: %s %4.4s.\n", d.type_source, d.magic);
-    type_count[d.type]++;
+    format::error("unsupported .MOD variant: %s %4.4s.", TYPES[m.type].source, h.magic);
+    type_count[m.type]++;
     return modutil::MOD_IGNORE_MAGIC;
   }
 
   if(!h.num_orders || h.num_orders > 128)
   {
-    O_("valid magic %4.4s but invalid order count %u\n", h.magic, h.num_orders);
+    format::error("valid magic %4.4s but invalid order count %u", h.magic, h.num_orders);
     type_count[MOD_UNKNOWN]++;
     return modutil::MOD_INVALID_ORDER_COUNT;
   }
 
-  running_length = sizeof(MOD_header);
-
   // Get sample info.
-  for(i = 0; i < 31; i++)
+  for(i = 0; i < m.type_instruments; i++)
   {
-    MOD_sample &hs = h.samples[i];
-    MOD_sample_data &s = d.samples[i];
+    MOD_sample &ins = h.samples[i];
 
-    fix_u16be(hs.length);
-    fix_u16be(hs.repeat_start);
-    fix_u16be(hs.repeat_length);
-
-    memcpy(s.name, hs.name, arraysize(hs.name));
-    s.name[arraysize(s.name) - 1] = '\0';
-    s.real_length = hs.length * 2;
-    samples_length += s.real_length;
-    running_length += s.real_length;
+    samples_length += ins.length;
+    running_length += ins.length;
 
     /**
      * .669s don't have sample volume or finetune, so every .WOW has
      * 0x00 and 0x40 for these bytes when the sample exists.
      */
-    if(hs.length && (hs.finetune != 0x00 || hs.volume != 0x40))
+    if(ins.length && (ins.finetune != 0x00 || ins.volume != 0x40))
       maybe_wow = false;
   }
 
@@ -425,11 +462,11 @@ modutil::error MOD_read(FILE *fp)
     if(h.orders[i] < 0x80 && h.orders[i] > max_pattern)
       max_pattern = h.orders[i];
   }
-  d.pattern_count = max_pattern + 1;
+  m.pattern_count = max_pattern + 1;
 
   // Calculate expected length.
-  d.expected_length = running_length + d.pattern_count * pattern_size(d.type_channels);
-  d.samples_length = samples_length;
+  m.expected_length = running_length + m.pattern_count * pattern_size(m.type_channels);
+  m.samples_length = samples_length;
 
   /**
    * Calculate expected length of a Mod's Grave .WOW to see if a M.K. file
@@ -444,79 +481,121 @@ modutil::error MOD_read(FILE *fp)
    * Finally, 6692WOW rarely likes to append an extra byte for some reason, so
    * round the length down.
    */
-  if(d.type == MOD_PROTRACKER && h.restart_byte == 0x00 && maybe_wow)
+  if(m.type == MOD_PROTRACKER && h.restart_byte == 0x00 && maybe_wow)
   {
-    ssize_t wow_length = running_length + d.pattern_count * pattern_size(8);
-    if((d.real_length & ~1) == wow_length)
+    ssize_t wow_length = running_length + m.pattern_count * pattern_size(8);
+    if((m.real_length & ~1) == wow_length)
     {
-      d.type = WOW;
-      d.type_channels = TYPES[WOW].channels;
-      d.type_source = TYPES[WOW].source;
-      d.expected_length = wow_length;
+      m.type = WOW;
+      m.type_channels = TYPES[WOW].channels;
+      m.expected_length = wow_length;
     }
   }
 
-  ssize_t difference = d.real_length - d.expected_length;
+  ssize_t difference = m.real_length - m.expected_length;
 
   /**
    * Check for .MODs with lengths that would be a potential false positive for
    * .WOW detection.
    */
-  ssize_t threshold = d.pattern_count * pattern_size(4);
-  bool fp_diff = (difference > 0) && ((difference & ~1) == threshold);
+  ssize_t threshold = m.pattern_count * pattern_size(4);
+  bool wow_fp_diff = (m.type != WOW) && (difference > 0) && ((difference & ~1) == threshold);
 
-  if(fp_diff)
-    total_files_fp_diff++;
+  if(wow_fp_diff)
+    total_files_wow_fp_diff++;
   if(difference)
     total_files_nonzero_diff++;
 
   /* Load patterns. */
-  for(i = 0; i < d.pattern_count; i++)
-    MOD_read_pattern(d, i, fp);
+  for(i = 0; i < m.pattern_count; i++)
+    MOD_read_pattern(m, i, fp);
 
-  if(strlen(d.name_clean))
-    O_("Name    : %s\n", d.name_clean);
-  if(TYPES[d.type].print_channel_count)
-    O_("Type    : %s %4.4s %d ch.\n", d.type_source, d.magic, d.type_channels);
+  /**
+   * Print summary.
+   */
+
+  if(strlen(m.name))
+    format::line("Name",   "%s", m.name);
+  if(TYPES[m.type].print_channel_count)
+    format::line("Type",   "%s %4.4s %d ch.", TYPES[m.type].source, h.magic, m.type_channels);
   else
-    O_("Type    : %s %4.4s\n", d.type_source, d.magic);
-  O_("Length  : %u (0x%02x), %up\n", h.num_orders, h.restart_byte, d.pattern_count);
-  if(difference)
-    O_("SampleSz: %zd\n", d.samples_length);
-  O_("Filesize: %zd\n", d.real_length);
+    format::line("Type",   "%s %4.4s", TYPES[m.type].source, h.magic);
+  format::line("Patterns", "%u", m.pattern_count);
+  format::line("Orders",   "%u (0x%02x)", h.num_orders, h.restart_byte);
+  format::line("Filesize", "%zd", m.real_length);
   if(difference)
   {
-    O_("Expected: %zd\n", d.expected_length);
-    O_("Diff.   : %zd%s%s\n",
-      difference,
-      difference ? " (!=0)" : "",
-      fp_diff ? " (!!!)" : ""
-    );
+    format::line("Expected", "%zd", m.expected_length);
+    format::line("SampleSz", "%zd", m.samples_length);
+    format::line("Diff.",    "%zd%s", difference, wow_fp_diff ? " (WOW fp!)" : "");
   }
-  type_count[d.type]++;
+  format::uses(m.uses, FEATURE_STR);
+  type_count[m.type]++;
 
-  bool print_uses = false;
-  for(int i = 0; i < arraysize(d.uses); i++)
+  if(Config.dump_samples)
   {
-    if(d.uses[i])
+    namespace table = format::table;
+
+    static const char *labels[] =
     {
-      if(!print_uses)
-      {
-        O_("Uses    :");
-        print_uses = true;
-      }
-      fprintf(stderr, " %s", feature_str[i]);
-      if(d.uses[i] >= 10)
-        fprintf(stderr, "!");
+      "Name", "Length", "LoopSt", "LoopLn", "Vol", "Fine"
+    };
+
+    format::line();
+    table::table<
+      table::string<22>,
+      table::spacer,
+      table::number<6>,
+      table::number<6>,
+      table::number<6>,
+      table::spacer,
+      table::number<4>,
+      table::number<4>> s_table;
+
+    s_table.header("Samples", labels);
+
+    for(i = 0; i < m.type_instruments; i++)
+    {
+      MOD_sample &ins = h.samples[i];
+      s_table.row(i + 1, ins.name, {}, ins.length, ins.loop_start, ins.loop_length, {}, ins.volume, ins.finetune);
     }
   }
-  if(print_uses)
-    fprintf(stderr, "\n");
 
-/*
-  for(i = 0; i < 31; i++)
-    O_("Sample %2x : %6u : %s\n", i, d.samples[i].real_length, d.samples[i].name);
-*/
+  if(Config.dump_patterns)
+  {
+    format::line();
+    format::orders("Orders", h.orders, h.num_orders);
+
+    if(!Config.dump_pattern_rows)
+      format::line();
+
+    for(i = 0; i < m.pattern_count; i++)
+    {
+      using EVENT = format::event<format::periodMOD, format::value, format::effect>;
+      format::pattern<EVENT> pattern(i, m.type_channels, 64);
+
+      if(!Config.dump_pattern_rows)
+      {
+        pattern.summary();
+        continue;
+      }
+
+      MOD_note *current = m.patterns[i];
+      for(int row = 0; row < 64; row++)
+      {
+        for(int track = 0; track < m.type_channels; track++, current++)
+        {
+          format::periodMOD a{ current->note };
+          format::value     b{ current->sample };
+          format::effect    c{ current->effect, current->param };
+
+          pattern.insert(EVENT(a, b, c));
+        }
+      }
+      pattern.print();
+    }
+  }
+
   return modutil::SUCCESS;
 }
 
@@ -541,9 +620,10 @@ public:
     format::report("Total MODs", total_files);
     if(total_files_nonzero_diff)
       format::reportline("Nonzero difference", "%d", total_files_nonzero_diff);
-    if(total_files_fp_diff)
-      format::reportline("False positive?", "%d", total_files_fp_diff);
-    format::reportline();
+    if(total_files_wow_fp_diff)
+      format::reportline("WOW false positive?", "%d", total_files_wow_fp_diff);
+    if(total_files_nonzero_diff || total_files_wow_fp_diff)
+      format::reportline();
 
     for(int i = 0; i < NUM_MOD_TYPES; i++)
     {

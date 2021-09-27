@@ -320,6 +320,15 @@ namespace format
     void print() const { if(can_print()) fprintf(stderr, " %02x", value); else spaces(width()); }
   };
 
+  struct periodMOD
+  {
+    uint16_t value;
+    uint8_t enable = true;
+    static constexpr int width() { return 4; }
+    bool can_print() const { return enable && value != 0; }
+    void print() const { if(can_print()) fprintf(stderr, " %03x", value); else spaces(width()); }
+  };
+
   struct effect
   {
     uint8_t effect;

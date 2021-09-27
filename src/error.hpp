@@ -37,7 +37,6 @@ namespace modutil
 
     /* MOD/WOW/etc */
     MOD_INVALID_ORDER_COUNT,
-    MOD_IGNORE_ST,
     MOD_IGNORE_ST26,
     MOD_IGNORE_IT10,
     MOD_IGNORE_MAGIC,

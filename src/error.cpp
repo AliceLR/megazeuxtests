@@ -38,7 +38,6 @@ const char *strerror(modutil::error err)
 
     /* MOD / WOW / etc. */
     case MOD_INVALID_ORDER_COUNT: return "invalid order count";
-    case MOD_IGNORE_ST:     return "ignoring ST 15-inst .MOD";
     case MOD_IGNORE_ST26:   return "ignoring ST 2.6 .MOD";
     case MOD_IGNORE_IT10:   return "ignoring IceTracker .MOD";
     case MOD_IGNORE_MAGIC:  return "ignoring unsupported .MOD variant";
