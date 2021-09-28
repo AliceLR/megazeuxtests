@@ -185,15 +185,12 @@ struct ULT_pattern
   {
     delete[] events;
   }
-  ULT_pattern &operator=(ULT_pattern &&p)
+  static ULT_pattern *generate(size_t count, uint16_t channels, uint8_t rows)
   {
-    events = p.events;
-    channels = p.channels;
-    rows = p.rows;
-    p.events = nullptr;
-    p.channels = 0;
-    p.rows = 0;
-    return *this;
+    ULT_pattern *p = new ULT_pattern[count];
+    for(size_t i = 0; i < count; i++)
+      new(p + i) ULT_pattern(channels, rows);
+    return p;
   }
 };
 
@@ -405,16 +402,15 @@ public:
     /**
      * Patterns.
      */
-    m.patterns = new ULT_pattern[h.num_patterns]{};
+    m.patterns = ULT_pattern::generate(h.num_patterns, h.num_channels, 64);
 
-    for(size_t i = 0; i < h.num_patterns; i++)
+    // Ultra Tracker stores patterns track major for some reason...
+    for(size_t track = 0; track < h.num_channels; track++)
     {
-      ULT_pattern &p = m.patterns[i];
-      p = ULT_pattern(h.num_channels, 64);
-
-      for(size_t j = 0; j < h.num_channels; j++)
+      for(size_t i = 0; i < h.num_patterns; i++)
       {
-        ULT_event *current = p.events + j;
+        ULT_pattern &p = m.patterns[i];
+        ULT_event *current = p.events + track;
 
         for(size_t k = 0; k < 64;)
         {
@@ -502,6 +498,9 @@ public:
       format::line();
       format::orders("Orders", h.orders, m.num_orders);
 
+      if(!Config.dump_pattern_rows)
+        format::line();
+
       for(unsigned int i = 0; i < h.num_patterns; i++)
       {
         using EVENT = format::event<format::value, format::value, format::effect, format::effect>;
@@ -510,7 +509,7 @@ public:
         if(!Config.dump_pattern_rows)
         {
           pattern.summary();
-          break;
+          continue;
         }
 
         ULT_pattern &p = m.patterns[i];
