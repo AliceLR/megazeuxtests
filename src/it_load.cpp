@@ -451,7 +451,7 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
       else
       {
         // Invalid width--prematurely end block.
-        O_("Warning : invalid bit width %u wtf\n", bit_width);
+        format::warning("invalid bit width %u", bit_width);
         m.uses[FT_SAMPLE_COMPRESSION_INVALID_WIDTH] = true;
         pos += block_uncompressed_samples - i;
         break;
@@ -842,38 +842,58 @@ static modutil::error IT_read(FILE *fp)
           m.uses[FT_SAMPLE_COMPRESSION_1_4TH] = true;
       }
       else
-        O_("Warning : Failed to scan compressed sample %u\n", i);
+        format::warning("failed to scan compressed sample %u", i);
     }
   }
 
   /* TODO load patterns. */
 
-  O_("Name    : %s\n", h.name);
-  O_("Type    : IT %x (T:%x %03x)\n", h.format_version, (h.tracker_version >> 12), (h.tracker_version & 0xFFF));
-  O_("Orders  : %u\n", h.num_orders);
-  O_("Patterns: %u\n", h.num_patterns);
-  O_("Samples : %u\n", h.num_samples);
+  format::line("Name",     "%s", h.name);
+  format::line("Type",     "IT %x (T:%x %03x)", h.format_version, (h.tracker_version >> 12), (h.tracker_version & 0xFFF));
+  format::line("Samples",  "%u", h.num_samples);
   if(h.flags & F_INST_MODE)
-    O_("Instr.  : %u\n", h.num_instruments);
-  O_("Uses    :");
-  for(int i = 0; i < NUM_FEATURES; i++)
-    if(m.uses[i])
-      fprintf(stderr, " %s", FEATURE_STR[i]);
-  fprintf(stderr, "\n");
+    format::line("Instr.",   "%u", h.num_instruments);
+  format::line("Patterns", "%u", h.num_patterns);
+  format::line("Orders",   "%u", h.num_orders);
+  format::uses(m.uses, FEATURE_STR);
 
   if(Config.dump_samples)
   {
-    static const char PAD[] =
-      "---------------------------------------------------------------------";
+    namespace table = format::table;
 
     /* Instruments */
     if(h.flags & F_INST_MODE)
     {
-      O_("        :\n");
-      O_("        : %-25s  %-13s : NNA  DCT  DCA  Fade  : GV  RV  Env  : DP  RP  PPS  PPC Env  : IFC IFR Env  :\n",
-        "Name", "Filename"
-      );
-      O_("        : %.40s : %.20s : %.12s : %.21s : %.12s :\n", PAD, PAD, PAD, PAD, PAD);
+      static const char *labels[] =
+      {
+        "Name", "Filename", "NNA", "DCT", "DCA", "Fade",
+        "GV", "RV", "Env", "DP", "RP", "PPS", "PPC", "Env", "IFC", "IFR", "Env"
+      };
+      format::line();
+      table::table<
+        table::string<25>,
+        table::string<12>,
+        table::spacer,
+        table::string<4>,
+        table::string<4>,
+        table::string<4>,
+        table::number<5>,
+        table::spacer,
+        table::number<3>,
+        table::number<3>,
+        table::string<4>,
+        table::spacer,
+        table::number<3>,
+        table::number<3>,
+        table::number<4>,
+        table::number<3>,
+        table::string<4>,
+        table::spacer,
+        table::number<3>,
+        table::number<3>,
+        table::string<4>> i_table;
+
+      i_table.header("Instr.", labels);
 
       for(unsigned int i = 0; i < h.num_instruments; i++)
       {
@@ -896,27 +916,47 @@ static modutil::error IT_read(FILE *fp)
         ENV_FLAGS(ins.env_pan.flags, flagpan, false);
         ENV_FLAGS(ins.env_pitch.flags, flagpitch, true);
 
-        O_("Ins. %-3x: %-25s  %-13.13s : %-4.4s %-4.4s %-4.4s %-5u : %-3u %-3u %-4.4s : %-3d %-3u %-4d %-3u %-4.4s : %-3d %-3d %-4.4s :\n",
-          i, ins.name, ins.filename,
+        i_table.row(i + 1, ins.name, ins.filename, {},
           NNA_string(ins.new_note_act),
           DCT_string(ins.duplicate_check_type),
           DCA_string(ins.duplicate_check_act),
-          ins.fadeout,
-          ins.global_volume, ins.random_volume, flagvol,
-          ins.real_default_pan, ins.random_pan, ins.pitch_pan_sep, ins.pitch_pan_center, flagpan,
+          ins.fadeout, {},
+          ins.global_volume, ins.random_volume, flagvol, {},
+          ins.real_default_pan, ins.random_pan, ins.pitch_pan_sep, ins.pitch_pan_center, flagpan, {},
           ins.real_init_filter_cutoff, ins.real_init_filter_resonance, flagpitch
         );
       }
     }
 
     /* Samples */
-    O_("        :\n");
-    O_("        : %-25s  %-13s : %-10s %-10s %-10s %-10s %-10s : %-10s GV  DV  DP  %-8s : VSp VDp VWf VRt :\n",
-      "Name", "Filename",
-      "Length", "LoopStart", "LoopEnd", "Sus.Start", "Sus.End",
-      "C5 Speed", "Flags"
-    );
-    O_("        : %.40s : %.54s : %.31s : %.15s :\n", PAD, PAD, PAD, PAD);
+    static const char *s_labels[] =
+    {
+      "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Sus.Start", "Sus.End",
+      "C5 Speed", "GV", "DV", "DP", "Flags", "VSp", "VDp", "VWf", "VRt",
+    };
+    format::line();
+    table::table<
+      table::string<25>,
+      table::string<12>,
+      table::spacer,
+      table::number<10>,
+      table::number<10>,
+      table::number<10>,
+      table::number<10>,
+      table::number<10>,
+      table::spacer,
+      table::number<10>,
+      table::number<3>,
+      table::number<3>,
+      table::number<3>,
+      table::string<8>,
+      table::spacer,
+      table::number<3>,
+      table::number<3>,
+      table::number<3>,
+      table::number<3>> s_table;
+
+    s_table.header("Samples", s_labels);
 
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
@@ -933,32 +973,39 @@ static modutil::error IT_read(FILE *fp)
       flagstr[7] = (s.flags & SAMPLE_BIDI_SUSTAIN_LOOP) ? 'b' : ' ';
       flagstr[8] = '\0';
 
-      O_("Sam. %-3x: %-25s  %-13.13s : %-10u %-10u %-10u %-10u %-10u :"
-        " %-10u %-2x  %-2x  %-2x  %-8s : %-2x  %-2x  %-2x  %-2x  :\n",
-        i, s.name, s.filename,
-        s.length, s.loop_start, s.loop_end, s.sustain_loop_start, s.sustain_loop_end,
-        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, flagstr,
+      s_table.row(i + 1, s.name, s.filename, {},
+        s.length, s.loop_start, s.loop_end, s.sustain_loop_start, s.sustain_loop_end, {},
+        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, flagstr, {},
         s.vibrato_speed, s.vibrato_depth, s.vibrato_waveform, s.vibrato_rate
       );
     }
 
     if(m.uses[FT_SAMPLE_COMPRESSION])
     {
-      O_("        :\n");
-      O_("        : Scan?  %-10s %-10s : %-10s %-10s %-10s :\n",
-        "CmpBytes", "UncmpBytes",
-        "Min.Block", "Min.Smpls.", "Max.Block"
-      );
-      O_("        : %.28s : %.32s :\n", PAD, PAD);
+      static const char *cmp_labels[] =
+      {
+        "Scan?", "CmpBytes", "UncmpBytes", "Min.Block", "Min.Smpls.", "Max.Block"
+      };
+      format::line();
+      table::table<
+        table::string<6>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>> cmp_table;
+
+      cmp_table.header("Smp.Cmp.", cmp_labels);
+
       for(unsigned int i = 0; i < h.num_samples; i++)
       {
         IT_sample &s = m.samples[i];
         if(!(s.flags & SAMPLE_COMPRESSED))
           continue;
 
-        O_("Sam. %-3x: %-6s %-10u %-10u : %-10u %-10u %-10u :\n",
-          i, s.scanned ? "pass" : "fail",
-          s.compressed_bytes, s.uncompressed_bytes,
+        cmp_table.row(i + 1, s.scanned ? "pass" : "fail",
+          s.compressed_bytes, s.uncompressed_bytes, {},
           s.smallest_block, s.smallest_block_samples, s.largest_block
         );
       }

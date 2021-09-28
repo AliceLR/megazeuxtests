@@ -120,7 +120,7 @@ public:
   {
     if(m.num_patterns >= MAX_PATTERNS)
     {
-      O_("Warning : ignoring pattern %zu\n", m.current_patt++);
+      format::warning("ignoring pattern %zu", m.current_patt++);
       return modutil::SUCCESS;
     }
 
@@ -212,7 +212,7 @@ public:
 
     if(!strncmp(m.magic, "PSM\xFE", 4))
     {
-      O_("Warning : ignoring old-format MASI.\n");
+      format::warning("ignoring old-format MASI.");
       total_masi++;
       return modutil::SUCCESS;
     }
@@ -229,21 +229,18 @@ public:
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
     if(m.name)
-      O_("Name    : %s\n",  m.name);
+      format::line("Name", "%s", m.name);
     if(strcmp(m.song_type, "MAINSONG"))
-      O_("Song type : %s\n",  m.song_type);
+      format::line("Type", "MASI / %s", m.song_type);
+    else
+      format::line("Type", "MASI");
 
-//    O_("Samples : %u\n",  m.num_samples);
-//    O_("Channels: %u\n",  m.num_channels);
-    O_("Patterns: %zu\n",  m.num_patterns);
-    O_("Max rows: %zu\n",  m.max_rows);
-    O_("MaxChunk: %zu\n",  MASI_parser.max_chunk_length);
-
-    O_("Uses    :");
-    for(int i = 0; i < NUM_FEATURES; i++)
-      if(m.uses[i])
-        fprintf(stderr, " %s", FEATURE_STR[i]);
-    fprintf(stderr, "\n");
+//    format::line("Samples",  "%u", m.num_samples);
+//    format::line("Channels", "%u", m.num_channels);
+    format::line("Patterns", "%zu", m.num_patterns);
+    format::line("Max rows", "%zu", m.max_rows);
+    format::line("MaxChunk", "%zu", MASI_parser.max_chunk_length);
+    format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
     {
@@ -252,7 +249,7 @@ public:
 
     if(Config.dump_patterns)
     {
-      O_("        :\n");
+      format::line();
 
       for(unsigned int i = 0; i < m.num_patterns; i++)
       {
@@ -261,6 +258,7 @@ public:
 
         MASI_pattern &p = m.patterns[i];
 
+        // FIXME
         O_("Pat. %02x : '%s', %u rows\n", i, p.id, p.num_rows);
       }
 
