@@ -17,6 +17,20 @@
 #ifndef MZXTEST_CONFIG_HPP
 #define MZXTEST_CONFIG_HPP
 
+#include <stdint.h>
+
+namespace Highlight
+{
+  enum
+  {
+    NOTE       = (1<<0),
+    INSTRUMENT = (1<<1),
+    VOLUME     = (1<<2),
+    EFFECT     = (1<<3),
+    PARAMETER  = (1<<4),
+  };
+}
+
 struct ConfigInfo final
 {
   static const char COMMON_FLAGS[];
@@ -24,6 +38,7 @@ struct ConfigInfo final
   bool dump_samples = false;
   bool dump_patterns = false;
   bool dump_pattern_rows = false;
+  uint8_t highlight[256];
 
   /**
    * Read configuration options out of argv.

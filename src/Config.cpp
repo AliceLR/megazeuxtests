@@ -17,6 +17,8 @@
 #include "Config.hpp"
 #include "modutil.hpp"
 
+#include <ctype.h>
+
 ConfigInfo Config;
 
 const char ConfigInfo::COMMON_FLAGS[] =
@@ -24,8 +26,79 @@ const char ConfigInfo::COMMON_FLAGS[] =
   "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
   "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
   "            N=2 additionally dumps the entire pattern as raw data.\n"
+  "  -H=...    Highlight data in pattern dump. Highlight string is in the format\n"
+  "            'C:#[,...]' where C indicates the column type to highlight and\n"
+  "            # indicates the value to highlight (decimal). Valid column types:\n"
+  "            n=note, s or i=instrument, v=volume, e or x=effect, p=param.\n"
   "  -         Read filenames from stdin. Useful when there are too many files\n"
   "            for argv. Place after any other options if applicable.\n\n";
+
+static char next_char(const char **str)
+{
+  while(isspace(**str))
+    (*str)++;
+
+  return *((*str)++);
+}
+
+static bool parse_highlight(const char *str)
+{
+  // n=note, s/i=instrument, v=volume, e/x=effect p=param
+  while(true)
+  {
+    int type = 0;
+    char c = next_char(&str);
+    if(!c)
+      return false;
+
+    switch(tolower(c))
+    {
+      case 'n':
+        type = Highlight::NOTE;
+        break;
+      case 's':
+      case 'i':
+        type = Highlight::INSTRUMENT;
+        break;
+      case 'v':
+        type = Highlight::VOLUME;
+        break;
+      case 'e':
+      case 'x':
+        type = Highlight::EFFECT;
+        break;
+      case 'p':
+        type = Highlight::PARAMETER;
+        break;
+      default:
+        return false;
+    }
+
+    c = next_char(&str);
+    if(c != ':')
+      return false;
+
+    int idx = 0;
+    bool has_digit = false;
+    while((c = next_char(&str)))
+    {
+      if(!isdigit(c))
+        break;
+
+      idx = idx * 10 + (c - '0');
+      has_digit = true;
+    }
+    if(idx > 255 || !has_digit)
+      return false;
+
+    Config.highlight[idx] |= type;
+    if(c == '\0')
+      return true;
+
+    if(c != ',')
+      return false;
+  }
+}
 
 bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, void *), void *priv)
 {
@@ -45,6 +118,25 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
 
       switch(arg[1])
       {
+        case 'H':
+          if(arg[2] == '=')
+          {
+            if(parse_highlight(arg + 3))
+              continue;
+          }
+          else
+
+          if(i + 1 < argc)
+          {
+            if(parse_highlight(argv[i + 1]))
+            {
+              i++;
+              continue;
+            }
+          }
+          format::error("invalid config for -H");
+          return false;
+
         case 'p':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {

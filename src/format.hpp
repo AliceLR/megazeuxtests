@@ -24,6 +24,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include "Config.hpp"
 #include "attribute.hpp"
 #include "common.hpp"
 
@@ -35,6 +36,8 @@ namespace format
 } while(0)
 
 #define DASHES "----------------------------------------------------------------"
+#define HIGHLIGHT_START "\x1b[1m\x1b[37m\x1b[41m"
+#define HIGHLIGHT_END   "\x1b[m"
 
   /**
    * Common line printing functions.
@@ -311,6 +314,8 @@ namespace format
    * Pattern printing classes.
    */
 
+#define HIGHLIGHT(str,n,t) (Config.highlight[n] & t) ? " " HIGHLIGHT_START str HIGHLIGHT_END : " " str
+
   struct value
   {
     uint8_t value;
@@ -335,7 +340,7 @@ namespace format
     uint8_t param;
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0 || param > 0; }
-    void print() const { if(can_print()) fprintf(stderr, " %1x%02x", effect, param); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%1x%02x", effect, Highlight::EFFECT), effect, param); else spaces(width()); }
   };
 
   struct effectXM
