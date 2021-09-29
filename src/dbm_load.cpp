@@ -1001,7 +1001,7 @@ public:
         DBM_pattern &p = m.patterns[i];
         const char *name = m.pattern_names ? p.name : nullptr;
 
-        using EVENT = format::event<format::value, format::value, format::effectXM, format::effectXM>;
+        using EVENT = format::event<format::note, format::sample, format::effectXM, format::effectXM>;
         format::pattern<EVENT> pattern(name, i, m.num_channels, p.num_rows, p.packed_data_size);
 
         if(!Config.dump_pattern_rows)
@@ -1016,8 +1016,8 @@ public:
         {
           for(size_t track = 0; track < m.num_channels; track++, current++)
           {
-            format::value    a{ current->note };
-            format::value    b{ current->instrument };
+            format::note     a{ current->note };
+            format::sample   b{ current->instrument };
             format::effectXM c{ current->effect_1, current->param_1 };
             format::effectXM d{ current->effect_2, current->param_2 };
 

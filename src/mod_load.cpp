@@ -571,7 +571,7 @@ static modutil::error MOD_read(FILE *fp)
 
     for(i = 0; i < m.pattern_count; i++)
     {
-      using EVENT = format::event<format::periodMOD, format::value, format::effect>;
+      using EVENT = format::event<format::periodMOD, format::sample, format::effect>;
       format::pattern<EVENT> pattern(i, m.type_channels, 64);
 
       if(!Config.dump_pattern_rows)
@@ -586,7 +586,7 @@ static modutil::error MOD_read(FILE *fp)
         for(int track = 0; track < m.type_channels; track++, current++)
         {
           format::periodMOD a{ current->note };
-          format::value     b{ current->sample };
+          format::sample    b{ current->sample };
           format::effect    c{ current->effect, current->param };
 
           pattern.insert(EVENT(a, b, c));

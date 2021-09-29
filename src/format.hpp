@@ -316,13 +316,37 @@ namespace format
 
 #define HIGHLIGHT(str,n,t) (Config.highlight[n] & t) ? " " HIGHLIGHT_START str HIGHLIGHT_END : " " str
 
-  struct value
+#define HIGHLIGHT_FX(str,effect,param) \
+  (( (Config.highlight_mask & (Highlight::EFFECT | Highlight::PARAMETER)) == (Highlight::EFFECT | Highlight::PARAMETER) ? \
+    (Config.highlight[effect] & Highlight::EFFECT) && (Config.highlight[param] & Highlight::PARAMETER) : \
+    (Config.highlight[effect] & Highlight::EFFECT) || (Config.highlight[param] & Highlight::PARAMETER)) ? \
+      " " HIGHLIGHT_START str HIGHLIGHT_END : " " str)
+
+  struct note
   {
     uint8_t value;
     uint8_t enable = true;
     static constexpr int width() { return 3; }
     bool can_print() const { return enable && value != 0; }
-    void print() const { if(can_print()) fprintf(stderr, " %02x", value); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::NOTE), value); else spaces(width()); }
+  };
+
+  struct sample
+  {
+    uint8_t value;
+    uint8_t enable = true;
+    static constexpr int width() { return 3; }
+    bool can_print() const { return enable && value != 0; }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::INSTRUMENT), value); else spaces(width()); }
+  };
+
+  struct volume
+  {
+    uint8_t value;
+    uint8_t enable = true;
+    static constexpr int width() { return 3; }
+    bool can_print() const { return enable && value != 0; }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::VOLUME), value); else spaces(width()); }
   };
 
   struct periodMOD
@@ -331,7 +355,7 @@ namespace format
     uint8_t enable = true;
     static constexpr int width() { return 4; }
     bool can_print() const { return enable && value != 0; }
-    void print() const { if(can_print()) fprintf(stderr, " %03x", value); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%03x", value, Highlight::NOTE), value); else spaces(width()); }
   };
 
   struct effect
@@ -340,7 +364,7 @@ namespace format
     uint8_t param;
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0 || param > 0; }
-    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%1x%02x", effect, Highlight::EFFECT), effect, param); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%1x%02x", effect, param), effect, param); else spaces(width()); }
   };
 
   struct effectXM
@@ -350,7 +374,7 @@ namespace format
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0 || param > 0; }
     char effect_char() const { return (effect < 10) ? effect + '0' : effect - 10 + 'A'; }
-    void print() const { if(can_print()) fprintf(stderr, " %c%02x", effect_char(), param); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%c%02x", effect, param), effect_char(), param); else spaces(width()); }
   };
 
   struct effectIT
@@ -359,7 +383,16 @@ namespace format
     uint8_t param;
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0 || param > 0; }
-    void print() const { if(can_print()) fprintf(stderr, " %c%02x", effect + '@', param); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%c%02x", effect, param), effect + '@', param); else spaces(width()); }
+  };
+
+  /* 669 and FAR use a nibble effect + nibble param byte. */
+  struct effect669
+  {
+    uint8_t effect;
+    static constexpr int width() { return 3; }
+    bool can_print() const { return effect != 0; }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%02x", effect >> 4, effect & 0xf), effect); else spaces(width()); }
   };
 
   /* GDM, MED, Oktalyzer, etc. support >16 effects. */
@@ -369,7 +402,7 @@ namespace format
     uint8_t param;
     static constexpr int width() { return 5; }
     bool can_print() const { return effect > 0 || param > 0; }
-    void print() const { if(can_print()) fprintf(stderr, " %2x%02x", effect, param); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%2x%02x", effect, param), effect, param); else spaces(width()); }
   };
 
   template<class... ELEMENTS>

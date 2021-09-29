@@ -30,6 +30,7 @@ const char ConfigInfo::COMMON_FLAGS[] =
   "            'C:#[,...]' where C indicates the column type to highlight and\n"
   "            # indicates the value to highlight (decimal). Valid column types:\n"
   "            n=note, s or i=instrument, v=volume, e or x=effect, p=param.\n"
+  "            If e/x and p are combined, only lines with both will highlight.\n"
   "  -         Read filenames from stdin. Useful when there are too many files\n"
   "            for argv. Place after any other options if applicable.\n\n";
 
@@ -91,6 +92,7 @@ static bool parse_highlight(const char *str)
     if(idx > 255 || !has_digit)
       return false;
 
+    Config.highlight_mask |= type;
     Config.highlight[idx] |= type;
     if(c == '\0')
       return true;

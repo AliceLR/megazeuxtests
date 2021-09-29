@@ -38,6 +38,7 @@ struct ConfigInfo final
   bool dump_samples = false;
   bool dump_patterns = false;
   bool dump_pattern_rows = false;
+  uint8_t highlight_mask = 0;
   uint8_t highlight[256];
 
   /**

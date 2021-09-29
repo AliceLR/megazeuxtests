@@ -725,7 +725,7 @@ static modutil::error AMF_read(FILE *fp)
         }
       };
 
-      using EVENT = format::event<format::value, format::value, format::value, effectAMF, effectAMF, effectAMF, effectAMF>;
+      using EVENT = format::event<format::note, format::sample, format::volume, effectAMF, effectAMF, effectAMF, effectAMF>;
       format::pattern<EVENT, AMF_MAX_CHANNELS> pattern(i, m.num_channels, order.num_rows);
       pattern.labels("Ord.", "Order");
 
@@ -746,13 +746,13 @@ static modutil::error AMF_read(FILE *fp)
           {
             AMF_event &ev = track.track_data[row];
             int num_fx = (ev.flags & AMF_event::FX);
-            format::value a{ ev.note, (ev.flags & AMF_event::NOTEVOL) && ev.note < 0x7f };
-            format::value b{ ev.volume, (ev.flags & AMF_event::NOTEVOL) && ev.volume < 0xff };
-            format::value c{ ev.sample, (ev.flags & AMF_event::SAMPLE) != 0 };
-            effectAMF     d{ ev.fx[0].effect, ev.fx[0].param, num_fx > 0 };
-            effectAMF     e{ ev.fx[1].effect, ev.fx[1].param, num_fx > 1 };
-            effectAMF     f{ ev.fx[2].effect, ev.fx[2].param, num_fx > 2 };
-            effectAMF     g{ ev.fx[3].effect, ev.fx[3].param, num_fx > 3 };
+            format::note   a{ ev.note, (ev.flags & AMF_event::NOTEVOL) && ev.note < 0x7f };
+            format::sample b{ ev.volume, (ev.flags & AMF_event::NOTEVOL) && ev.volume < 0xff };
+            format::volume c{ ev.sample, (ev.flags & AMF_event::SAMPLE) != 0 };
+            effectAMF      d{ ev.fx[0].effect, ev.fx[0].param, num_fx > 0 };
+            effectAMF      e{ ev.fx[1].effect, ev.fx[1].param, num_fx > 1 };
+            effectAMF      f{ ev.fx[2].effect, ev.fx[2].param, num_fx > 2 };
+            effectAMF      g{ ev.fx[3].effect, ev.fx[3].param, num_fx > 3 };
 
             pattern.insert(EVENT(a, b, c, d, e, f, g));
           }

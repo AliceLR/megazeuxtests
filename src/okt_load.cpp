@@ -373,7 +373,7 @@ public:
 
         OKT_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::value, format::value, format::effectWide>;
+        using EVENT = format::event<format::note, format::sample, format::effectWide>;
         format::pattern<EVENT, 8> pattern(i, m.num_channels, p.num_rows);
 
         if(!Config.dump_pattern_rows)
@@ -388,8 +388,8 @@ public:
         {
           for(unsigned int track = 0; track < m.num_channels; track++, current++)
           {
-            format::value      a{ current->note };
-            format::value      b{ current->instrument };
+            format::note       a{ current->note };
+            format::sample     b{ current->instrument };
             format::effectWide c{ current->effect, current->param };
 
             pattern.insert(EVENT(a, b, c));
