@@ -115,7 +115,7 @@ public:
     size_t start_pos = ftell(fp);
     size_t current_pos = start_pos;
     size_t end_pos = start_pos;
-    size_t codelen = static_cast<size_t>(codesize);
+    int codelen = static_cast<int>(codesize);
     char id[5];
 
     switch(codesize)
@@ -175,7 +175,7 @@ public:
       if(!handler)
       {
         format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
-         (int)codelen, (int)codelen, id, ftell(fp) - 8);
+         codelen, codelen, id, ftell(fp) - 8);
       }
       else
 

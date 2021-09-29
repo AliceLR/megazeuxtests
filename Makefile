@@ -1,8 +1,8 @@
 .PHONY: all clean
 all:
 
-CFLAGS   += -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter
-CXXFLAGS += -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter
+CFLAGS   := -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CFLAGS}
+CXXFLAGS := -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
 CXX      := @${CXX}
 LINKCXX  := ${CXX}
 
