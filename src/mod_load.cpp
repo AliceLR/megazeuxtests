@@ -265,6 +265,7 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
   {
     m.type = MOD_FASTTRACKER_XCHN;
     m.type_channels = magic[0] - '0';
+    m.type_instruments = 31;
     return modutil::SUCCESS;
   }
   else
@@ -409,7 +410,12 @@ static modutil::error MOD_read(FILE *fp)
     running_length = 600;
   }
   else
+  {
+    if(!fread(h.magic, 4, 1, fp))
+      return modutil::READ_ERROR;
+
     running_length = 1084;
+  }
 
   total_files++;
 
