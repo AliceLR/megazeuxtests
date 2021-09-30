@@ -355,7 +355,7 @@ namespace format
     uint8_t enable = true;
     static constexpr int width() { return 4; }
     bool can_print() const { return enable && value != 0; }
-    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%03x", value, Highlight::NOTE), value); else spaces(width()); }
+    void print() const { if(can_print()) fprintf(stderr, " %03x", value); else spaces(width()); } // TODO highlight.
   };
 
   struct effect
