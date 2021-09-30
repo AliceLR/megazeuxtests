@@ -30,6 +30,7 @@ enum MOD_type
   MOD_NOISETRACKER_EXT, // M&K!
   MOD_FASTTRACKER_XCHN, // 2CHN, 6CHN, 8CHN, etc.
   MOD_FASTTRACKER_XXCH, // 10CH, 16CH, 32CH, etc.
+  MOD_TAKETRACKER_TDZX, // TDZ1, TDZ2, TDZ3
   MOD_OCTALYSER_CD61,   // CD61
   MOD_OCTALYSER_CD81,   // CD81
   MOD_OKTA,             // OKTA (Oktalyzer?)
@@ -63,6 +64,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "M&K!", "NoiseTracker", 4,  false },
   { "xCHN", "FastTracker",  0,  false },
   { "xxCH", "FastTracker",  0,  false },
+  { "TDZx", "TakeTracker",  0,  false },
   { "CD61", "Octalyser",    6,  false },
   { "CD81", "Octalyser",    8,  false },
   { "OKTA", "Oktalyzer?",   8,  true  },
@@ -274,6 +276,16 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
   {
     m.type = MOD_FASTTRACKER_XXCH;
     m.type_channels = (magic[0] - '0') * 10 + (magic[1] - '0');
+    m.type_instruments = 31;
+    return modutil::SUCCESS;
+  }
+  else
+
+  // TakeTracker uses a unique magic for modules with 1-3 channels.
+  if(isdigit(magic[3]) && !memcmp(magic, "TDZ", 3))
+  {
+    m.type = MOD_TAKETRACKER_TDZX;
+    m.type_channels = magic[3] - '0';
     m.type_instruments = 31;
     return modutil::SUCCESS;
   }
