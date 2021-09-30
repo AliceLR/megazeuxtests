@@ -27,6 +27,7 @@ static constexpr char MAGIC[] = "MAS_UTrack_V00";
 
 enum ULT_features
 {
+  FT_SAMPLE_FINETUNE,
   FT_SAMPLE_16BIT,
   FT_SAMPLE_REVERSE,
   FT_SAMPLE_BIT7,
@@ -57,6 +58,7 @@ enum ULT_features
 
 static const char * const FEATURE_DESC[NUM_FEATURES] =
 {
+  "S:Fine",
   "S:16",
   "S:Rev",
   "S:bit7",
@@ -376,6 +378,8 @@ public:
       // Not sure what this is, found it in "sea of emotions.ult".
       if(ins.bidi & 128)
         m.uses[FT_SAMPLE_BIT7] = true;
+      if(ins.finetune)
+        m.uses[FT_SAMPLE_FINETUNE] = true;
     }
 
     /**
