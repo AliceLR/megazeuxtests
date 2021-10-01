@@ -26,6 +26,8 @@
 
 namespace modutil
 {
+  extern char loaded_mod_magic[4];
+
   class loader
   {
   public:

@@ -250,6 +250,9 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
   if(!fread(magic, 4, 1, fp))
     return modutil::READ_ERROR;
 
+  // FIXME global :(
+  memcpy(modutil::loaded_mod_magic, magic, 4);
+
   // Determine initial guess for what the mod type is.
   for(int i = 0; i < MOD_UNKNOWN; i++)
   {

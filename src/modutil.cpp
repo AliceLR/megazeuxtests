@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <algorithm>
 #include <vector>
@@ -30,6 +31,8 @@ static int total_unidentified = 0;
 
 namespace modutil
 {
+char loaded_mod_magic[4];
+
 static std::vector<const modutil::loader *> &loaders_vector()
 {
   static std::vector<const modutil::loader *> vec{};
@@ -68,8 +71,7 @@ static void check_module(const char *filename)
   if(fp)
   {
     setvbuf(fp, NULL, _IOFBF, 8192);
-
-    // FIXME standardize message spacing (10 is most common).
+    loaded_mod_magic[0] = '\0';
 
     format::line("File", "%s", filename);
 
@@ -95,8 +97,33 @@ static void check_module(const char *filename)
     if(!has_format)
     {
       format::error("unknown format.");
-      format::endline();
       total_unidentified++;
+
+      /* The most common reason for an unsupported format in a folder containing
+       * mostly a supported format is an unknown MOD magic, so print the potential magic. */
+      bool print_magic = true;
+      bool print_hex = false;
+      for(char c : loaded_mod_magic)
+      {
+        if(!c)
+          print_magic = false;
+
+        if(!isprint(c))
+          print_hex = true;
+      }
+
+      if(print_magic)
+      {
+        if(print_hex)
+        {
+          format::line("", "MOD magic?: %02Xh %02Xh %02Xh %02Xh",
+           (uint8_t)loaded_mod_magic[0], (uint8_t)loaded_mod_magic[1],
+           (uint8_t)loaded_mod_magic[2], (uint8_t)loaded_mod_magic[3]);
+        }
+        else
+          format::line("", "MOD magic?: '%4.4s'", loaded_mod_magic);
+      }
+      format::endline();
     }
 
     fclose(fp);
