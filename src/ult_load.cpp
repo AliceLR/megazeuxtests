@@ -461,6 +461,7 @@ public:
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u", m.num_orders);
     format::uses(m.uses, FEATURE_DESC);
+    format::description("Desc.", m.text, h.text_length);
 
     if(Config.dump_samples)
     {

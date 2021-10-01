@@ -17,6 +17,7 @@
 #ifndef MODUTIL_FORMAT_HPP
 #define MODUTIL_FORMAT_HPP
 
+#include <ctype.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -124,7 +125,7 @@ namespace format
       endline();
   }
 
-  template <typename T>
+  template<typename T>
   static inline void orders(const char *label, const T *orders, size_t count)
   {
     O_("%-8.8s:", label);
@@ -133,7 +134,7 @@ namespace format
     endline();
   }
 
-  template <typename T>
+  template<typename T>
   static inline void song(const char *song_label, const char *order_label, unsigned int song_num,
    const char *name, const T *orders, size_t count)
   {
@@ -146,6 +147,58 @@ namespace format
     for(size_t i = 0; i < count; i++)
       fprintf(stderr, " %02x", orders[i]);
     endline();
+  }
+
+  template<int WRAP=64>
+  static inline void description(const char *label, const char *text, ssize_t length)
+  {
+    if(!text)
+      return;
+
+    while(length > 0)
+    {
+      const char *line_start = text;
+      const char *line_end = strchr(text, '\n');
+      if(!line_end)
+        line_end = line_start + length;
+
+      ssize_t line_len = line_end - line_start;
+      int left = line_len;
+
+      if(left)
+      {
+        O_("%-8.8s: ", label);
+        label = "";
+
+        // Wrap long lines...
+        while(left > WRAP)
+        {
+          const char *pos = line_start + WRAP;
+          while(pos > line_start + (WRAP/2) && !isspace(*(pos - 1)))
+            pos--;
+
+          if(pos <= line_start + (WRAP/2))
+            pos = line_start + WRAP;
+
+          int segment = pos - line_start;
+          fprintf(stderr, "%*.*s\n", segment, segment, line_start);
+          line_start += segment;
+          left -= segment;
+
+          O_("%-8.8s: ", "");
+        }
+        fprintf(stderr, "%*.*s\n", left, left, line_start);
+      }
+      text += line_len + 1;
+      length -= line_len + 1;
+    }
+  }
+
+  template<int WRAP=64>
+  static inline void description(const char *label, const char *text)
+  {
+    if(text)
+      description<WRAP>(label, text, strlen(text));
   }
 
   static inline void report(const char *label, size_t count)

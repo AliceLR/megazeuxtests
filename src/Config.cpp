@@ -23,6 +23,7 @@ ConfigInfo Config;
 
 const char ConfigInfo::COMMON_FLAGS[] =
   "Common flags:\n"
+  "  -d[=N]    Dump description. N=1 (optional) enables, N=0 disables (default).\n"
   "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
   "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
   "            N=2 additionally dumps the entire pattern as raw data.\n"
@@ -138,6 +139,19 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           }
           format::error("invalid config for -H");
           return false;
+
+        case 'd':
+          if(!arg[2] || !strcmp(arg + 2, "=1"))
+          {
+            dump_descriptions = true;
+            continue;
+          }
+          if(!strcmp(arg + 2, "=0"))
+          {
+            dump_descriptions = false;
+            continue;
+          }
+          break;
 
         case 'p':
           if(!arg[2] || !strcmp(arg + 2, "=1"))

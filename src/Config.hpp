@@ -35,6 +35,7 @@ struct ConfigInfo final
 {
   static const char COMMON_FLAGS[];
 
+  bool dump_descriptions = false;
   bool dump_samples = false;
   bool dump_patterns = false;
   bool dump_pattern_rows = false;

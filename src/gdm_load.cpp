@@ -328,11 +328,13 @@ struct GDM_data
   uint8_t orders[256];
   uint8_t buffer[65536];
   uint8_t num_channels;
+  char *message = nullptr;
 
   bool uses[NUM_FEATURES];
 
   ~GDM_data()
   {
+    delete[] message;
     for(int i = 0; i < 256; i++)
       delete patterns[i];
   }
@@ -608,6 +610,17 @@ static modutil::error GDM_read(FILE *fp)
       m.uses[FT_OVER_256_ROWS] = true;
   }
 
+  // Message.
+  if(h.message_offset && h.message_length)
+  {
+    if(!fseek(fp, h.message_offset, SEEK_SET))
+    {
+      m.message = new char[h.message_length];
+      size_t end = fread(m.message, h.message_length, 1, fp);
+      m.message[end] = MIN((size_t)h.message_length, end);
+    }
+  }
+
   /* Print metadata. */
   format::line("Name",     "%s", h.name);
   format::line("Type",     "GDM %u.%u (%s/%s %u.%u)",
@@ -618,6 +631,7 @@ static modutil::error GDM_read(FILE *fp)
   format::line("Patterns", "%u", h.num_patterns);
   format::line("Orders",   "%u", h.num_orders);
   format::uses(m.uses, FEATURE_STR);
+  format::description("Desc.", m.message, h.message_length);
 
   /* Print samples. */
   if(Config.dump_samples)

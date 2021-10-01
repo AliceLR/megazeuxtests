@@ -312,6 +312,8 @@ public:
     format::line("Patterns", "%d (claims %d)", num_patterns, h.num_patterns);
     format::line("Orders",   "%d", h.num_orders);
 
+    format::description<132>("Desc.", m.text, h.text_length);
+
     if(Config.dump_samples)
     {
       // FIXME
