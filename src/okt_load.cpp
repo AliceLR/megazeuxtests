@@ -358,7 +358,31 @@ public:
 
     if(Config.dump_samples)
     {
-      // FIXME
+      namespace table = format::table;
+
+      static const char *labels[] =
+      {
+        "Name", "Length", "LoopStart", "LoopLen", "Vol"
+      };
+
+      table::table<
+        table::string<20>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
+        table::number<4>> s_table;
+
+      s_table.header("Samples", labels);
+
+      for(int i = 0; i < m.num_samples; i++)
+      {
+        OKT_sample &s = m.samples[i];
+        s_table.row(i + 1, s.name, {},
+          s.length, s.repeat_start, s.repeat_length, {},
+          s.volume);
+      }
     }
 
     if(Config.dump_patterns)

@@ -152,7 +152,7 @@ namespace format
   template<int WRAP=64>
   static inline void description(const char *label, const char *text, ssize_t length)
   {
-    if(!text)
+    if(!text || !Config.dump_descriptions)
       return;
 
     while(length > 0)

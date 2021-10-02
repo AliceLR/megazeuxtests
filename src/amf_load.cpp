@@ -597,9 +597,12 @@ static modutil::error AMF_read(FILE *fp)
 
       static const char *labels[] =
       {
-        "Vol", "C4 Rate", "Length", "LoopStart", "LoopEnd"
+        "Name", "Filename", "Vol", "C4 Rate", "Length", "LoopStart", "LoopEnd"
       };
       table::table<
+        table::string<32>,
+        table::string<12>,
+        table::spacer,
         table::number<4>,
         table::number<7>,
         table::spacer,
@@ -612,7 +615,8 @@ static modutil::error AMF_read(FILE *fp)
       for(unsigned int i = 0; i < m.num_samples; i++)
       {
         AMF_sample &sample = m.samples[i];
-        s_table.row(i + 1, sample.volume, sample.c4speed, {},
+        s_table.row(i + 1, sample.name, sample.filename, {},
+          sample.volume, sample.c4speed, {},
           sample.length, sample.loop_start, sample.loop_end
         );
       }
