@@ -19,6 +19,7 @@ MODUTIL_OBJS := \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
   ${OBJ}/mod_load.o \
+  ${OBJ}/s3m_load.o \
   ${OBJ}/xm_load.o \
   ${OBJ}/it_load.o \
   ${OBJ}/669_load.o \

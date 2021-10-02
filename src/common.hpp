@@ -83,6 +83,44 @@ static inline void fix_u16be(uint16_t &value)
     value = __builtin_bswap16(value);
 }
 
+/* Multibyte memory reading functions. */
+
+static inline constexpr uint16_t mem_u16le(const void *_mem)
+{
+  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  return mem[0] | (mem[1] << 8);
+}
+
+static inline constexpr uint16_t mem_u16be(const void *_mem)
+{
+  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  return (mem[0] << 8) | mem[1];
+}
+
+static inline constexpr int16_t mem_s16le(const void *mem)
+{
+  return mem_u16le(mem);
+}
+
+static inline constexpr int16_t mem_s16be(const void *mem)
+{
+  return mem_u16be(mem);
+}
+
+static inline constexpr uint32_t mem_u32le(const void *_mem)
+{
+  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  return mem[0] | (mem[1] << 8) | (mem[2] << 16) | (mem[3] << 24);
+}
+
+static inline constexpr uint32_t mem_u32be(const void *_mem)
+{
+  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  return (mem[0] << 24) | (mem[1] << 16) | (mem[2] << 8) | mem[3];
+}
+
+/* Multibyte file reading functions. */
+
 static inline uint16_t fget_u16le(FILE *fp)
 {
   int a = fgetc(fp);
@@ -128,6 +166,8 @@ static inline uint32_t fget_u32be(FILE *fp)
   int d = fgetc(fp);
   return (a << 24) | (b << 16) | (c << 8) | (d);
 }
+
+/* String cleaning functions. */
 
 static inline bool strip_module_name(char *dest, size_t dest_len)
 {

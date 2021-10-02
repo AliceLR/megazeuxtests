@@ -63,7 +63,6 @@ namespace format
   static inline void endline()
   {
     fprintf(stderr, "\n");
-    fflush(stderr); // MinGW buffers stderr...
   }
 
   static inline void line(const char *label = "")
@@ -206,12 +205,14 @@ namespace format
     endline();
     O_("%-20.20s: %zu\n", label, count);
     O_("%-20.20s:\n", "--------------------");
+    fflush(stderr); // MinGW buffers stderr...
   }
 
   static inline void reportline(const char *label = "")
   {
     O_("%-20.20s:", label);
     endline();
+    fflush(stderr); // MinGW buffers stderr...
   }
 
   ATTRIBUTE_PRINTF(2, 3)
@@ -223,6 +224,7 @@ namespace format
     vfprintf(stderr, fmt, args);
     va_end(args);
     endline();
+    fflush(stderr); // MinGW buffers stderr...
   }
 
   /**
@@ -544,6 +546,7 @@ namespace format
     const char *name = nullptr;
     const char *short_label = "Pat.";
     const char *long_label = "Pattern";
+    char *extra_message = nullptr;
     unsigned int pattern_number;
     size_t rows;
     size_t columns;
@@ -559,6 +562,32 @@ namespace format
 
     pattern(const char *n, unsigned int p, size_t c = 4, size_t r = 64, size_t s = 0):
      name(n), pattern_number(p), rows(r), columns(MIN(c, MAX_COLUMNS)), size_in_bytes(s) {}
+
+    ~pattern()
+    {
+      delete[] extra_message;
+    }
+
+    ATTRIBUTE_PRINTF(2, 3)
+    void extra(const char *fmt, ...)
+    {
+      va_list args;
+      va_list args_check;
+
+      va_start(args, fmt);
+      va_copy(args_check, args);
+
+      size_t len = vsnprintf(NULL, 0, fmt, args_check);
+      va_end(args_check);
+
+      if(len)
+      {
+        extra_message = new char[len + 1];
+        vsnprintf(extra_message, len + 1, fmt, args);
+        extra_message[len] = '\0';
+      }
+      va_end(args);
+    }
 
     void insert(EVENT &&ev)
     {
@@ -599,6 +628,9 @@ namespace format
         fprintf(stderr, "; %s is blank.\n", long_label);
       else
         fprintf(stderr, "\n");
+
+      if(extra_message)
+        O_("%-8.8s: %s\n", "", extra_message);
     }
 
     void tracks(const int *column_tracks)
