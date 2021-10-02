@@ -29,6 +29,7 @@ MODUTIL_OBJS := \
   ${OBJ}/gdm_load.o \
   ${OBJ}/masi_load.o \
   ${OBJ}/med_load.o \
+  ${OBJ}/mtm_load.o \
   ${OBJ}/okt_load.o \
   ${OBJ}/stm_load.o \
   ${OBJ}/ult_load.o \
