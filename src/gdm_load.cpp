@@ -420,6 +420,8 @@ static modutil::error GDM_read(FILE *fp)
      memcmp(h.magic2, MAGIC_2, 4))
     return modutil::FORMAT_ERROR;
 
+  total_gdms++;
+
   h.name[32] = '\0';
   h.author[32] = '\0';
 
