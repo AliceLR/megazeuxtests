@@ -29,7 +29,7 @@
 static int total_asylum = 0;
 
 
-static constexpr char MAGIC[] = "ASYLUM Music Format V1.0";
+static constexpr char MAGIC[] = "ASYLUM Music Format V1.0\0\0\0\0\0\0\0\0";
 
 static constexpr size_t MAX_INSTRUMENTS = 64;
 static constexpr size_t MAX_PATTERNS = 256;
@@ -37,16 +37,17 @@ static constexpr size_t MAX_ORDERS = 256;
 static constexpr size_t CHANNELS = 8;
 static constexpr size_t ROWS = 64;
 
+/* Several of these fields are ignored in amf2mod, e.g. the
+ * restart byte, which is relied on by the Todd Parsons AMFs.*/
 struct ASYLUM_header
 {
-  /*   0 */ char     magic[24];
-  /*  24 */ uint8_t  reserved[8];
+  /*   0 */ char     magic[32];
   /*  32 */ uint8_t  initial_speed;
   /*  33 */ uint8_t  initial_tempo;
   /*  34 */ uint8_t  num_samples;
   /*  35 */ uint8_t  num_patterns;
   /*  36 */ uint8_t  num_orders;
-  /*  37 */ uint8_t  restart_byte; /* This is a guess, no ASYLUM AMF uses a value other than 0. */
+  /*  37 */ uint8_t  restart_byte;
   /*  38 */ uint8_t  orders[MAX_ORDERS];
   /* 294 */
 };
@@ -113,9 +114,6 @@ public:
     total_asylum++;
 
     /* Header */
-    if(!fread(h.reserved, sizeof(h.reserved), 1, fp))
-      return modutil::READ_ERROR;
-
     h.initial_speed = fgetc(fp);
     h.initial_tempo = fgetc(fp);
     h.num_samples   = fgetc(fp);
