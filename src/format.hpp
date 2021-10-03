@@ -107,7 +107,7 @@ namespace format
   template<int N>
   static inline void uses(const bool (&uses)[N], const char * const (&desc)[N])
   {
-    bool printed = false;
+    int printed = 0;
     for(int i = 0; i < N; i++)
     {
       if(uses[i])
@@ -115,9 +115,17 @@ namespace format
         if(!printed)
         {
           O_("%-8.8s:", "Uses");
-          printed = true;
         }
+        else
+
+        if(!(printed & 7))
+        {
+          endline();
+          O_("%-8.8s:", "");
+        }
+
         fprintf(stderr, " %s", desc[i]);
+        printed++;
       }
     }
     if(printed)
