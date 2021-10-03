@@ -245,10 +245,10 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
 
   /* Normal MOD magic is located at 1080. */
   if(fseek(fp, 1080, SEEK_SET))
-    return modutil::SEEK_ERROR;
+    return modutil::FORMAT_ERROR;
 
   if(!fread(magic, 4, 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   // FIXME global :(
   memcpy(modutil::loaded_mod_magic, magic, 4);

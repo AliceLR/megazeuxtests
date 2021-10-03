@@ -60,7 +60,7 @@ public:
     bool has_fe = false;
 
     if(!fread(&h, sizeof(XM_header), 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, "Extended Module: ", 17))
       return modutil::FORMAT_ERROR;
