@@ -32,6 +32,10 @@ enum S3M_features
   FT_ADLIB,
   FT_ADLIB_CHANNELS,
   FT_ADLIB_INSTRUMENTS,
+  FT_INTGP_UNKNOWN,
+  FT_INTGP_SOUNDBLASTER,
+  FT_INTGP_GRAVIS_ULTRASOUND,
+  FT_SAMPLE_SEGMENT_HI,
   NUM_FEATURES
 };
 
@@ -43,30 +47,38 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "AdLib",
   "AdLib(C)",
   "AdLib(I)",
+  "Gp:?",
+  "Gp:SB",
+  "Gp:GUS",
+  "S:HiSeg",
 };
 
 static const char S3M_MAGIC[] = "SCRM";
 static const char SAMPLE_MAGIC[] = "SCRS";
 static const char ADLIB_MAGIC[] = "SCRI";
 
+static const char SCREAMTRACKER3[] = "Scrm";
+static const char BEROTRACKER[] = "BeRo";
+static const char MODPLUG_TRACKER[] = "Modplug";
+
 static const char *TRACKERS[16] =
 {
-  "0h?",
-  "Scrm",    /* Scream Tracker 3 */
-  "Orpheus", /* IMAGO Orpheus */
-  "IT",      /* Impulse Tracker */
-  "Schism",  /* Schism Tracker. Apparently some BeRoTracker modules use 0x4100. */
-  "OpenMPT", /* OpenMPT */
-  "BeRo",    /* BeRoTracker */
-  "7h(?)",
-  "8h(?)",
-  "9h(?)",
-  "Ah(?)",
-  "Bh(?)",
-  "Ch(?)",
-  "Dh(?)",
-  "Eh(?)",
-  "Fh(?)",
+  "?",
+  SCREAMTRACKER3, /* Scream Tracker 3 */
+  "Orpheus",      /* IMAGO Orpheus */
+  "IT",           /* Impulse Tracker */
+  "Schism",       /* Schism Tracker. Apparently some BeRoTracker modules use 0x4100. */
+  "OpenMPT",      /* OpenMPT */
+  BEROTRACKER,    /* BeRoTracker */
+  "?",
+  "?",
+  "?",
+  "?",
+  "?",
+  "?",
+  "?",
+  "?",
+  "?",
 };
 
 static const unsigned int MAX_CHANNELS = 32;
@@ -104,7 +116,7 @@ struct S3M_header
   /* 52 */ uint8_t  click_removal; /* Gravis Ultrasound click removal */
   /* 53 */ uint8_t  has_panning_table; /* must be 252 for panning table to be present */
   /* 54 */ uint8_t  reserved2[8];
-  /* 62 */ uint16_t special_pg; /* paragraph pointer to special custom data */
+  /* 62 */ uint16_t special_segment; /* paragraph pointer to special custom data */
   /* 64 */ uint8_t  channel_settings[32];
   /* 96 */
 
@@ -127,7 +139,7 @@ struct S3M_instrument
 
   /*  0 */ uint8_t  type;
   /*  1 */ char     filename[12];
-  /* 13 */ uint8_t  _sample_pg[3];/* sample only, paragraph pointer to sample data, 24-bits */
+  /* 13 */ uint8_t  _sample_segment[3];/* sample only, paragraph pointer to sample data, 24-bits */
   /* 16 */ uint32_t length;       /* sample only, bytes */
   /* 20 */ uint32_t loop_start;   /* sample only, bytes */
   /* 24 */ uint32_t loop_end;     /* sample only, bytes */
@@ -147,12 +159,12 @@ struct S3M_instrument
   /* AdLib instruments store these where length/loopstart/loopend go. */
   /* 20 */ uint8_t  operators[12];
 
-  uint16_t instrument_pg; /* paragraph pointer to this instrument */
+  uint16_t instrument_segment; /* paragraph pointer to this instrument */
 
-  uint32_t sample_pg()
+  uint32_t sample_segment()
   {
     // Stored in WTF endian
-    return (_sample_pg[0] << 16) | mem_u16le(_sample_pg + 1);
+    return (_sample_segment[0] << 16) | mem_u16le(_sample_segment + 1);
   }
 };
 
@@ -199,7 +211,7 @@ struct S3M_pattern
 {
   S3M_event *events = nullptr;
   uint16_t packed_size;
-  uint16_t pattern_pg; /* paragraph pointer to this pattern */
+  uint16_t pattern_segment; /* paragraph pointer to this pattern */
 
   ~S3M_pattern()
   {
@@ -221,6 +233,7 @@ struct S3M_data
   uint8_t        *buffer = nullptr;
 
   char name[29];
+  const char *tracker_string;
   unsigned int max_channel;
   unsigned int num_channels;
   unsigned int num_samples;
@@ -292,7 +305,7 @@ public:
 
     memcpy(h.reserved2, buffer + 54, sizeof(h.reserved2));
 
-    h.special_pg        = mem_u16le(buffer + 62);
+    h.special_segment   = mem_u16le(buffer + 62);
 
     memcpy(h.channel_settings, buffer + 64, MAX_CHANNELS);
     // Now synchronized with the FILE stream.
@@ -307,18 +320,19 @@ public:
     m.allocate();
 
     // Order list.
+    // Standard Scream Tracker 3 S3Ms are saved with this padded to
+    // a multiple of 4 (to keep the segment pointers aligned?), but
+    // other trackers (IT) seem to ignore that when saving.
     if(!fread(m.orders, h.num_orders, 1, fp))
       return modutil::READ_ERROR;
-    if(h.num_orders & 1)
-      fgetc(fp);
 
     // Instrument parapointers.
     for(size_t i = 0; i < h.num_instruments; i++)
-      m.instruments[i].instrument_pg = fget_u16le(fp);
+      m.instruments[i].instrument_segment = fget_u16le(fp);
 
     // Pattern parapointers.
     for(size_t i = 0; i < h.num_patterns; i++)
-      m.patterns[i].pattern_pg = fget_u16le(fp);
+      m.patterns[i].pattern_segment = fget_u16le(fp);
 
     // Panning table.
     if(h.has_panning_table == HAS_PANNING_TABLE)
@@ -342,19 +356,30 @@ public:
       }
     }
 
+    // Get printable tracker.
+    if(h.cwtv == 0x4100)
+      m.tracker_string = BEROTRACKER;
+    else
+      m.tracker_string = TRACKERS[h.cwtv >> 12];
+
 
     /* Instruments. */
+    int intgp_min = 65536;
+    int intgp_max = 0;
     for(size_t i = 0; i < h.num_instruments; i++)
     {
       S3M_instrument &ins = m.instruments[i];
-      if(!ins.instrument_pg)
+      if(!ins.instrument_segment)
         continue;
 
-      if(fseek(fp, ins.instrument_pg << 4, SEEK_SET))
+      if(fseek(fp, ins.instrument_segment << 4, SEEK_SET))
         return modutil::SEEK_ERROR;
 
       if(!fread(buffer, 80, 1, fp))
+      {
+        format::warning("read error at instrument %zu : segment %u", i, ins.instrument_segment);
         return modutil::READ_ERROR;
+      }
 
       ins.type = buffer[0];
       memcpy(ins.magic, buffer + 76, sizeof(ins.magic));
@@ -384,7 +409,7 @@ public:
       }
 
       memcpy(ins.filename, buffer + 1, sizeof(ins.filename));
-      memcpy(ins._sample_pg, buffer + 13, sizeof(ins._sample_pg));
+      memcpy(ins._sample_segment, buffer + 13, sizeof(ins._sample_segment));
 
       ins.length         = mem_u32le(buffer + 16);
       ins.loop_start     = mem_u32le(buffer + 20);
@@ -400,6 +425,36 @@ public:
       ins.int_lastpos    = mem_u32le(buffer + 44);
 
       memcpy(ins.name, buffer + 48, sizeof(ins.name));
+
+      if(ins.type == S3M_instrument::SAMPLE)
+      {
+        if(ins.int_gp < intgp_min)
+          intgp_min = ins.int_gp;
+        if(ins.int_gp > intgp_max)
+          intgp_max = ins.int_gp;
+
+        if(ins._sample_segment[0])
+          m.uses[FT_SAMPLE_SEGMENT_HI] = true;
+
+        // TODO: not sure if this MPT fingerprinting is correct.
+        if(h.cwtv == 0x1320 && (ins.packing == 4 || ins.int_gp == 0))
+          m.tracker_string = MODPLUG_TRACKER;
+      }
+    }
+
+    // Experimental ST3 SoundBlaster and Gravis Ultrasound fingerprinting.
+    // See: https://github.com/libxmp/libxmp/issues/357
+    if(m.tracker_string == SCREAMTRACKER3 && m.num_samples)
+    {
+      if(intgp_min >= 1)
+      {
+        if(intgp_max == 1)
+          m.uses[FT_INTGP_SOUNDBLASTER] = true;
+        else
+          m.uses[FT_INTGP_GRAVIS_ULTRASOUND] = true;
+      }
+      else
+        m.uses[FT_INTGP_UNKNOWN] = true;
     }
 
     if(adlib_channels && m.num_adlib)
@@ -422,10 +477,10 @@ public:
     for(size_t i = 0; i < h.num_patterns; i++)
     {
       S3M_pattern &p = m.patterns[i];
-      if(!p.pattern_pg)
+      if(!p.pattern_segment)
         continue;
 
-      if(fseek(fp, p.pattern_pg << 4, SEEK_SET))
+      if(fseek(fp, p.pattern_segment << 4, SEEK_SET))
         return modutil::SEEK_ERROR;
 
       p.allocate(MAX_CHANNELS, 64);
@@ -435,7 +490,10 @@ public:
         continue;
 
       if(!fread(m.buffer, p.packed_size, 1, fp))
+      {
+        format::warning("read error at pattern %zu : segment %u", i, p.pattern_segment);
         return modutil::READ_ERROR;
+      }
 
       const uint8_t *pos = m.buffer;
       const uint8_t *end = m.buffer + p.packed_size;
@@ -465,7 +523,7 @@ public:
     /* Print information. */
 
     format::line("Name",     "%s", m.name);
-    format::line("Type",     "S3M v%d %s:%d.%02X", h.ffi, TRACKERS[h.cwtv >> 12], (h.cwtv & 0xf00) >> 8, h.cwtv & 0xff);
+    format::line("Type",     "S3M v%d %s(%d:%d.%02X)", h.ffi, m.tracker_string, h.cwtv >> 12, (h.cwtv & 0xf00) >> 8, h.cwtv & 0xff);
     if(m.num_samples)
       format::line("Samples", "%u", m.num_samples);
     if(m.num_adlib)
@@ -481,14 +539,13 @@ public:
 
       static const char *s_labels[] =
       {
-        "Name", "Filename", "T", "Length", "LoopStart", "LoopEnd", "Vol", "Pck", "Flg", "C2Speed", "GPg", "512", "IPg", "SPg"
+        "Name", "Filename", "T", "Length", "LoopStart", "LoopEnd", "Vol", "Pck", "Flg", "C2Speed", "IntGp", "Int512", "ISeg", "SSeg"
       };
       static const char *a_labels[] =
       {
-        "Name", "Filename", "T", "mCH", "cCH", "mLV", "cLV", "mAD", "cAD", "mSR", "cSR", "mWV", "cWV", "Alg", "Vol", "Dsk", "C2Speed", "IPg"
+        "Name", "Filename", "T", "mCH", "cCH", "mLV", "cLV", "mAD", "cAD", "mSR", "cSR", "mWV", "cWV", "Alg", "Vol", "Dsk", "C2Speed", "ISeg"
       };
 
-      format::line();
       table::table<
         table::string<28>,
         table::string<12>,
@@ -534,6 +591,7 @@ public:
 
       if(m.num_samples)
       {
+        format::line();
         s_table.header("Samples", s_labels);
         for(size_t i = 0; i < h.num_instruments; i++)
         {
@@ -543,13 +601,14 @@ public:
             s_table.row(i + 1, ins.name, ins.filename, {},
               ins.type, ins.length, ins.loop_start, ins.loop_end, {},
               ins.default_volume, ins.packing, ins.flags, ins.c2speed, {},
-              ins.int_gp, ins.int_512, ins.instrument_pg, ins.sample_pg());
+              ins.int_gp, ins.int_512, ins.instrument_segment, ins.sample_segment());
           }
         }
       }
 
       if(m.num_adlib)
       {
+        format::line();
         a_table.header("AdLib", a_labels);
         for(size_t i = 0; i < h.num_instruments; i++)
         {
@@ -561,7 +620,7 @@ public:
               ins.operators[3], ins.operators[4], ins.operators[5], ins.operators[6],
               ins.operators[7], ins.operators[8], ins.operators[9], ins.operators[10], {},
               ins.default_volume, ins.dsk, ins.c2speed, {},
-              ins.instrument_pg);
+              ins.instrument_segment);
           }
         }
       }
@@ -581,7 +640,7 @@ public:
 
         using EVENT = format::event<format::note, format::sample, format::volume, format::effectIT>;
         format::pattern<EVENT> pattern(i, MAX_CHANNELS, 64, p.packed_size);
-        pattern.extra("PPg: %u", p.pattern_pg);
+        pattern.extra("PSeg: %u", p.pattern_segment);
 
         if(!Config.dump_pattern_rows)
         {
