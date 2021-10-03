@@ -58,8 +58,6 @@ const char *strerror(modutil::error err)
     case GDM_TOO_MANY_EFFECTS: return "note has more effects (>4) than allowed";
 
     /* AMF/DSMI */
-    case AMF_IS_ASYLUM:     return "is an ASYLUM AMF";
-    case AMF_BAD_SIGNATURE: return "AMF signature mismatch";
     case AMF_BAD_CHANNELS:  return "AMF has too many channels";
     case AMF_BAD_TRACKS:    return "AMF has too many tracks";
 

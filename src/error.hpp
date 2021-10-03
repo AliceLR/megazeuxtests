@@ -57,8 +57,6 @@ namespace modutil
     GDM_TOO_MANY_EFFECTS,
 
     /* AMF/DSMI */
-    AMF_IS_ASYLUM,
-    AMF_BAD_SIGNATURE,
     AMF_BAD_CHANNELS,
     AMF_BAD_TRACKS,
 

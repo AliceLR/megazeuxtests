@@ -252,17 +252,7 @@ static modutil::error AMF_read(FILE *fp)
     return modutil::READ_ERROR;
 
   if(memcmp(m.magic, "AMF", 3))
-  {
-    char tmp[32];
-    rewind(fp);
-    if(fread(tmp, 20, 1, fp))
-    {
-      tmp[19] = '\0';
-      if(!strcmp(tmp, "ASYLUM Music Format"))
-        return modutil::AMF_IS_ASYLUM;
-    }
     return modutil::FORMAT_ERROR;
-  }
 
   total_dsmi++;
 
@@ -775,7 +765,7 @@ static modutil::error AMF_read(FILE *fp)
 class AMF_loader : modutil::loader
 {
 public:
-  AMF_loader(): modutil::loader("AMF : DSMI") {}
+  AMF_loader(): modutil::loader("AMF : Digital Sound and Music Interface") {}
 
   virtual modutil::error load(FILE *fp) const override
   {
