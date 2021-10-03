@@ -54,7 +54,7 @@ enum FAR_editor_memory_2
   MAX_EDITOR_MEMORY_2
 };
 
-#define HAS_INSTRUMENT(x) (!!(h.sample_mask[x >> 3] & (1 << (x & 3))))
+#define HAS_INSTRUMENT(x) (!!(h.sample_mask[x >> 3] & (1 << (x & 7))))
 
 struct FAR_header
 {
@@ -254,6 +254,9 @@ public:
     /* Load patterns. */
     for(i = 0; i < num_patterns; i++)
     {
+      if(!h.pattern_length[i])
+        continue;
+
       FAR_pattern &p = m.patterns[i];
 
       // The break location is badly documented--it claims to be "length in rows",
@@ -291,7 +294,10 @@ public:
       m.num_instruments++;
 
       if(!fread(ins.name, sizeof(ins.name), 1, fp))
+      {
+        format::error("read error at instrument %02x", i);
         return modutil::READ_ERROR;
+      }
 
       ins.length     = fget_u32le(fp);
       ins.finetune   = fgetc(fp);
@@ -302,7 +308,14 @@ public:
       ins.loop_flags = fgetc(fp);
 
       if(feof(fp))
+      {
+        format::error("read error at instrument %02x", i);
         return modutil::READ_ERROR;
+      }
+
+      // Skip sample.
+      if(fseek(fp, ins.length, SEEK_CUR))
+        return modutil::SEEK_ERROR;
     }
 
     /* Print summary. */
@@ -316,7 +329,38 @@ public:
 
     if(Config.dump_samples)
     {
-      // FIXME
+      namespace table = format::table;
+
+      static const char *labels[] =
+      {
+        "Name", "Length", "LoopStart", "LoopEnd", "Vol", "Fine", "Type", "Mode",
+      };
+
+      format::line();
+      table::table<
+        table::string<32>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
+        table::number<4>,
+        table::number<4>,
+        table::number<4>,
+        table::number<4>> s_table;
+
+      s_table.header("Instr.", labels);
+
+      for(size_t i = 0; i < MAX_INSTRUMENTS; i++)
+      {
+        if(!HAS_INSTRUMENT(i))
+          continue;
+
+        FAR_instrument &ins = m.instruments[i];
+        s_table.row(i + 1, ins.name, {},
+          ins.length, ins.loop_start, ins.loop_end, {},
+          ins.volume, ins.finetune, ins.type_flags, ins.loop_flags);
+      }
     }
 
     if(Config.dump_patterns)
