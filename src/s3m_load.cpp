@@ -426,7 +426,7 @@ public:
 
       memcpy(ins.name, buffer + 48, sizeof(ins.name));
 
-      if(ins.type == S3M_instrument::SAMPLE)
+      if(ins.type == S3M_instrument::SAMPLE && ins.length > 0)
       {
         if(ins.int_gp < intgp_min)
           intgp_min = ins.int_gp;
@@ -452,6 +452,13 @@ public:
           m.uses[FT_INTGP_SOUNDBLASTER] = true;
         else
           m.uses[FT_INTGP_GRAVIS_ULTRASOUND] = true;
+      }
+      else
+
+      // Early ST 3.00 versions don't support GUS.
+      if(h.cwtv == 0x1300)
+      {
+        m.uses[FT_INTGP_SOUNDBLASTER] = true;
       }
       else
         m.uses[FT_INTGP_UNKNOWN] = true;
