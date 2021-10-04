@@ -211,14 +211,14 @@ namespace format
   static inline void report(const char *label, size_t count)
   {
     endline();
-    O_("%-20.20s: %zu\n", label, count);
-    O_("%-20.20s:\n", "--------------------");
+    O_("%-22.22s: %zu\n", label, count);
+    O_("%-22.22s:\n", "----------------------");
     fflush(stderr); // MinGW buffers stderr...
   }
 
   static inline void reportline(const char *label = "")
   {
-    O_("%-20.20s:", label);
+    O_("%-22.22s:", label);
     endline();
     fflush(stderr); // MinGW buffers stderr...
   }
@@ -226,7 +226,7 @@ namespace format
   ATTRIBUTE_PRINTF(2, 3)
   static inline void reportline(const char *label, const char *fmt, ...)
   {
-    O_("%-20.20s: ", label);
+    O_("%-22.22s: ", label);
     va_list args;
     va_start(args, fmt);
     vfprintf(stderr, fmt, args);

@@ -25,27 +25,30 @@
 
 enum MOD_type
 {
-  MOD_PROTRACKER,       // M.K.
-  MOD_PROTRACKER_EXT,   // M!K!
-  MOD_NOISETRACKER_EXT, // M&K!
-  MOD_FASTTRACKER_XCHN, // 2CHN, 6CHN, 8CHN, etc.
-  MOD_FASTTRACKER_XXCH, // 10CH, 16CH, 32CH, etc.
-  MOD_TAKETRACKER_TDZX, // TDZ1, TDZ2, TDZ3
-  MOD_OCTALYSER_CD61,   // CD61
-  MOD_OCTALYSER_CD81,   // CD81
-  MOD_OKTA,             // OKTA (Oktalyzer?)
-  MOD_OCTA,             // OCTA (OctaMED?)
-  MOD_STARTREKKER_EXO4, // EXO4
-  MOD_STARTREKKER_FLT4, // FLT4
-  MOD_STARTREKKER_FLT8, // FLT8
-  MOD_HMN,              // His Master's Noise FEST
-  MOD_LARD,             // Signature found in judgement_day_gvine.mod. It's a normal 4-channel MOD.
-  MOD_NSMS,             // Signature found in kingdomofpleasure.mod. It's a normal 4-channel MOD.
-  WOW,                  // Mod's Grave M.K.
-  MOD_SOUNDTRACKER,     // ST 15-instrument .MOD, no signature.
-  MOD_SOUNDTRACKER_26,  // Soundtracker 2.6 MTN\0
-  MOD_ICETRACKER_IT10,  // Icetracker 1.x IT10
-  MOD_UNKNOWN,          // ?
+  MOD_PROTRACKER,          // M.K.
+  MOD_PROTRACKER_EXT,      // M!K!
+  MOD_NOISETRACKER_EXT,    // M&K!
+  MOD_FASTTRACKER_XCHN,    // 2CHN, 6CHN, 8CHN, etc.
+  MOD_FASTTRACKER_XXCH,    // 10CH, 16CH, 32CH, etc.
+  MOD_TAKETRACKER_TDZX,    // TDZ1, TDZ2, TDZ3
+  MOD_OCTALYSER_CD61,      // CD61
+  MOD_OCTALYSER_CD81,      // CD81
+  MOD_OKTA,                // OKTA (Oktalyzer?)
+  MOD_OCTA,                // OCTA (OctaMED?)
+  MOD_STARTREKKER_EXO4,    // EXO4
+  MOD_STARTREKKER_FLT4,    // FLT4
+  MOD_STARTREKKER_FLT8,    // FLT8
+  MOD_DIGITALTRACKER_FA04, // FA04
+  MOD_DIGITALTRACKER_FA06, // FA06
+  MOD_DIGITALTRACKER_FA08, // FA08
+  MOD_HMN,                 // His Master's Noise FEST
+  MOD_LARD,                // Signature found in judgement_day_gvine.mod. It's a normal 4-channel MOD.
+  MOD_NSMS,                // Signature found in kingdomofpleasure.mod. It's a normal 4-channel MOD.
+  WOW,                     // Mod's Grave M.K.
+  MOD_SOUNDTRACKER,        // ST 15-instrument .MOD, no signature.
+  MOD_SOUNDTRACKER_26,     // Soundtracker 2.6 MTN\0
+  MOD_ICETRACKER_IT10,     // Icetracker 1.x IT10
+  MOD_UNKNOWN,             // ?
   NUM_MOD_TYPES
 };
 
@@ -59,27 +62,30 @@ struct MOD_type_info
 
 static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
 {
-  { "M.K.", "ProTracker",   4,  false },
-  { "M!K!", "ProTracker",   4,  false },
-  { "M&K!", "NoiseTracker", 4,  false },
-  { "xCHN", "FastTracker",  0,  false },
-  { "xxCH", "FastTracker",  0,  false },
-  { "TDZx", "TakeTracker",  0,  false },
-  { "CD61", "Octalyser",    6,  false },
-  { "CD81", "Octalyser",    8,  false },
-  { "OKTA", "Oktalyzer?",   8,  true  },
-  { "OCTA", "OctaMED?",     8,  true  },
-  { "EXO4", "StarTrekker",  4,  false },
-  { "FLT4", "StarTrekker",  4,  false },
-  { "FLT8", "StarTrekker",  8,  false },
-  { "FEST", "HMN",          4,  true  },
-  { "LARD", "Unknown 4ch",  4,  false },
-  { "NSMS", "Unknown 4ch",  4,  false },
-  { "M.K.", "Mod's Grave",  8,  true  },
-  { "",     "Soundtracker", 4,  false },
-  { "",     "ST 2.6",       -1, false },
-  { "",     "IceTracker",   -1, false },
-  { "",     "unknown",      -1, false },
+  { "M.K.", "ProTracker",      4,  false },
+  { "M!K!", "ProTracker",      4,  false },
+  { "M&K!", "NoiseTracker",    4,  false },
+  { "xCHN", "FastTracker",     0,  false },
+  { "xxCH", "FastTracker",     0,  false },
+  { "TDZx", "TakeTracker",     0,  false },
+  { "CD61", "Octalyser",       6,  false },
+  { "CD81", "Octalyser",       8,  false },
+  { "OKTA", "Oktalyzer?",      8,  true  },
+  { "OCTA", "OctaMED?",        8,  true  },
+  { "EXO4", "StarTrekker",     4,  false },
+  { "FLT4", "StarTrekker",     4,  false },
+  { "FLT8", "StarTrekker",     8,  false },
+  { "FA04", "Digital Tracker", 4,  false },
+  { "FA06", "Digital Tracker", 6,  false },
+  { "FA08", "Digital Tracker", 8,  false },
+  { "FEST", "HMN",             4,  true  },
+  { "LARD", "Unknown 4ch",     4,  false },
+  { "NSMS", "Unknown 4ch",     4,  false },
+  { "M.K.", "Mod's Grave",     8,  true  },
+  { "",     "Soundtracker",    4,  false },
+  { "",     "ST 2.6",          -1, false },
+  { "",     "IceTracker",      -1, false },
+  { "",     "unknown",         -1, false },
 };
 
 static int total_files;
@@ -430,6 +436,24 @@ static modutil::error MOD_read(FILE *fp)
       return modutil::READ_ERROR;
 
     running_length = 1084;
+
+    if(m.type == MOD_DIGITALTRACKER_FA04 ||
+       m.type == MOD_DIGITALTRACKER_FA06 ||
+       m.type == MOD_DIGITALTRACKER_FA08)
+    {
+      /**
+       * Digital Tracker MODs have extra unused bytes after the magic.
+       * The intent of these seems to have been as follows, but MOD verisons
+       * of Digital Tracker don't allow changing these fields, and post-MOD
+       * versions of Digital Tracker have been confirmed to ignore them:
+       *
+       * rows_per_pattern = fget_u16be(fp);
+       * sample_bits      = fgetc(fp); // 0=8-bit, 1=16-bit
+       * sample_rate      = fgetc(fp); // 0=8363Hz, 1=12500Hz, 2=25000Hz
+       */
+      fget_u32be(fp);
+      running_length += 4;
+    }
   }
 
   total_files++;
@@ -648,10 +672,10 @@ public:
 
     for(int i = 0; i < NUM_MOD_TYPES; i++)
     {
-      char label[21];
+      char label[23];
       if(type_count[i])
       {
-        snprintf(label, sizeof(label), "%-14s %4.4s", TYPES[i].source, TYPES[i].magic);
+        snprintf(label, sizeof(label), "%-16s %4.4s", TYPES[i].source, TYPES[i].magic);
         format::reportline(label, "%d", type_count[i]);
       }
     }
