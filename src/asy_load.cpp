@@ -190,6 +190,7 @@ public:
     format::line("Samples",  "%u", h.num_samples);
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u (0x%02x)", h.num_orders, h.restart_byte);
+    format::line("Speed",    "%u/%u", h.initial_speed, h.initial_tempo);
 
     if(Config.dump_samples)
     {
