@@ -42,10 +42,6 @@ const char *strerror(modutil::error err)
     case MOD_IGNORE_IT10:   return "ignoring IceTracker .MOD";
     case MOD_IGNORE_MAGIC:  return "ignoring unsupported .MOD variant";
 
-    /* XM */
-    case XM_INVALID_ORDER_COUNT: return "invalid order count >256";
-    case XM_INVALID_PATTERN_COUNT: return "invalid pattern count >256";
-
     /* IT */
     case IT_INVALID_SAMPLE: return "IT sample magic mismatch";
     case IT_INVALID_INSTRUMENT: return "IT instrument magic mismatch";

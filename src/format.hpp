@@ -104,8 +104,8 @@ namespace format
     endline();
   }
 
-  template<int N>
-  static inline void uses(const bool (&uses)[N], const char * const (&desc)[N])
+  template<typename T, int N>
+  static inline void uses(const T (&uses)[N], const char * const (&desc)[N])
   {
     int printed = 0;
     for(int i = 0; i < N; i++)
@@ -313,7 +313,7 @@ namespace format
   class table
   {
   public:
-    void header(const char *title, const char **labels) const
+    void header(const char *title, const char * const *labels) const
     {
       int len = strlen(title);
       O_("%-8.8s: ", title);
@@ -338,10 +338,10 @@ namespace format
 
   private:
     template<int N>
-    void _header(const char **labels) const {}
+    void _header(const char * const *labels) const {}
 
     template<int N, typename T, typename... REST>
-    void _header(const char **labels) const
+    void _header(const char * const *labels) const
     {
       T::label(*labels);
 

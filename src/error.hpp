@@ -41,10 +41,6 @@ namespace modutil
     MOD_IGNORE_IT10,
     MOD_IGNORE_MAGIC,
 
-    /* XM */
-    XM_INVALID_ORDER_COUNT,
-    XM_INVALID_PATTERN_COUNT,
-
     /* IT */
     IT_INVALID_SAMPLE,
     IT_INVALID_INSTRUMENT,
