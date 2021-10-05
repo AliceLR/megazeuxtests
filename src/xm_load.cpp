@@ -29,6 +29,21 @@ enum XM_features
   FT_ORDER_OVER_NUM_PATTERNS,
   FT_ORDER_FE,
   FT_ORDER_FE_MODPLUG_SKIP,
+  FT_FX_UNKNOWN,
+  FT_EX_UNKNOWN,
+  FT_XX_UNKNOWN,
+  FT_FX_MODPLUG_EXTENSION,
+  FT_FX_ENVELOPE_POSITION,
+  FT_FX_UNUSED_I,
+  FT_FX_UNUSED_J,
+  FT_FX_UNUSED_M,
+  FT_FX_UNUSED_N,
+  FT_FX_UNUSED_O,
+  FT_FX_UNUSED_Q,
+  FT_FX_UNUSED_S,
+  FT_FX_UNUSED_U,
+  FT_FX_UNUSED_V,
+  FT_FX_UNUSED_W,
   NUM_FEATURES
 };
 
@@ -37,11 +52,96 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "O>NumPat",
   "O:FE",
   "MPT:FE",
+  "E:?xx",
+  "E:E?x",
+  "E:X?x",
+  "E:MPT",
+  "E:EnvPos",
+  "E:Ixx",
+  "E:Jxx",
+  "E:Mxx",
+  "E:Nxx",
+  "E:Oxx",
+  "E:Qxx",
+  "E:Sxx",
+  "E:Uxx",
+  "E:Vxx",
+  "E:Wxx",
 };
 
 static constexpr int MAX_CHANNELS = 256;
 static constexpr int MAX_ORDERS = 256;
 static constexpr int MAX_PATTERNS = 256;
+
+enum XM_effect
+{
+  FX_ARPEGGIO = 0,
+  FX_PORTAMENTO_UP,
+  FX_PORTAMENTO_DOWN,
+  FX_TONE_PORTAMENTO,
+  FX_VIBRATO,
+  FX_PORTAMENTO_VOLSLIDE,
+  FX_VIBRATO_VOLSLIDE,
+  FX_TREMOLO,
+  FX_PAN,
+  FX_OFFSET,
+  FX_VOLSLIDE,
+  FX_JUMP,
+  FX_VOLUME,
+  FX_BREAK,
+  FX_EXTRA,
+  FX_SPEED_TEMPO,
+  FX_GLOBAL_VOLUME,
+  FX_GLOBAL_VOLSLIDE,
+  FX_UNUSED_I,
+  FX_UNUSED_J,
+  FX_KEY_OFF,
+  FX_ENVELOPE_POSITION,
+  FX_UNUSED_M,
+  FX_UNUSED_N,
+  FX_UNUSED_O,
+  FX_PAN_SLIDE,
+  FX_UNUSED_Q,     // May be used to set filter resonance in "rst's SoundTracker".
+  FX_MULTI_RETRIGGER,
+  FX_UNUSED_S,
+  FX_TREMOR,
+  FX_UNUSED_U,
+  FX_UNUSED_V,
+  FX_UNUSED_W,
+  FX_EXTRA_2,
+  FX_PANBRELLO,    // ModPlug extension
+  FX_MACRO,        // ModPlug extension, also may set filter cutoff in "rst's SoundTracker".
+  FX_SMOOTH_MACRO, // ModPlug extension
+
+  EX_UNUSED_0 = 0,
+  EX_FINE_PORTAMENTO_UP,
+  EX_FINE_PORTAMENTO_DOWN,
+  EX_GLISSANDO_CONTROL,
+  EX_VIBRATO_CONTROL,
+  EX_FINETUNE,
+  EX_LOOP,
+  EX_TREMOLO_CONTROL,
+  EX_PAN,
+  EX_RETRIGGER,
+  EX_FINE_VOLSLIDE_UP,
+  EX_FINE_VOLSLIDE_DOWN,
+  EX_NOTE_CUT,
+  EX_NOTE_DELAY,
+  EX_PATTERN_DELAY,
+  EX_SET_ACTIVE_MACRO, // ModPlug extension
+
+  XX_UNUSED_0 = 0,
+  XX_EXTRA_FINE_PORTAMENTO_UP,
+  XX_EXTRA_FINE_PORTAMENTO_DOWN,
+  XX_UNUSED_3,
+  XX_UNUSED_4,
+  XX_PANBRELLO_CONTROL,  // ModPlug extension
+  XX_FINE_PATTERN_DELAY, // ModPlug extension
+  XX_UNUSED_7,
+  XX_UNUSED_8,
+  XX_SOUND_CONTROL,      // ModPlug extension
+  XX_HIGH_OFFSET,        // ModPlug extension
+};
 
 struct XM_header
 {
@@ -221,6 +321,7 @@ struct XM_data
   uint8_t       *buffer = nullptr;
 
   char name[21];
+  char tracker[21];
   size_t num_samples;
   bool uses[NUM_FEATURES];
 
@@ -241,6 +342,139 @@ struct XM_data
   }
 };
 
+
+static void check_event(XM_data &m, const XM_event *ev)
+{
+  switch(ev->effect)
+  {
+    case FX_ARPEGGIO:
+    case FX_PORTAMENTO_UP:
+    case FX_PORTAMENTO_DOWN:
+    case FX_TONE_PORTAMENTO:
+    case FX_VIBRATO:
+    case FX_PORTAMENTO_VOLSLIDE:
+    case FX_VIBRATO_VOLSLIDE:
+    case FX_TREMOLO:
+    case FX_PAN:
+    case FX_OFFSET:
+    case FX_VOLSLIDE:
+    case FX_JUMP:
+    case FX_VOLUME:
+    case FX_BREAK:
+    case FX_SPEED_TEMPO:
+    case FX_GLOBAL_VOLUME:
+    case FX_GLOBAL_VOLSLIDE:
+    case FX_KEY_OFF:
+      break;
+
+    case FX_ENVELOPE_POSITION:
+      m.uses[FT_FX_ENVELOPE_POSITION] = true;
+      break;
+
+    case FX_PAN_SLIDE:
+    case FX_MULTI_RETRIGGER:
+    case FX_TREMOR:
+      break;
+
+    case FX_PANBRELLO:
+    case FX_MACRO:
+    case FX_SMOOTH_MACRO:
+      m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+      break;
+
+    // Unknown effects found in real modules.
+    case FX_UNUSED_I:
+      m.uses[FT_FX_UNUSED_I] = true;
+      break;
+    case FX_UNUSED_J:
+      m.uses[FT_FX_UNUSED_J] = true;
+      break;
+    case FX_UNUSED_M:
+      m.uses[FT_FX_UNUSED_M] = true;
+      break;
+    case FX_UNUSED_N:
+      m.uses[FT_FX_UNUSED_N] = true;
+      break;
+    case FX_UNUSED_O:
+      m.uses[FT_FX_UNUSED_O] = true;
+      break;
+    case FX_UNUSED_Q:
+      m.uses[FT_FX_UNUSED_Q] = true;
+      break;
+    case FX_UNUSED_S:
+      m.uses[FT_FX_UNUSED_S] = true;
+      break;
+    case FX_UNUSED_U:
+      m.uses[FT_FX_UNUSED_U] = true;
+      break;
+    case FX_UNUSED_V:
+      m.uses[FT_FX_UNUSED_V] = true;
+      break;
+    case FX_UNUSED_W:
+      m.uses[FT_FX_UNUSED_W] = true;
+      break;
+
+    // Extra effects (Exx and Xxx)
+    case FX_EXTRA:
+    {
+      switch(ev->param >> 4)
+      {
+        case EX_UNUSED_0:
+        case EX_FINE_PORTAMENTO_UP:
+        case EX_FINE_PORTAMENTO_DOWN:
+        case EX_GLISSANDO_CONTROL:
+        case EX_VIBRATO_CONTROL:
+        case EX_FINETUNE:
+        case EX_LOOP:
+        case EX_TREMOLO_CONTROL:
+        case EX_PAN:
+        case EX_RETRIGGER:
+        case EX_FINE_VOLSLIDE_UP:
+        case EX_FINE_VOLSLIDE_DOWN:
+        case EX_NOTE_CUT:
+        case EX_NOTE_DELAY:
+        case EX_PATTERN_DELAY:
+          break;
+
+        case EX_SET_ACTIVE_MACRO:
+          m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+          break;
+
+        default:
+          m.uses[FT_EX_UNKNOWN] = true;
+          break;
+      }
+      break;
+    }
+
+    case FX_EXTRA_2:
+    {
+      switch(ev->param >> 4)
+      {
+        case XX_UNUSED_0:
+        case XX_EXTRA_FINE_PORTAMENTO_UP:
+        case XX_EXTRA_FINE_PORTAMENTO_DOWN:
+          break;
+
+        case XX_PANBRELLO_CONTROL:
+        case XX_FINE_PATTERN_DELAY:
+        case XX_SOUND_CONTROL:
+        case XX_HIGH_OFFSET:
+          m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+          break;
+
+        default:
+          m.uses[FT_XX_UNKNOWN] = true;
+          break;
+      }
+      break;
+    }
+
+    default:
+      m.uses[FT_FX_UNKNOWN] = true;
+      break;
+  }
+}
 
 static modutil::error load_patterns(XM_data &m, FILE *fp)
 {
@@ -274,6 +508,7 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
       if(fseek(fp, p.header_size - version_header_size, SEEK_CUR))
         return modutil::SEEK_ERROR;
 
+    p.allocate(m.header.num_channels, p.num_rows);
     if(!p.packed_size)
       continue;
 
@@ -281,22 +516,21 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
     if(!fread(buffer, p.packed_size, 1, fp))
       return modutil::READ_ERROR;
 
-    p.allocate(m.header.num_channels, p.num_rows);
-
     XM_event *ev = p.events;
     uint8_t *current = buffer;
     uint8_t *end = buffer + p.packed_size;
 
     for(size_t row = 0; row < p.num_rows; row++)
     {
-      for(size_t track = 0; track < m.header.num_channels; track++)
+      for(size_t track = 0; track < m.header.num_channels; track++, ev++)
       {
-        *(ev++) = XM_event(current, end);
+        *ev = XM_event(current, end);
         if(current > end)
         {
           format::warning("invalid pattern packing for %zu", i);
           return modutil::INVALID;
         }
+        check_event(m, ev);
       }
     }
   }
@@ -449,6 +683,10 @@ public:
     if(!fread(h.tracker, sizeof(h.tracker), 1, fp))
       return modutil::READ_ERROR;
 
+    memcpy(m.tracker, h.tracker, sizeof(h.tracker));
+    m.tracker[sizeof(h.tracker)] = '\0';
+    strip_module_name(m.tracker, sizeof(m.tracker));
+
     h.version     = fget_u16le(fp);
     h.header_size = fget_u32le(fp);
     if(h.header_size <= 20)
@@ -553,9 +791,10 @@ public:
     /* Print information. */
 
     format::line("Name",     "%s", m.name);
-    format::line("Type",     "XM %04x", h.version);
+    format::line("Type",     "XM %04x %s", h.version, m.tracker);
     format::line("Instr.",   "%u", h.num_instruments);
     format::line("Samples",  "%zu", m.num_samples);
+    format::line("Channels", "%u", h.num_channels);
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u", h.num_orders);
     format::uses(m.uses, FEATURE_STR);
