@@ -947,7 +947,7 @@ static modutil::error IT_read(FILE *fp)
     static const char *s_labels[] =
     {
       "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Sus.Start", "Sus.End",
-      "C5 Speed", "GV", "DV", "DP", "Flags", "VSp", "VDp", "VWf", "VRt",
+      "C5 Speed", "GV", "DV", "DP", "Cvt", "Flags", "VSp", "VDp", "VWf", "VRt",
     };
     format::line();
     table::table<
@@ -961,6 +961,7 @@ static modutil::error IT_read(FILE *fp)
       table::number<10>,
       table::spacer,
       table::number<10>,
+      table::number<3>,
       table::number<3>,
       table::number<3>,
       table::number<3>,
@@ -990,7 +991,7 @@ static modutil::error IT_read(FILE *fp)
 
       s_table.row(i + 1, s.name, s.filename, {},
         s.length, s.loop_start, s.loop_end, s.sustain_loop_start, s.sustain_loop_end, {},
-        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, flagstr, {},
+        s.c5_speed, s.global_volume, s.default_volume, s.default_pan, s.convert, flagstr, {},
         s.vibrato_speed, s.vibrato_depth, s.vibrato_waveform, s.vibrato_rate
       );
     }
