@@ -36,6 +36,9 @@ enum S3M_features
   FT_INTGP_SOUNDBLASTER,
   FT_INTGP_GRAVIS_ULTRASOUND,
   FT_SAMPLE_SEGMENT_HI,
+  FT_SAMPLE_STEREO,
+  FT_SAMPLE_16,
+  FT_SAMPLE_ADPCM,
   NUM_FEATURES
 };
 
@@ -51,6 +54,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "Gp:SB",
   "Gp:GUS",
   "S:HiSeg",
+  "S:Stereo",
+  "S:16",
+  "S:ADPCM",
 };
 
 static const char S3M_MAGIC[] = "SCRM";
@@ -135,6 +141,15 @@ struct S3M_instrument
     ADLIB_TOM   = 5,
     ADLIB_CYM   = 6,
     ADLIB_HIHAT = 7,
+  };
+
+  enum S3M_sample_flags
+  {
+    LOOP   = (1<<0),
+    STEREO = (1<<1),
+    S16    = (1<<2),
+    // Stored in the packing field when Modplug ADPCM is present.
+    ADPCM  = 4,
   };
 
   /*  0 */ uint8_t  type;
@@ -432,6 +447,15 @@ public:
           intgp_min = ins.int_gp;
         if(ins.int_gp > intgp_max)
           intgp_max = ins.int_gp;
+
+        if(ins.flags & S3M_instrument::STEREO)
+          m.uses[FT_SAMPLE_STEREO] = true;
+
+        if(ins.flags & S3M_instrument::S16)
+          m.uses[FT_SAMPLE_16] = true;
+
+        if(ins.packing == S3M_instrument::ADPCM)
+          m.uses[FT_SAMPLE_ADPCM] = true;
 
         if(ins._sample_segment[0])
           m.uses[FT_SAMPLE_SEGMENT_HI] = true;

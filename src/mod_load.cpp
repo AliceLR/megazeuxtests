@@ -100,6 +100,7 @@ static constexpr uint32_t pattern_size(uint32_t num_channels)
 
 enum MOD_features
 {
+  FT_SAMPLE_ADPCM,
   FT_RETRIGGER_NO_NOTE,
   FT_RETRIGGER_ZERO,
   NUM_FEATURES
@@ -107,6 +108,7 @@ enum MOD_features
 
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "S:ADPCM",
   "RetrigNoNote",
   "Retrig0",
 };
@@ -537,23 +539,52 @@ static modutil::error MOD_read(FILE *fp)
     }
   }
 
-  ssize_t difference = m.real_length - m.expected_length;
+  /* Load patterns. */
+  for(i = 0; i < m.pattern_count; i++)
+    MOD_read_pattern(m, i, fp);
+
+  /* As if everything else wasn't enough, samples with data starting with "ADPCM" are
+   * Modplug ADPCM4 compressed, and the expected length needs to be adjusted accordingly. */
+  bool has_adpcm = false;
+  for(i = 0; i < m.type_instruments; i++)
+  {
+    MOD_sample &ins = h.samples[i];
+    char tmp[5];
+
+    if(ins.length)
+    {
+      long offset = ins.length - 5;
+      if(!fread(tmp, 5, 1, fp))
+        break;
+
+      if(!memcmp(tmp, "ADPCM", 5))
+      {
+        ssize_t stored_length = ((ins.length + 1) >> 1) /* compressed size */ + 16 /* ADPCM table */;
+        m.expected_length += (stored_length - ins.length + 5);
+
+        has_adpcm = true;
+        m.uses[FT_SAMPLE_ADPCM] = true;
+
+        fseek(fp, stored_length, SEEK_CUR);
+      }
+      else
+        fseek(fp, offset, SEEK_CUR);
+    }
+  }
 
   /**
    * Check for .MODs with lengths that would be a potential false positive for
    * .WOW detection.
    */
+  ssize_t difference = m.real_length - m.expected_length;
   ssize_t threshold = m.pattern_count * pattern_size(4);
-  bool wow_fp_diff = (m.type != WOW) && (difference > 0) && ((difference & ~1) == threshold);
+  bool wow_fp_diff = (m.type != WOW) && !has_adpcm && (difference > 0) && ((difference & ~1) == threshold);
 
   if(wow_fp_diff)
     total_files_wow_fp_diff++;
   if(difference)
     total_files_nonzero_diff++;
 
-  /* Load patterns. */
-  for(i = 0; i < m.pattern_count; i++)
-    MOD_read_pattern(m, i, fp);
 
   /**
    * Print summary.

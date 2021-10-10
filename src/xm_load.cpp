@@ -26,6 +26,10 @@ static int num_xms;
 
 enum XM_features
 {
+  FT_SAMPLE_STEREO,
+  FT_SAMPLE_16,
+  FT_SAMPLE_ADPCM,
+  FT_SAMPLE_OGG,
   FT_ORDER_OVER_NUM_PATTERNS,
   FT_ORDER_FE,
   FT_ORDER_FE_MODPLUG_SKIP,
@@ -49,6 +53,10 @@ enum XM_features
 
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "S:Stereo",
+  "S:16",
+  "S:ADPCM",
+  "S:Ogg",
   "O>NumPat",
   "O:FE",
   "MPT:FE",
@@ -253,9 +261,12 @@ struct XM_sample
 {
   enum XM_sample_type
   {
-    LOOP = (1<<0),
-    BIDI = (1<<1),
-    S16  = (1<<2),
+    LOOP   = (1<<0),
+    BIDI   = (1<<1),
+    S16    = (1<<4),
+    STEREO = (1<<5),
+    // Used in the reserved field.
+    ADPCM  = 0xad,
   };
 
   /*  0 */ uint32_t length;
@@ -630,19 +641,41 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
       s.reserved    = buffer[17];
       memcpy(s.name, buffer + 18, sizeof(s.name));
 
-      sample_total_length += s.length;
-
       // Skip any remaining header.
       if(ins.sample_header_size > 40)
         if(fseek(fp, ins.sample_header_size - 40, SEEK_CUR))
           return modutil::SEEK_ERROR;
+
+      if(s.type & XM_sample::STEREO)
+        m.uses[FT_SAMPLE_STEREO] = true;
+
+      if(s.type & XM_sample::S16)
+        m.uses[FT_SAMPLE_16] = true;
+
+      if(s.reserved == XM_sample::ADPCM)
+      {
+        m.uses[FT_SAMPLE_ADPCM] = true;
+        sample_total_length += ((s.length + 1) >> 1) /* Compressed size */ + 16 /* ADPCM table */;
+      }
+      else
+        sample_total_length += s.length;
     }
 
     // NOTE: skip sample data after sample headers ONLY for >=0x0104.
     // Prior versions store them all at the very end of the module.
     if(m.header.version >= 0x0104)
+    {
+      char tmp[4];
+      if(fread(tmp, 4, 1, fp))
+      {
+        if(!memcmp(tmp, "OggS", 4))
+          m.uses[FT_SAMPLE_OGG] = true;
+
+        sample_total_length -=4;
+      }
       if(fseek(fp, sample_total_length, SEEK_CUR))
         return modutil::SEEK_ERROR;
+    }
   }
   return modutil::SUCCESS;
 }

@@ -38,6 +38,9 @@ enum IT_features
   FT_SAMPLE_COMPRESSION_1_4TH,
   FT_SAMPLE_COMPRESSION_1_8TH,
   FT_SAMPLE_COMPRESSION_INVALID_WIDTH,
+  FT_SAMPLE_STEREO,
+  FT_SAMPLE_16,
+  FT_SAMPLE_ADPCM,
   FT_ENV_VOLUME,
   FT_ENV_PAN,
   FT_ENV_PITCH,
@@ -56,6 +59,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "SmpCmp<1/4th",
   "SmpCmp<1/8th",
   "SmpCmpInvalidBW",
+  "S:Stereo",
+  "S:16",
+  "S:ADPCM",
   "EnvVol",
   "EnvPan",
   "EnvPitch",
@@ -814,6 +820,15 @@ static modutil::error IT_read(FILE *fp)
 
       if(s.flags & SAMPLE_COMPRESSED)
         m.uses[FT_SAMPLE_COMPRESSION] = true;
+
+      if(s.flags & SAMPLE_STEREO)
+        m.uses[FT_SAMPLE_STEREO] = true;
+
+      if(s.flags & SAMPLE_16_BIT)
+        m.uses[FT_SAMPLE_16] = true;
+
+      if(s.convert == 0xff)
+        m.uses[FT_SAMPLE_ADPCM] = true;
     }
   }
 
