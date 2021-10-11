@@ -211,4 +211,63 @@ static inline bool strip_module_name(char *dest, size_t dest_len)
   return true;
 }
 
+/* Path functions. */
+
+#ifdef _WIN32
+#define DIR_SEPARATOR '\\'
+#else
+#define DIR_SEPARATOR '/'
+#endif
+
+static bool isslash(char c)
+{
+  return c == '/' || c == '\\';
+}
+
+static inline char *path_tokenize(char **cursor)
+{
+  char *tok = *cursor;
+  if(tok)
+  {
+    char *sep = strpbrk(tok, "/\\");
+    if(sep)
+      *(sep++) = '\0';
+
+    *cursor = sep;
+  }
+  return tok;
+}
+
+static inline size_t path_clean_slashes(char *path)
+{
+  char *current;
+  size_t len = 0;
+
+  for(current = path; *current; current++, len++)
+  {
+    if(isslash(*current))
+    {
+      *current = DIR_SEPARATOR;
+      if(isslash(current[1]))
+        break;
+    }
+  }
+
+  // Rewrite loop (only required if multiple consecutive slashes exist).
+  while(*current)
+  {
+    if(isslash(*current))
+    {
+      while(isslash(*current))
+        current++;
+
+      path[len++] = DIR_SEPARATOR;
+    }
+    else
+      path[len++] = *(current++);
+  }
+  path[len] = '\0';
+  return len;
+}
+
 #endif /* MZXTEST_COMMON_HPP */

@@ -1,8 +1,8 @@
 .PHONY: all clean
 all:
 
-CFLAGS   := -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CFLAGS}
-CXXFLAGS := -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
+CFLAGS   := -std=gnu99   -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CFLAGS}
+CXXFLAGS := -std=gnu++17 -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
 CXX      := @${CXX}
 LINKCXX  := ${CXX}
 
@@ -36,6 +36,10 @@ MODUTIL_OBJS := \
   ${OBJ}/stm_load.o \
   ${OBJ}/ult_load.o \
 
+DIMGUTIL_EXE  := dimgutil${BINEXT}
+DIMGUTIL_OBJS := \
+  ${OBJ}/dimgutil.o \
+
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \
   ${OBJ}/iffdump.o \
@@ -45,11 +49,15 @@ IFFDUMP_OBJS := \
 -include ${MODUTIL_OBJS:.o=.d}
 ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 
+-include ${DIMGUTIL_OBJS:.o=.d}
+${DIMGUTIL_EXE}: ${DIMGUTIL_OBJS}
+
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
 ALL_EXES := \
   ${MODUTIL_EXE}  \
+  ${DIMGUTIL_EXE} \
   ${IFFDUMP_EXE} \
 
 all: ${ALL_EXES}
@@ -69,6 +77,10 @@ ${OBJ}/%.o: ${SRC}/%.cpp | ${OBJ}
 ${MODUTIL_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${MODUTIL_OBJS} ${LDLIBS}
+
+${DIMGUTIL_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${DIMGUTIL_OBJS} ${LDLIBS}
 
 ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
