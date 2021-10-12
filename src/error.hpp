@@ -29,6 +29,7 @@ namespace modutil
     INVALID,
     NOT_IMPLEMENTED,
     BAD_VERSION,
+    BAD_PACKING,
 
     /* IFF */
     IFF_CONFIG_ERROR,

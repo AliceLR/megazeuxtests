@@ -30,6 +30,7 @@ const char *strerror(modutil::error err)
     case INVALID:           return "invalid module";
     case NOT_IMPLEMENTED:   return "feature not implemented";
     case BAD_VERSION:       return "unrecognized format version";
+    case BAD_PACKING:       return "invalid or corrupted packing";
 
     /* IFF */
     case IFF_CONFIG_ERROR:  return "invalid IFF configuration";

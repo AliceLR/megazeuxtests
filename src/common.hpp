@@ -149,6 +149,22 @@ static inline int16_t fget_s16be(FILE *fp)
   return (a << 8) | (b);
 }
 
+static inline uint32_t fget_u24le(FILE *fp)
+{
+  int a = fgetc(fp);
+  int b = fgetc(fp);
+  int c = fgetc(fp);
+  return (a) | (b << 8) | (c << 16);
+}
+
+static inline uint32_t fget_u24be(FILE *fp)
+{
+  int a = fgetc(fp);
+  int b = fgetc(fp);
+  int c = fgetc(fp);
+  return (a << 16) | (b << 8) | (c);
+}
+
 static inline uint32_t fget_u32le(FILE *fp)
 {
   int a = fgetc(fp);

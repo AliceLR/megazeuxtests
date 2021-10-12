@@ -18,6 +18,7 @@ MODUTIL_OBJS := \
   ${OBJ}/modutil.o \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
+  ${OBJ}/LZW.o \
   ${OBJ}/mod_load.o \
   ${OBJ}/s3m_load.o \
   ${OBJ}/xm_load.o \
@@ -34,6 +35,7 @@ MODUTIL_OBJS := \
   ${OBJ}/mtm_load.o \
   ${OBJ}/okt_load.o \
   ${OBJ}/stm_load.o \
+  ${OBJ}/sym_load.o \
   ${OBJ}/ult_load.o \
 
 DIMGUTIL_EXE  := dimgutil${BINEXT}
