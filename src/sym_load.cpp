@@ -355,22 +355,29 @@ public:
      */
     if(h.num_tracks)
     {
-      h.track_packing = fgetc(fp);
-      if(feof(fp) || h.track_packing > 1)
-      {
-        format::error("invalid track packing type %u", h.track_packing);
-        return modutil::INVALID;
-      }
+      static constexpr size_t TRACK_BLOCK_SIZE = 4 * 64 * 2000;
 
-      if(h.track_packing)
+      for(size_t i = 0; i < m.total_track_size; i += TRACK_BLOCK_SIZE)
       {
-        if(LZW_read(m.buffer, m.total_track_size, m.total_track_size, LZW_FLAGS_SYM, fp) != 0)
-          return modutil::BAD_PACKING;
-      }
-      else
-      {
-        if(!fread(m.buffer, m.total_track_size, 1, fp))
-          return modutil::READ_ERROR;
+        size_t block_size = MIN(m.total_track_size - i, TRACK_BLOCK_SIZE);
+
+        h.track_packing = fgetc(fp);
+        if(feof(fp) || h.track_packing > 1)
+        {
+          format::error("invalid track packing type %u", h.track_packing);
+          return modutil::INVALID;
+        }
+
+        if(h.track_packing)
+        {
+          if(LZW_read(m.buffer + i, block_size, block_size, LZW_FLAGS_SYM, fp) != 0)
+            return modutil::BAD_PACKING;
+        }
+        else
+        {
+          if(!fread(m.buffer + i, block_size, 1, fp))
+            return modutil::READ_ERROR;
+        }
       }
 
       uint8_t *pos = m.buffer;
@@ -542,7 +549,8 @@ public:
         uint16_t param;
         static constexpr int width() { return 6; }
         bool can_print() const { return effect > 0 || param > 0; }
-        void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%2x%03x", effect, param), effect, param); else format::spaces(width()); }
+        void print() const { if(can_print()) fprintf(stderr, " %2x%03x", effect, param); else format::spaces(width()); }
+//        void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%2x%03x", effect, param), effect, param); else format::spaces(width()); }
       };
 
       for(size_t i = 0; i < h.num_orders; i++)
