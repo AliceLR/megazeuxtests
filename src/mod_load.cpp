@@ -681,7 +681,7 @@ static modutil::error MOD_read(FILE *fp)
 class MOD_loader : public modutil::loader
 {
 public:
-  MOD_loader() : modutil::loader("MOD : Protracker module") {}
+  MOD_loader() : modutil::loader("MOD : Protracker and Soundtracker compatible modules") {}
 
   virtual modutil::error load(FILE *fp) const override
   {
