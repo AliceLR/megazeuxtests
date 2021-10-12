@@ -15,6 +15,7 @@
  */
 
 #include "modutil.hpp"
+#include "Bitstream.hpp"
 #include "LZW.hpp"
 
 #include <inttypes.h>
@@ -39,9 +40,9 @@ static constexpr const char *FEATURE_STR[] =
 {
   "S:Log",
   "S:LZW",
-  "S:8",
+  "S:Lin",
   "S:16",
-  "S:Sigma",
+  "S:SigmaLin",
   "S:SigmaLog",
 };
 
@@ -106,7 +107,10 @@ struct SYM_event
   SYM_event() {}
   SYM_event(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
   {
-    // FIXME
+    note       = (a & 0x3f);
+    instrument = ((b & 0x1f) << 2) | (a >> 6);
+    effect     = ((c & 0x0f) << 2) | (b >> 6);
+    param      = (d << 4) | (c >> 4);
   }
 };
 
@@ -127,7 +131,7 @@ struct SYM_track
 
 struct SYM_order
 {
-  uint16_t tracks[8];
+  int tracks[8];
 };
 
 struct SYM_data
@@ -177,6 +181,79 @@ struct SYM_data
       buffer_size = total_sequence_size;
 
     buffer = new uint8_t[buffer_size];
+  }
+};
+
+
+class SigmaDelta
+{
+public:
+  /**
+   * Based on the sigma delta sample decoder from OpenMPT by Saga Musix.
+   */
+  static modutil::error read(uint8_t *dest, size_t dest_len, FILE *fp)
+  {
+    size_t pos = 0;
+    size_t runlength = 0;
+    uint8_t bits = 8;
+
+    if(!dest_len)
+      return modutil::SUCCESS;
+
+    Bitstream bs(fp, dest_len);
+
+    size_t max_runlength = fgetc(fp); // Doesn't count towards alignment for some reason.
+    uint8_t accumulator = bs.read(8);
+    dest[pos++] = accumulator;
+
+    while(pos < dest_len)
+    {
+      int value = bs.read(bits);
+      if(value < 0)
+        return modutil::READ_ERROR;
+
+      // Expand bitwidth.
+      if(value == 0)
+      {
+        if(bits >= 9)
+          break; // ??
+
+        bits++;
+        runlength = 0;
+        continue;
+      }
+
+      if(value & 1)
+        accumulator -= (value >> 1);
+      else
+        accumulator += (value >> 1);
+
+      dest[pos++] = accumulator;
+
+      // High bit set -> reset run length.
+      if(value >> (bits - 1))
+      {
+        runlength = 0;
+      }
+      else
+
+      if(++runlength >= max_runlength)
+      {
+        if(bits > 1)
+          bits--;
+        runlength = 0;
+      }
+    }
+
+    /* Digital Symphony aligns packed stream lengths to 4 bytes. */
+    size_t total = bs.num_read;
+    while(total & 3)
+    {
+      fgetc(fp);
+      total++;
+    }
+
+    return modutil::SUCCESS;
   }
 };
 
@@ -357,9 +434,16 @@ public:
           break;
 
         case SYM_instrument::SIGMA_DELTA_LINEAR:
+          m.uses[FT_SAMPLE_SIGMA_DELTA_LINEAR] = true;
+          if(SigmaDelta::read(m.buffer, ins.length, fp) != modutil::SUCCESS)
+            return modutil::BAD_PACKING;
+          break;
+
         case SYM_instrument::SIGMA_DELTA_VIDC:
-          format::error("FIXME no sigma delta compression support!");
-          return modutil::NOT_IMPLEMENTED;
+          m.uses[FT_SAMPLE_SIGMA_DELTA_VIDC] = true;
+          if(SigmaDelta::read(m.buffer, ins.length, fp) != modutil::SUCCESS)
+            return modutil::BAD_PACKING;
+          break;
 
         default:
           format::error("invalid sample %zu packing type %u", i, ins.packing);
@@ -451,14 +535,46 @@ public:
     if(Config.dump_patterns)
     {
       format::line();
-      // FIXME tracks
 
-      if(!Config.dump_pattern_rows)
-        format::line();
-
-      for(size_t i = 0; i < h.num_tracks; i++)
+      struct effectSYM
       {
-        // FIXME
+        uint8_t effect;
+        uint16_t param;
+        static constexpr int width() { return 6; }
+        bool can_print() const { return effect > 0 || param > 0; }
+        void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%2x%03x", effect, param), effect, param); else format::spaces(width()); }
+      };
+
+      for(size_t i = 0; i < h.num_orders; i++)
+      {
+        SYM_order &p = m.orders[i];
+
+        using EVENT = format::event<format::note, format::sample, effectSYM>;
+        format::pattern<EVENT> pattern(i, h.num_channels, NUM_ROWS);
+        pattern.labels("Ord.", "Order");
+
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary();
+          pattern.tracks(p.tracks);
+          continue;
+        }
+
+        for(size_t row = 0; row < NUM_ROWS; row++)
+        {
+          for(size_t track = 0; track < h.num_channels; track++)
+          {
+            SYM_track &t = m.tracks[p.tracks[track]];
+            SYM_event &e = t.events[row];
+
+            format::note   a{ e.note };
+            format::sample b{ e.instrument };
+            effectSYM      c{ e.effect, e.param };
+
+            pattern.insert(EVENT(a, b, c));
+          }
+        }
+        pattern.print(nullptr, p.tracks);
       }
     }
 

@@ -305,17 +305,18 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
   if(fseek(fp, 1464, SEEK_SET))
     return modutil::SEEK_ERROR;
 
-  if(!fread(magic, 4, 1, fp))
-    return modutil::READ_ERROR;
-  if(!memcmp(magic, "MTN\x00", 4))
+  if(fread(magic, 4, 1, fp))
   {
-    type_count[MOD_SOUNDTRACKER_26]++;
-    return modutil::MOD_IGNORE_ST26;
-  }
-  if(!memcmp(magic, "IT10", 4))
-  {
-    type_count[MOD_ICETRACKER_IT10]++;
-    return modutil::MOD_IGNORE_IT10;
+    if(!memcmp(magic, "MTN\x00", 4))
+    {
+      type_count[MOD_SOUNDTRACKER_26]++;
+      return modutil::MOD_IGNORE_ST26;
+    }
+    if(!memcmp(magic, "IT10", 4))
+    {
+      type_count[MOD_ICETRACKER_IT10]++;
+      return modutil::MOD_IGNORE_IT10;
+    }
   }
 
   // Isn't a MOD, or maybe is a Soundtracker 15-instrument MOD.
@@ -333,7 +334,7 @@ static modutil::error MOD_read_sample(MOD_data &m, size_t sample_num, FILE *fp)
 {
   MOD_sample &ins = m.header.samples[sample_num];
   if(!fread(ins.name, sizeof(ins.name), 1, fp))
-    return modutil::READ_ERROR;
+    return m.type == MOD_SOUNDTRACKER ? modutil::FORMAT_ERROR : modutil::READ_ERROR;
 
   ins.half_length      = fget_u16be(fp);
   ins.finetune         = fgetc(fp);
