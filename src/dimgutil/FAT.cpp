@@ -1,3 +1,18 @@
+/**
+ * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
 
 #include <ctype.h>
 //#include <fnmatch.h>
@@ -5,22 +20,12 @@
 #include <memory>
 #include <vector>
 
-#include "common.hpp"
-#include "format.hpp"
+#include "../common.hpp"
+#include "../format.hpp"
 
-enum disk_op
-{
-  OP_INFO,
-  OP_LIST,
-  NUM_DISK_OPS
-};
+#include "DiskImage.hpp"
 
-static constexpr char op_chars[NUM_DISK_OPS] =
-{
-  'i', 'l',
-};
-
-static constexpr uint32_t NO_CLUSTER = 0xfffffffful;
+static constexpr uint32_t NO_CLUSTER = UINT32_MAX;
 
 enum FAT_media
 {
@@ -288,43 +293,8 @@ struct AtariST_FAT12_boot
   /* 512 */
 };
 
-struct disk_list
-{
-  const char *start_base;
-  const char *pattern;
-  uint32_t directory;
-  bool recursive;
 
-  /* "Driver" implemented functions. */
-  virtual bool Print(const char *base = nullptr, uint32_t cluster = NO_CLUSTER) const = 0;
-};
-
-class disk_image
-{
-public:
-  const char *type;
-  const char *media;
-  bool error_state = false;
-
-  disk_image(const char *_type, const char *_media = nullptr): type(_type), media(_media) {}
-  virtual ~disk_image() {}
-
-  /* "Driver" implemented functions. */
-  virtual bool       PrintSummary() const = 0;
-  virtual disk_list *CreateList(const char *filename, const char *pattern = nullptr, bool recursive = false) const = 0;
-
-  /* Shorthand functions. */
-  bool List(const char *filename, const char *pattern = nullptr, bool recursive = false) const
-  {
-    std::unique_ptr<disk_list> list(CreateList(filename, pattern, recursive));
-    if(list && list->Print())
-      return true;
-
-    return false;
-  }
-};
-
-class FAT_image: public disk_image
+class FAT_image: public DiskImage
 {
 public:
   FAT_bios bios;
@@ -343,7 +313,7 @@ public:
   size_t root_sectors = 0;
 
   FAT_image(const char *_type, const char *_media, const FAT_bios &_bios):
-   disk_image::disk_image(_type, _media), bios(_bios)
+   DiskImage::DiskImage(_type, _media), bios(_bios)
   {
     oem[0] = '\0';
   }
@@ -363,8 +333,8 @@ public:
 
 
   /* "Driver" functions. */
-  virtual bool       PrintSummary() const override;
-  virtual disk_list *CreateList(const char *filename, const char *pattern, bool recursive) const override;
+  virtual bool      PrintSummary() const override;
+  virtual DiskList *CreateList(const char *filename, const char *pattern, bool recursive) const override;
 
 
   uint32_t next_cluster_id(uint32_t cluster) const
@@ -611,7 +581,7 @@ public:
   }
 };
 
-struct FAT_list: public disk_list
+struct FAT_list: public DiskList
 {
   const FAT_image *disk;
   virtual bool Print(const char *base, uint32_t cluster) const override;
@@ -641,7 +611,7 @@ bool FAT_image::PrintSummary() const
   return true;
 }
 
-disk_list *FAT_image::CreateList(const char *filename, const char *pattern, bool recursive) const
+DiskList *FAT_image::CreateList(const char *filename, const char *pattern, bool recursive) const
 {
   if(error_state)
     return nullptr;
@@ -796,124 +766,73 @@ public:
   AtariST_image(const FAT_bios &_bios, FILE *fp): FAT12_image::FAT12_image("Atari ST", "3.5\"", _bios, fp) {}
 };
 
-static disk_image *atari_st(FILE *fp)
+
+/**
+ * FAT loaders.
+ */
+class AtariSTLoader: public DiskImageLoader
 {
-  AtariST_FAT12_boot d{};
-  uint8_t boot_sector[512];
-
-  if(!fread(boot_sector, sizeof(boot_sector), 1, fp))
-    return nullptr;
-  uint16_t checksum = 0;
-
-  for(size_t i = 0; i < sizeof(boot_sector); i += 2)
-    checksum += mem_u16be(boot_sector + i);
-
-  if(checksum != 0x1234)
+public:
+  virtual DiskImage *Load(FILE *fp) const override
   {
-    format::error("not an Atari ST disk image.");
-    return nullptr;
-  }
+    AtariST_FAT12_boot d{};
+    uint8_t boot_sector[512];
 
-  d.jump = mem_u16le(boot_sector + 0);
-  memcpy(d.oem, boot_sector + 2, sizeof(d.oem));
-  memcpy(d.serial, boot_sector + 8, sizeof(d.serial));
-  bios_3_0(d.bios, boot_sector);
+    if(!fread(boot_sector, sizeof(boot_sector), 1, fp))
+      return nullptr;
+    uint16_t checksum = 0;
 
-  memcpy(d.priv, boot_sector + 30, sizeof(d.priv));
+    for(size_t i = 0; i < sizeof(boot_sector); i += 2)
+      checksum += mem_u16be(boot_sector + i);
 
-  d.checksum = mem_u16le(boot_sector + 510);
+    if(checksum != 0x1234)
+      return nullptr;
 
+    d.jump = mem_u16le(boot_sector + 0);
+    memcpy(d.oem, boot_sector + 2, sizeof(d.oem));
+    memcpy(d.serial, boot_sector + 8, sizeof(d.serial));
+    bios_3_0(d.bios, boot_sector);
 
-  AtariST_image *disk = new AtariST_image(d.bios, fp);
+    memcpy(d.priv, boot_sector + 30, sizeof(d.priv));
 
-  /**
-   * Several cases seem common:
-   * 1) OEM is all printable characters like it's supposed to be.
-   * 2) The first byte is 0x90 (NOP?) or 0x00, the rest are printable, e.g. 0x90 IBM 0x20 0x20.
-   * 3) The string is nonprintable garbage.
-   */
-  size_t len = 0;
-  int printable = 0;
-  for(size_t i = 0; i < sizeof(d.oem); i++)
-    if(isprint(d.oem[i]))
-      printable++;
-
-  if(printable == 6)
-  {
-    len = snprintf(disk->oem, sizeof(disk->oem), "`%6.6s`", (char *)d.oem);
-  }
-  else
-
-  if(printable == 5 && !isprint(d.oem[0]))
-  {
-    len = snprintf(disk->oem, sizeof(disk->oem), "%02Xh `%5.5s`", d.oem[0], (char *)d.oem + 1);
-  }
-  else
-  {
-    len = snprintf(disk->oem, sizeof(disk->oem), "%02Xh %02Xh %02Xh %02Xh %02Xh %02Xh",
-     d.oem[0], d.oem[1], d.oem[2], d.oem[3], d.oem[4], d.oem[5]);
-  }
-
-  snprintf(disk->oem + len, sizeof(disk->oem) - len, " : %02Xh %02Xh %02Xh",
-   d.serial[0], d.serial[1], d.serial[2]);
-
-  return disk;
-}
+    d.checksum = mem_u16le(boot_sector + 510);
 
 
-int main(int argc, char *argv[])
-{
-  if(argc < 3)
-  {
-    O_("Usage: dimgutil [i|l|x] filename.ext [...]\n");
-    return 0;
-  }
+    AtariST_image *disk = new AtariST_image(d.bios, fp);
 
-  int op;
-  for(op = 0; op < arraysize(op_chars); op++)
-  {
-    if(tolower(argv[1][0]) == op_chars[op] && argv[1][1] == '\0')
-      break;
-  }
-  if(op >= arraysize(op_chars))
-  {
-    format::error("invalid operation '%s'", argv[1]);
-    return -1;
-  }
+    /**
+     * Several cases seem common:
+     * 1) OEM is all printable characters like it's supposed to be.
+     * 2) The first byte is 0x90 (NOP?) or 0x00, the rest are printable, e.g. 0x90 IBM 0x20 0x20.
+     * 3) The string is nonprintable garbage.
+     */
+    size_t len = 0;
+    int printable = 0;
+    for(size_t i = 0; i < sizeof(d.oem); i++)
+      if(isprint(d.oem[i]))
+        printable++;
 
-  char *filename = argv[2];
-
-  format::line("File", "%s", filename);
-
-  FILE *fp = fopen(filename, "rb");
-  if(!fp)
-  {
-    format::error("error opening file");
-    return -1;
-  }
-  std::unique_ptr<disk_image> disk(atari_st(fp));
-  fclose(fp);
-
-  if(!disk || disk->error_state)
-  {
-    format::error("error loading image");
-    return -1;
-  }
-
-  switch(op)
-  {
-    case OP_INFO:
-      disk->PrintSummary();
-      break;
-
-    case OP_LIST:
+    if(printable == 6)
     {
-      char *pattern = (argc > 3) ? argv[3] : nullptr;
-      disk->PrintSummary();
-      disk->List(nullptr, pattern, true);
-      break;
+      len = snprintf(disk->oem, sizeof(disk->oem), "`%6.6s`", (char *)d.oem);
     }
-  }
+    else
 
-  return 0;
-}
+    if(printable == 5 && !isprint(d.oem[0]))
+    {
+      len = snprintf(disk->oem, sizeof(disk->oem), "%02Xh `%5.5s`", d.oem[0], (char *)d.oem + 1);
+    }
+    else
+    {
+      len = snprintf(disk->oem, sizeof(disk->oem), "%02Xh %02Xh %02Xh %02Xh %02Xh %02Xh",
+       d.oem[0], d.oem[1], d.oem[2], d.oem[3], d.oem[4], d.oem[5]);
+    }
+
+    snprintf(disk->oem + len, sizeof(disk->oem) - len, " : %02Xh %02Xh %02Xh",
+     d.serial[0], d.serial[1], d.serial[2]);
+
+    return disk;
+  }
+};
+
+static const AtariSTLoader loader;

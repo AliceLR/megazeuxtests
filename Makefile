@@ -13,6 +13,8 @@ endif
 SRC  = src
 OBJ  = src/.build
 
+DIMG_OBJ = ${OBJ}/dimgutil
+
 MODUTIL_EXE  := modutil${BINEXT}
 MODUTIL_OBJS := \
   ${OBJ}/modutil.o \
@@ -40,7 +42,10 @@ MODUTIL_OBJS := \
 
 DIMGUTIL_EXE  := dimgutil${BINEXT}
 DIMGUTIL_OBJS := \
-  ${OBJ}/dimgutil.o \
+  ${DIMG_OBJ}/dimgutil.o \
+  ${DIMG_OBJ}/DiskImage.o \
+  ${DIMG_OBJ}/ADFS.o \
+  ${DIMG_OBJ}/FAT.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \
@@ -53,6 +58,7 @@ ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 
 -include ${DIMGUTIL_OBJS:.o=.d}
 ${DIMGUTIL_EXE}: ${DIMGUTIL_OBJS}
+${DIMGUTIL_OBJS}: | ${OBJ}/dimgutil
 
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
@@ -64,9 +70,9 @@ ALL_EXES := \
 
 all: ${ALL_EXES}
 
-${OBJ}:
+${OBJ} ${OBJ}/dimgutil:
 	$(if ${V},,@echo " MKDIR   " $@)
-	@mkdir -p ${OBJ}
+	@mkdir -p "$@"
 
 ${OBJ}/%.o: ${SRC}/%.c | ${OBJ}
 	$(if ${V},,@echo " CC      " $<)
