@@ -53,7 +53,7 @@ namespace format
   {
     while(count > 0)
     {
-      constexpr int L = strlen(DASHES);
+      constexpr int L = sizeof(DASHES) - 1;
       int n = count > L ? L : count;
       fprintf(stderr, "%*.*s", n, n, DASHES);
       count -= n;

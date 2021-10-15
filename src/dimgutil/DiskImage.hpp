@@ -28,6 +28,8 @@ struct DiskList
   uint32_t directory;
   bool recursive;
 
+  virtual ~DiskList() {}
+
   /* "Driver" implemented functions. */
   virtual bool Print(const char *base = nullptr, uint32_t index = UINT32_MAX) const = 0;
 };
@@ -61,6 +63,7 @@ class DiskImageLoader
 {
 public:
   DiskImageLoader();
+  virtual ~DiskImageLoader() {}
 
   virtual DiskImage *Load(FILE *fp) const = 0;
 

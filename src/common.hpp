@@ -59,41 +59,19 @@ enum class Endian
   BIG
 };
 
-static inline constexpr bool is_big_endian()
-{
-  const uint32_t t = 0x12345678;
-  return *reinterpret_cast<const uint8_t *>(&t) == 0x12;
-}
-
-static inline void fix_u16le(uint16_t &value)
-{
-  if(is_big_endian())
-    value = __builtin_bswap16(value);
-}
-
-static inline void fix_u32le(uint32_t &value)
-{
-  if(is_big_endian())
-    value = __builtin_bswap32(value);
-}
-
-static inline void fix_u16be(uint16_t &value)
-{
-  if(!is_big_endian())
-    value = __builtin_bswap16(value);
-}
-
 /* Multibyte memory reading functions. */
 
 static inline constexpr uint16_t mem_u16le(const void *_mem)
 {
-  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  // this makes clang unhappy :-(
+  //const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  const uint8_t *mem = (const uint8_t *)_mem;
   return mem[0] | (mem[1] << 8);
 }
 
 static inline constexpr uint16_t mem_u16be(const void *_mem)
 {
-  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  const uint8_t *mem = (const uint8_t *)_mem;
   return (mem[0] << 8) | mem[1];
 }
 
@@ -109,13 +87,13 @@ static inline constexpr int16_t mem_s16be(const void *mem)
 
 static inline constexpr uint32_t mem_u32le(const void *_mem)
 {
-  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  const uint8_t *mem = (const uint8_t *)_mem;
   return mem[0] | (mem[1] << 8) | (mem[2] << 16) | (mem[3] << 24);
 }
 
 static inline constexpr uint32_t mem_u32be(const void *_mem)
 {
-  const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
+  const uint8_t *mem = (const uint8_t *)_mem;
   return (mem[0] << 24) | (mem[1] << 16) | (mem[2] << 8) | mem[3];
 }
 
