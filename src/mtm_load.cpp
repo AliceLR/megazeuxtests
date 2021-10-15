@@ -118,9 +118,9 @@ struct MTM_data
 class MTM_loader : public modutil::loader
 {
 public:
-  MTM_loader(): modutil::loader("MTM : MultiTracker") {}
+  MTM_loader(): modutil::loader("MTM", "MultiTracker") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     MTM_data m{};
     MTM_header &h = m.header;

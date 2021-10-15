@@ -164,9 +164,9 @@ struct FAR_data
 class FAR_loader : modutil::loader
 {
 public:
-  FAR_loader(): modutil::loader("FAR : Farandole Composer") {}
+  FAR_loader(): modutil::loader("FAR", "Farandole Composer") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     FAR_data m{};
     FAR_header &h = m.header;

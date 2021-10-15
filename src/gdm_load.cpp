@@ -729,9 +729,9 @@ static modutil::error GDM_read(FILE *fp)
 class GDM_loader : modutil::loader
 {
 public:
-  GDM_loader(): modutil::loader("GDM : General Digital Music") {}
+  GDM_loader(): modutil::loader("GDM", "General Digital Music") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     return GDM_read(fp);
   }

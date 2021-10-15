@@ -28,9 +28,9 @@ static int num_unis;
 class _669_loader : public modutil::loader
 {
 public:
-  _669_loader(): modutil::loader("669 : Composer 669") {}
+  _669_loader(): modutil::loader("669", "Composer 669") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     char magic[2];
     if(!fread(magic, 2, 1, fp))

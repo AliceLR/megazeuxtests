@@ -261,9 +261,9 @@ public:
 class SYM_loader: public modutil::loader
 {
 public:
-  SYM_loader(): modutil::loader("SYM : Digital Symphony") {}
+  SYM_loader(): modutil::loader("-", "Digital Symphony") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     SYM_data m{};
     SYM_header &h = m.header;

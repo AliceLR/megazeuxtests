@@ -1267,9 +1267,9 @@ static const MED_handler HANDLERS[] =
 class MED_loader : modutil::loader
 {
 public:
-  MED_loader(): modutil::loader("MED : MED/OctaMED") {}
+  MED_loader(): modutil::loader("MED", "MED/OctaMED") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     char magic[4];
     if(!fread(magic, 4, 1, fp))

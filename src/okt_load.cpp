@@ -327,9 +327,9 @@ static const IFF<OKT_data> OKT_parser({
 class OKT_loader : modutil::loader
 {
 public:
-  OKT_loader(): modutil::loader("OKT : Oktalyzer") {}
+  OKT_loader(): modutil::loader("OKT", "Oktalyzer") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     OKT_data m{};
     OKT_parser.max_chunk_length = 0;

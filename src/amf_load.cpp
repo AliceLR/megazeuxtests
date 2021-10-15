@@ -765,9 +765,9 @@ static modutil::error AMF_read(FILE *fp)
 class AMF_loader : modutil::loader
 {
 public:
-  AMF_loader(): modutil::loader("AMF : Digital Sound and Music Interface") {}
+  AMF_loader(): modutil::loader("AMF", "Digital Sound and Music Interface") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     return AMF_read(fp);
   }

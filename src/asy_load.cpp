@@ -98,9 +98,9 @@ struct ASYLUM_data
 class ASYLUM_loader : public modutil::loader
 {
 public:
-  ASYLUM_loader(): modutil::loader("AMF : ASYLUM Music Format") {}
+  ASYLUM_loader(): modutil::loader("AMF", "ASYLUM Music Format") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     ASYLUM_data m{};
     ASYLUM_header &h = m.header;

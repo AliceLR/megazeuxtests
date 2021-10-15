@@ -460,9 +460,9 @@ static modutil::error STM_read(FILE *fp)
 class STM_loader : modutil::loader
 {
 public:
-  STM_loader(): modutil::loader("STM : Scream Tracker 2") {}
+  STM_loader(): modutil::loader("STM", "Scream Tracker 2") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     return STM_read(fp);
   }

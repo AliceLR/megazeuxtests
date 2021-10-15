@@ -40,8 +40,8 @@ static std::vector<const modutil::loader *> &loaders_vector()
 }
 
 #define ORDERED(str) \
- if(!strncmp(a->name, str, strlen(str))) return true; \
- else if(!strncmp(b->name, str, strlen(str))) return false;
+ if(!strcmp(a->ext, str)) return true; \
+ else if(!strcmp(b->ext, str)) return false;
 
 static bool sort_function(const modutil::loader *a, const modutil::loader *b)
 {
@@ -51,7 +51,8 @@ static bool sort_function(const modutil::loader *a, const modutil::loader *b)
   ORDERED("XM");
   ORDERED("IT");
   ORDERED("GDM");
-  return strcmp(a->name, b->name) < 0;
+  int cmp = strcmp(a->ext, b->ext);
+  return cmp ? cmp < 0 : strcmp(a->name, b->name) < 0;
 }
 
 static void sort_loaders()
@@ -60,7 +61,7 @@ static void sort_loaders()
   std::sort(loaders.begin(), loaders.end(), sort_function);
 }
 
-modutil::loader::loader(const char *n): name(n)
+modutil::loader::loader(const char *e, const char *n): ext(e), name(n)
 {
   loaders_vector().push_back(this);
 }
@@ -77,10 +78,11 @@ static void check_module(const char *filename)
 
     modutil::error err;
     bool has_format = false;
+    long file_length = get_file_length(fp);
 
     for(const modutil::loader *loader : loaders_vector())
     {
-      err = loader->load(fp);
+      err = loader->load(fp, file_length);
       if(err == modutil::FORMAT_ERROR)
       {
         rewind(fp);
@@ -147,7 +149,7 @@ int main(int argc, char *argv[])
 
     fprintf(stdout, "Supported formats:\n");
     for(const modutil::loader *loader : modutil::loaders_vector())
-      fprintf(stdout, " * %s\n", loader->name);
+      fprintf(stdout, " * %-3.3s : %s\n", loader->ext, loader->name);
     fprintf(stdout, "\n");
     return 0;
   }

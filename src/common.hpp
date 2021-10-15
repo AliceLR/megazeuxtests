@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
 template<class T>
 constexpr T MAX(T a, T b)
@@ -51,6 +52,33 @@ static char *fgets_safe(char (&buffer)[N], FILE *fp)
     buffer[--len] = '\0';
 
   return retval;
+}
+
+static inline long get_file_length(FILE *fp)
+{
+  struct stat st;
+  int fd = fileno(fp);
+  long ret;
+
+  if(fd >= 0)
+  {
+#ifdef _WIN32
+    ret = _filelength(fd);
+    if(ret >= 0)
+      return ret;
+#endif
+    ret = fstat(fd, &st);
+    if(ret == 0)
+      return st.st_size;
+  }
+  long pos = ftell(fp);
+  if(pos >= 0 && !fseek(fp, 0, SEEK_END))
+  {
+    ret = ftell(fp);
+    fseek(fp, pos, SEEK_SET);
+    return ret;
+  }
+  return -1;
 }
 
 enum class Endian

@@ -684,9 +684,9 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
 class XM_loader : public modutil::loader
 {
 public:
-  XM_loader(): modutil::loader("XM  : Extended Module") {}
+  XM_loader(): modutil::loader("XM", "Extended Module") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     XM_data m{};
     XM_header &h = m.header;

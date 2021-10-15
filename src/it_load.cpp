@@ -1041,9 +1041,9 @@ static modutil::error IT_read(FILE *fp)
 class IT_loader : public modutil::loader
 {
 public:
-  IT_loader(): modutil::loader("IT  : Impulse Tracker") {}
+  IT_loader(): modutil::loader("IT", "Impulse Tracker") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     return IT_read(fp);
   }

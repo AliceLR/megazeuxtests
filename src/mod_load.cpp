@@ -386,7 +386,7 @@ static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp
   return modutil::SUCCESS;
 }
 
-static modutil::error MOD_read(FILE *fp)
+static modutil::error MOD_read(FILE *fp, long file_length)
 {
   MOD_data m{};
   MOD_header &h = m.header;
@@ -399,10 +399,7 @@ static modutil::error MOD_read(FILE *fp)
   if(ret != modutil::SUCCESS)
     return ret;
 
-  if(fseek(fp, 0, SEEK_END))
-    return modutil::SEEK_ERROR;
-
-  m.real_length = ftell(fp);
+  m.real_length = file_length;
   errno = 0;
   rewind(fp);
   if(errno)
@@ -682,11 +679,11 @@ static modutil::error MOD_read(FILE *fp)
 class MOD_loader : public modutil::loader
 {
 public:
-  MOD_loader() : modutil::loader("MOD : Protracker and Soundtracker compatible modules") {}
+  MOD_loader() : modutil::loader("MOD", "Protracker and Soundtracker compatible modules") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
-    return MOD_read(fp);
+    return MOD_read(fp, file_length);
   };
 
   virtual void report() const override

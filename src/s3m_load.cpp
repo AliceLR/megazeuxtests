@@ -276,9 +276,9 @@ struct S3M_data
 class S3M_loader : public modutil::loader
 {
 public:
-  S3M_loader(): modutil::loader("S3M : Scream Tracker 3") {}
+  S3M_loader(): modutil::loader("S3M", "Scream Tracker 3") {}
 
-  virtual modutil::error load(FILE *fp) const override
+  virtual modutil::error load(FILE *fp, long file_length) const override
   {
     S3M_data m{};
     S3M_header &h = m.header;
