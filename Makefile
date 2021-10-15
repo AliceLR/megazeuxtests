@@ -28,6 +28,7 @@ MODUTIL_OBJS := \
   ${OBJ}/669_load.o \
   ${OBJ}/amf_load.o \
   ${OBJ}/asy_load.o \
+  ${OBJ}/coco_load.o \
   ${OBJ}/dbm_load.o \
   ${OBJ}/dsm_load.o \
   ${OBJ}/far_load.o \
