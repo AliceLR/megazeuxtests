@@ -23,6 +23,10 @@ ConfigInfo Config;
 
 const char ConfigInfo::COMMON_FLAGS[] =
   "Common flags:\n"
+  "  -q        Suppress text output. Overrides dumping flags.\n"
+  "  -f=fmt... Filter by format loader extension and/or tag (see supported formats).\n"
+  "            'fmt' can be a comma separated list or -f can be specified multiple\n"
+  "            times to allow multiple formats.\n"
   "  -d[=N]    Dump description. N=1 (optional) enables, N=0 disables (default).\n"
   "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
   "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
@@ -121,6 +125,7 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
 
       switch(arg[1])
       {
+        /* Highlight pattern dump. */
         case 'H':
           if(arg[2] == '=')
           {
@@ -140,10 +145,12 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           format::error("invalid config for -H");
           return false;
 
+        /* Dump description text. */
         case 'd':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
             dump_descriptions = true;
+            quiet = false;
             continue;
           }
           if(!strcmp(arg + 2, "=0"))
@@ -153,6 +160,7 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           }
           break;
 
+        /* Dump pattern/order info. */
         case 'p':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
@@ -164,20 +172,24 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           {
             dump_patterns = true;
             dump_pattern_rows = true;
+            quiet = false;
             continue;
           }
           if(!strcmp(arg + 2, "=0"))
           {
             dump_patterns = false;
             dump_pattern_rows = false;
+            quiet = false;
             continue;
           }
           break;
 
+        /* Dump sample/instrument info. */
         case 's':
           if(!arg[2] || !strcmp(arg + 2, "=1"))
           {
             dump_samples = true;
+            quiet = false;
             continue;
           }
           if(!strcmp(arg + 2, "=0"))
@@ -186,6 +198,34 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
             continue;
           }
           break;
+
+        /* Suppress text output. */
+        case 'q':
+          dump_patterns = false;
+          dump_pattern_rows = false;
+          dump_samples = false;
+          quiet = true;
+          continue;
+
+        /* Filter by format. */
+        case 'f':
+        {
+          if(arg[2] != '=')
+            break;
+
+          char *current = arg + 3;
+          while(num_format_filters < MAX_FORMAT_FILTERS)
+          {
+            char *delim = strpbrk(current, ",");
+            format_filter[num_format_filters++] = current;
+            if(!delim)
+              break;
+
+            *(delim++) = '\0';
+            current = delim;
+          }
+          continue;
+        }
       }
       format::error("unknown option '%s'!", argv[i]);
       return false;

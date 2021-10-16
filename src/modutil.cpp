@@ -26,6 +26,7 @@
   "Usage:\n" \
   "  %s [options] [filename.ext...]\n\n" \
 
+static int total_identified = 0;
 static int total_unidentified = 0;
 
 
@@ -61,9 +62,24 @@ static void sort_loaders()
   std::sort(loaders.begin(), loaders.end(), sort_function);
 }
 
-modutil::loader::loader(const char *e, const char *n): ext(e), name(n)
+modutil::loader::loader(const char *e, const char *t, const char *n): ext(e), tag(t), name(n)
 {
   loaders_vector().push_back(this);
+}
+
+static bool is_loader_filtered(const modutil::loader *loader)
+{
+  if(Config.num_format_filters)
+  {
+    for(int i = 0; i < Config.num_format_filters; i++)
+    {
+      if(!strcasecmp(loader->ext, Config.format_filter[i]) ||
+         !strcasecmp(loader->tag, Config.format_filter[i]))
+        return false;
+    }
+    return true;
+  }
+  return false;
 }
 
 static void check_module(const char *filename)
@@ -82,6 +98,9 @@ static void check_module(const char *filename)
 
     for(const modutil::loader *loader : loaders_vector())
     {
+      if(is_loader_filtered(loader))
+        continue;
+
       err = loader->load(fp, file_length);
       if(err == modutil::FORMAT_ERROR)
       {
@@ -90,6 +109,7 @@ static void check_module(const char *filename)
       }
 
       has_format = true;
+      total_identified++;
       if(err)
         format::error("in loader '%s': %s", loader->name, modutil::strerror(err));
 
@@ -147,9 +167,11 @@ int main(int argc, char *argv[])
     const char *name = argv ? argv[0] : "modutil";
     fprintf(stdout, USAGE "%s", name, Config.COMMON_FLAGS);
 
-    fprintf(stdout, "Supported formats:\n");
+    fprintf(stdout, "Supported formats:\n\n");
+    fprintf(stdout, "   Ext : Tag    : Description\n");
+    fprintf(stdout, "   --- : ------ : -----------\n");
     for(const modutil::loader *loader : modutil::loaders_vector())
-      fprintf(stdout, " * %-3.3s : %s\n", loader->ext, loader->name);
+      fprintf(stdout, " * %-3.3s : %-6.6s : %s\n", loader->ext, loader->tag, loader->name);
     fprintf(stdout, "\n");
     return 0;
   }
@@ -180,5 +202,5 @@ int main(int argc, char *argv[])
   if(total_unidentified)
     format::report("Total unidentified", total_unidentified);
 
-  return 0;
+  return (total_identified == 0);
 }

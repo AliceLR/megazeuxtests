@@ -408,7 +408,7 @@ static const IFF<MUSX_data> MUSX_parser(Endian::LITTLE, IFFPadding::BYTE,
 class MUSX_loader: modutil::loader
 {
 public:
-  MUSX_loader(): modutil::loader("-", "!Tracker-compatible/MUSX") {}
+  MUSX_loader(): modutil::loader("-", "musx", "!Tracker-compatible/MUSX") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

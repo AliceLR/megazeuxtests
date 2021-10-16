@@ -195,7 +195,7 @@ static const IFF<MASI_data> MASI_parser(Endian::LITTLE, IFFPadding::BYTE,
 class MASI_loader : modutil::loader
 {
 public:
-  MASI_loader(): modutil::loader("PSM", "Epic MegaGames MASI") {}
+  MASI_loader(): modutil::loader("PSM", "masi", "Epic MegaGames MASI") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

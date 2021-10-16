@@ -46,11 +46,15 @@ namespace format
 
   static inline void spaces(int count)
   {
+    if(Config.quiet)
+      return;
     fprintf(stderr, "%*s", count, "");
   }
 
   static inline void dashes(int count)
   {
+    if(Config.quiet)
+      return;
     while(count > 0)
     {
       constexpr int L = sizeof(DASHES) - 1;
@@ -62,11 +66,15 @@ namespace format
 
   static inline void endline()
   {
+    if(Config.quiet)
+      return;
     fprintf(stderr, "\n");
   }
 
   static inline void line(const char *label = "")
   {
+    if(Config.quiet)
+      return;
     O_("%-8.8s:", label);
     endline();
   }
@@ -74,6 +82,8 @@ namespace format
   ATTRIBUTE_PRINTF(2, 3)
   static inline void line(const char *label, const char *fmt, ...)
   {
+    if(Config.quiet)
+      return;
     O_("%-8.8s: ", label);
     va_list args;
     va_start(args, fmt);
@@ -85,6 +95,8 @@ namespace format
   ATTRIBUTE_PRINTF(1, 2)
   static inline void warning(const char *fmt, ...)
   {
+    if(Config.quiet)
+      return;
     O_("%-8.8s: ", "Warning");
     va_list args;
     va_start(args, fmt);
@@ -96,6 +108,8 @@ namespace format
   ATTRIBUTE_PRINTF(1, 2)
   static inline void error(const char *fmt, ...)
   {
+    if(Config.quiet)
+      return;
     O_("%-8.8s: ", "Error");
     va_list args;
     va_start(args, fmt);
@@ -107,6 +121,8 @@ namespace format
   template<typename T, int N>
   static inline void uses(const T (&uses)[N], const char * const (&desc)[N])
   {
+    if(Config.quiet)
+      return;
     int printed = 0;
     for(int i = 0; i < N; i++)
     {
@@ -135,6 +151,8 @@ namespace format
   template<typename T>
   static inline void orders(const char *label, const T *orders, size_t count)
   {
+    if(Config.quiet)
+      return;
     O_("%-8.8s:", label);
     for(size_t i = 0; i < count; i++)
       fprintf(stderr, " %02x", orders[i]);
@@ -145,6 +163,8 @@ namespace format
   static inline void song(const char *song_label, const char *order_label, unsigned int song_num,
    const char *name, const T *orders, size_t count)
   {
+    if(Config.quiet)
+      return;
     if(name)
       O_("%-4.4s %02x : '%s', %zu %s\n", song_label, song_num, name, count, order_label);
     else
@@ -159,7 +179,7 @@ namespace format
   template<int WRAP=64>
   static inline void description(const char *label, const char *text, ssize_t length)
   {
-    if(!text || !Config.dump_descriptions)
+    if(!text || !Config.dump_descriptions || Config.quiet)
       return;
 
     while(length > 0)
@@ -210,6 +230,8 @@ namespace format
 
   static inline void report(const char *label, size_t count)
   {
+    if(Config.quiet)
+      return;
     endline();
     O_("%-22.22s: %zu\n", label, count);
     O_("%-22.22s:\n", "----------------------");
@@ -218,6 +240,8 @@ namespace format
 
   static inline void reportline(const char *label = "")
   {
+    if(Config.quiet)
+      return;
     O_("%-22.22s:", label);
     endline();
     fflush(stderr); // MinGW buffers stderr...
@@ -226,6 +250,8 @@ namespace format
   ATTRIBUTE_PRINTF(2, 3)
   static inline void reportline(const char *label, const char *fmt, ...)
   {
+    if(Config.quiet)
+      return;
     O_("%-22.22s: ", label);
     va_list args;
     va_start(args, fmt);
@@ -315,6 +341,8 @@ namespace format
   public:
     void header(const char *title, const char * const *labels) const
     {
+      if(Config.quiet)
+        return;
       int len = strlen(title);
       O_("%-8.8s: ", title);
       _header<0, ELEMENTS...>(labels);
@@ -328,6 +356,8 @@ namespace format
 
     void row(unsigned int index, const ELEMENTS... args) const
     {
+      if(Config.quiet)
+        return;
       char head[11];
       sprintf(head, "%02x", index);
       O_("%6.6s  : ", head);
@@ -623,6 +653,8 @@ namespace format
 
     void summary(bool blank = false)
     {
+      if(Config.quiet)
+        return;
       O_("%4.4s %02x :", short_label, pattern_number);
       if(name)
         fprintf(stderr, " '%s'", name);
@@ -643,6 +675,8 @@ namespace format
 
     void tracks(const int *column_tracks)
     {
+      if(Config.quiet)
+        return;
       O_("%-8.8s:", "");
       for(size_t i = 0; i < columns; i++)
         fprintf(stderr, " %02x ", column_tracks[i]);
@@ -651,6 +685,8 @@ namespace format
 
     void print(const char **column_labels = nullptr, const int *column_tracks = nullptr)
     {
+      if(Config.quiet)
+        return;
       // Determine which columns to print...
       bool print_any = false;
       for(size_t i = 0; i < columns; i++)

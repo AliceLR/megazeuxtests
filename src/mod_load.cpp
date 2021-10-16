@@ -679,7 +679,7 @@ static modutil::error MOD_read(FILE *fp, long file_length)
 class MOD_loader : public modutil::loader
 {
 public:
-  MOD_loader() : modutil::loader("MOD", "Protracker and Soundtracker compatible modules") {}
+  MOD_loader() : modutil::loader("MOD", "mod", "Protracker and Soundtracker compatible modules") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

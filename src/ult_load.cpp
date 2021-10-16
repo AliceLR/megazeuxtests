@@ -291,7 +291,7 @@ static void check_event(ULT_data &m, const ULT_event &e)
 class ULT_loader : modutil::loader
 {
 public:
-  ULT_loader(): modutil::loader("ULT", "Ultra Tracker") {}
+  ULT_loader(): modutil::loader("ULT", "ult", "Ultra Tracker") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

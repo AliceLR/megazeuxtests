@@ -185,7 +185,7 @@ class Coconizer_loader: modutil::loader
   }
 
 public:
-  Coconizer_loader(): modutil::loader("-", "Coconizer") {}
+  Coconizer_loader(): modutil::loader("-", "coco", "Coconizer") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

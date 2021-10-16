@@ -1267,7 +1267,7 @@ static const MED_handler HANDLERS[] =
 class MED_loader : modutil::loader
 {
 public:
-  MED_loader(): modutil::loader("MED", "MED/OctaMED") {}
+  MED_loader(): modutil::loader("MED", "med", "MED/OctaMED") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

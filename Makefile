@@ -48,6 +48,7 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/DiskImage.o \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/FAT.o \
+  ${OBJ}/Config.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \

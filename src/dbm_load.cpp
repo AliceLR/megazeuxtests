@@ -876,7 +876,7 @@ static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 class DBM_loader : public modutil::loader
 {
 public:
-  DBM_loader(): modutil::loader("DBM", "DigiBooster Pro") {}
+  DBM_loader(): modutil::loader("DBM", "dbm", "DigiBooster Pro") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

@@ -32,11 +32,12 @@ namespace modutil
   {
   public:
     const char *ext;
+    const char *tag;
     const char *name;
     virtual modutil::error load(FILE *fp, long file_length) const = 0;
     virtual void           report() const = 0;
 
-    loader(const char *e, const char *n);
+    loader(const char *e, const char *t, const char *n);
   };
 }
 

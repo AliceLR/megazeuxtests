@@ -521,7 +521,7 @@ modutil::error DSIK_read(FILE *fp)
 class DSIK_loader : modutil::loader
 {
 public:
-  DSIK_loader(): modutil::loader("DSM", "Digital Sound Interface Kit") {}
+  DSIK_loader(): modutil::loader("DSM", "dsik", "Digital Sound Interface Kit") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {

@@ -34,13 +34,18 @@ namespace Highlight
 struct ConfigInfo final
 {
   static const char COMMON_FLAGS[];
+  static constexpr int MAX_FORMAT_FILTERS = 32;
 
+  bool quiet = false;
   bool dump_descriptions = false;
   bool dump_samples = false;
   bool dump_patterns = false;
   bool dump_pattern_rows = false;
   uint8_t highlight_mask = 0;
   uint8_t highlight[256];
+
+  int num_format_filters = 0;
+  const char *format_filter[MAX_FORMAT_FILTERS];
 
   /**
    * Read configuration options out of argv.
