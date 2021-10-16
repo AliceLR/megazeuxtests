@@ -682,7 +682,7 @@ static modutil::error IT_read(FILE *fp)
   IT_header &h = m.header;
 
   if(!fread(h.magic, 4, 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   if(strncmp(h.magic, "IMPM", 4))
     return modutil::FORMAT_ERROR;

@@ -396,7 +396,7 @@ modutil::error DSIK_read(FILE *fp)
   DSIK_parser.max_chunk_length = 0;
 
   if(!fread(m.header, 12, 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   if(!strncmp(m.header + 0, "RIFF", 4) && !strncmp(m.header + 8, "DSMF", 4))
   {
@@ -409,7 +409,7 @@ modutil::error DSIK_read(FILE *fp)
     m.type = DSMF_VARIANT;
 
     if(!fread(m.header + 12, 4, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
   }
   else
 

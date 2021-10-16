@@ -249,7 +249,7 @@ static modutil::error AMF_read(FILE *fp)
   AMF_module m{};
 
   if(!fread(m.magic, sizeof(m.magic), 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   if(memcmp(m.magic, "AMF", 3))
     return modutil::FORMAT_ERROR;

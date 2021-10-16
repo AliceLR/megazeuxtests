@@ -187,16 +187,16 @@ static modutil::error STM_read(FILE *fp)
    * Header.
    */
   if(!fread(h.name, sizeof(h.name), 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
   if(!fread(h.tracker, sizeof(h.tracker), 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   h.eof         = fgetc(fp);
   h.type        = fgetc(fp);
   h.version_maj = fgetc(fp);
   h.version_min = fgetc(fp);
   if(feof(fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   /* This format doesn't have a proper magic, so do some basic tests on the header. */
   if(h.eof != '\x1a' || (h.type != TYPE_SONG && h.type != TYPE_MODULE))

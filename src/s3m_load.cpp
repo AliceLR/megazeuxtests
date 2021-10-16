@@ -285,7 +285,7 @@ public:
     uint8_t buffer[96];
 
     if(!fread(buffer, 96, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(memcmp(buffer + 44, "SCRM", 4))
       return modutil::FORMAT_ERROR;

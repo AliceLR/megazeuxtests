@@ -203,12 +203,12 @@ public:
     MASI_parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 4, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     m.filesize = fget_u32le(fp);
 
     if(!fread(m.magic2, 4, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(!strncmp(m.magic, "PSM\xFE", 4))
     {

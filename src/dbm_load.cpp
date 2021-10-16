@@ -884,7 +884,7 @@ public:
     DBM_parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 4, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(strncmp(m.magic, "DBM0", 4))
       return modutil::FORMAT_ERROR;

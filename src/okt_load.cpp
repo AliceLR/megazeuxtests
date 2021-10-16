@@ -335,7 +335,7 @@ public:
     OKT_parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 8, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(strncmp(m.magic, "OKTASONG", 8))
       return modutil::FORMAT_ERROR;

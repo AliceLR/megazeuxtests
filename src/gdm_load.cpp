@@ -413,7 +413,7 @@ static modutil::error GDM_read(FILE *fp)
      !fread(h.author, 32, 1, fp) ||
      !fread(h.eof, 3, 1, fp) ||
      !fread(h.magic2, 4, 1, fp))
-    return modutil::READ_ERROR;
+    return modutil::FORMAT_ERROR;
 
   if(memcmp(h.magic, MAGIC, 4) ||
      memcmp(h.eof, MAGIC_EOF, 3) ||

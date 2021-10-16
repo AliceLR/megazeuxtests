@@ -303,7 +303,7 @@ public:
      * Header (part 1).
      */
     if(!fread(h.magic, sizeof(h.magic), 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, MAGIC, sizeof(h.magic)-1))
       return modutil::FORMAT_ERROR;

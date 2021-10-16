@@ -34,7 +34,7 @@ public:
   {
     char magic[2];
     if(!fread(magic, 2, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(!memcmp(magic, "if", 2))
     {

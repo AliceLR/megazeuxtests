@@ -126,7 +126,7 @@ public:
     MTM_header &h = m.header;
 
     if(!fread(h.magic, 3, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, "MTM", 3))
       return modutil::FORMAT_ERROR;

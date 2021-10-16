@@ -1273,7 +1273,7 @@ public:
   {
     char magic[4];
     if(!fread(magic, 4, 1, fp))
-      return modutil::READ_ERROR;
+      return modutil::FORMAT_ERROR;
 
     rewind(fp);
 
