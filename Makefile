@@ -46,8 +46,10 @@ DIMGUTIL_EXE  := dimgutil${BINEXT}
 DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/dimgutil.o \
   ${DIMG_OBJ}/DiskImage.o \
+  ${DIMG_OBJ}/FileInfo.o \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/FAT.o \
+  ${DIMG_OBJ}/SparkFS.o \
   ${OBJ}/Config.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}

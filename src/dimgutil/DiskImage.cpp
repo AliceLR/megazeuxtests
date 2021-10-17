@@ -33,12 +33,12 @@ DiskImageLoader::DiskImageLoader()
   get_list().push_back(this);
 }
 
-DiskImage *DiskImageLoader::TryLoad(FILE *fp)
+DiskImage *DiskImageLoader::TryLoad(FILE *fp, long file_length)
 {
   for(DiskImageLoader *l : get_list())
   {
     rewind(fp);
-    DiskImage *img = l->Load(fp);
+    DiskImage *img = l->Load(fp, file_length);
     if(img)
       return img;
   }

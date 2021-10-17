@@ -64,7 +64,8 @@ int main(int argc, char *argv[])
     format::error("error opening file");
     return -1;
   }
-  std::unique_ptr<DiskImage> disk(DiskImageLoader::TryLoad(fp));
+  long file_length = get_file_length(fp);
+  std::unique_ptr<DiskImage> disk(DiskImageLoader::TryLoad(fp, file_length));
   fclose(fp);
 
   if(!disk || disk->error_state)
@@ -81,9 +82,18 @@ int main(int argc, char *argv[])
 
     case OP_LIST:
     {
-      char *pattern = (argc > 3) ? argv[3] : nullptr;
+      // TODO filter
+      char *base = (argc > 3) ? argv[3] : nullptr;
+      FileList list;
+
       disk->PrintSummary();
-      disk->List(nullptr, pattern, true);
+      disk->Search(list, base, true);
+
+      fprintf(stderr, "\nListing '%s':\n\n", base ? base : "");
+      for(FileInfo &f : list)
+        f.print();
+
+      fprintf(stderr, "\n  Total: %zu\n", list.size());
       break;
     }
   }

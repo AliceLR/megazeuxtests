@@ -110,12 +110,6 @@ struct ADFS_map
 };
 
 
-struct ADFSList: public DiskList
-{
-  /* "Driver" implemented functions. */
-  virtual bool Print(const char *base = nullptr, uint32_t index = UINT32_MAX) const override;
-};
-
 class ADFSImage: public DiskImage
 {
   const ADFS_type_spec &adfs;
@@ -127,8 +121,9 @@ public:
   virtual ~ADFSImage() {}
 
   /* "Driver" implemented functions. */
-  virtual bool      PrintSummary() const override;
-  virtual DiskList *CreateList(const char *filename, const char *pattern = nullptr, bool recursive = false) const override;
+  virtual bool PrintSummary() const override;
+  virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+   const char *base, bool recursive = false) const override;
 };
 
 bool ADFSImage::PrintSummary() const
@@ -141,13 +136,8 @@ bool ADFSImage::PrintSummary() const
   return true;
 }
 
-DiskList *ADFSImage::CreateList(const char *filename, const char *pattern, bool recursive) const
-{
-  // FIXME
-  return nullptr;
-}
-
-bool ADFSList::Print(const char *base, uint32_t sector) const
+bool ADFSImage::Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+ const char *base, bool recursive) const
 {
   // FIXME
   return false;
@@ -228,7 +218,7 @@ class ADFSLoader: public DiskImageLoader
   }
 
 public:
-  virtual DiskImage *Load(FILE *fp) const override
+  virtual DiskImage *Load(FILE *fp, long file_length) const override
   {
     ADFS_map map;
     ADFS_type type = identify(fp, map);

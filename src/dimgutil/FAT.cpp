@@ -15,7 +15,6 @@
  */
 
 #include <ctype.h>
-//#include <fnmatch.h>
 #include <string.h>
 #include <memory>
 #include <vector>
@@ -221,44 +220,20 @@ struct FAT_entry
     return true;
   }
 
-  static constexpr int TYPE_LEN = 16;
-  static constexpr int DATE_LEN = 32;
-
-  void type_str(char (&dest)[TYPE_LEN]) const
+  int fileinfo_type() const
   {
-    if(attributes() & VOLUME_LABEL)
-      strcpy(dest, "<VOLUME>");
-    else
-    if(attributes() & DIRECTORY)
-      strcpy(dest, "<DIR>");
-    else
-      snprintf(dest, sizeof(dest), "%15" PRIu32, size());
-  }
+    uint8_t attr = attributes();
+    int type = 0;
+    if((attr & LFN) == LFN)
+      return FileInfo::IS_LFN;
+    if(attr & DIRECTORY)
+      type |= FileInfo::IS_DIRECTORY;
+    if(attr & VOLUME_LABEL)
+      type |= FileInfo::IS_VOLUME;
+    if(attr & DEVICE)
+      type |= FileInfo::IS_DEVICE;
 
-  void date_str(char (&dest)[DATE_LEN], uint16_t dos_date, uint16_t dos_time) const
-  {
-    snprintf(dest, sizeof(dest), "%u-%02u-%02u %02u:%02u:%02u",
-      ((dos_date & 0xfe00) >> 9) + 1980, ((dos_date & 0x01e0) >> 5) + 1, (dos_date & 0x001f) + 1,
-      ((dos_time & 0xf800) >> 11),       ((dos_time & 0x07e0) >> 5),     (dos_time & 0x001f) * 2
-    );
-  }
-
-  void summary(char *dest, size_t dest_len) const
-  {
-    char name_str[15];
-    char modify_str[DATE_LEN];
-    char size_str[TYPE_LEN];
-
-    if(data[8] != ' ')
-      sprintf(name_str, "%-8.8s . %-3.3s", (char *)(data + 0), (char *)(data + 8));
-    else
-      sprintf(name_str, "%-8.8s", (char *)(data + 0));
-
-    type_str(size_str);
-    date_str(modify_str, modify_date(), modify_time());
-
-    snprintf(dest, dest_len, "  %s  :  %-15.15s  :  %-15.15s",
-     modify_str, size_str, name_str);
+    return type;
   }
 };
 
@@ -333,9 +308,13 @@ public:
 
 
   /* "Driver" functions. */
-  virtual bool      PrintSummary() const override;
-  virtual DiskList *CreateList(const char *filename, const char *pattern, bool recursive) const override;
+  virtual bool PrintSummary() const override;
+  virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+   const char *base, bool recursive) const override;
 
+
+  void search_r(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+   const char *base, uint32_t cluster, bool recursive) const;
 
   uint32_t next_cluster_id(uint32_t cluster) const
   {
@@ -581,12 +560,6 @@ public:
   }
 };
 
-struct FAT_list: public DiskList
-{
-  const FAT_image *disk;
-  virtual bool Print(const char *base, uint32_t cluster) const override;
-};
-
 
 FAT_entry *FAT_image::get_entry_in_directory(uint32_t directory, const char *name) const
 {
@@ -611,66 +584,56 @@ bool FAT_image::PrintSummary() const
   return true;
 }
 
-DiskList *FAT_image::CreateList(const char *filename, const char *pattern, bool recursive) const
+bool FAT_image::Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+ const char *base, bool recursive) const
 {
   if(error_state)
-    return nullptr;
+    return false;
 
   uint32_t directory = 0;
-  if(filename && filename[0])
+  if(base && base[0])
   {
-    FAT_entry *t = get_entry(0, filename);
+    FAT_entry *t = get_entry(0, base);
     if(!t || !(t->attributes() & FAT_entry::DIRECTORY))
-      return nullptr;
+      return false;
 
     directory = t->cluster();
   }
+  else
+    base = "";
 
-  FAT_list *list = new FAT_list();
-  if(!list)
-    return nullptr;
-
-  list->disk = this;
-  list->start_base = filename;
-  list->pattern = pattern;
-  list->directory = directory;
-  list->recursive = recursive;
-  return list;
+  search_r(dest, filter, filter_flags, base, directory, recursive);
+  return true;
 }
 
-bool FAT_list::Print(const char *base, uint32_t cluster) const
+void FAT_image::search_r(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+ const char *base, uint32_t cluster, bool recursive) const
 {
-  if(!base)
-    base = start_base;
-  if(cluster == NO_CLUSTER)
-    cluster = directory;
-
-  size_t entries = cluster ? disk->dir_entries_per_cluster : disk->bios.num_root_entries;
-  size_t total = 0;
-
-  if(base && base[0])
-    fprintf(stderr, "\nListing '%s'.\n\n", base);
-  else
-    fprintf(stderr, "\nListing root.\n\n");
+  size_t entries = cluster ? dir_entries_per_cluster : bios.num_root_entries;
 
   std::vector<FAT_entry *> dirs;
 
-  for(FAT_entry &e : FAT_entry_iterator(*disk, cluster, entries))
+  for(FAT_entry &e : FAT_entry_iterator(*this, cluster, entries))
   {
     if(!e.exists())
       continue;
 
-    // FIXME pattern
+    char filename[13];
+    e.name(filename, sizeof(filename));
 
-    char buffer[512];
-    e.summary(buffer, sizeof(buffer));
-    fprintf(stderr, "%s\n", buffer);
-    total++;
+    FileInfo tmp(base, filename, e.fileinfo_type(), e.size());
+
+    tmp.access(FileInfo::convert_DOS(e.access_date(), 0));
+    tmp.create(FileInfo::convert_DOS(e.create_date(), e.create_time()));
+    tmp.modify(FileInfo::convert_DOS(e.modify_date(), e.modify_time()));
+    tmp.priv = &e;
+
+    if(tmp.filter(filter, filter_flags))
+      dest.push_back(std::move(tmp));
 
     if(recursive && (e.data[0] != '.') && (e.attributes() & FAT_entry::DIRECTORY))
       dirs.push_back(&e);
   }
-  fprintf(stderr, "\n  Total: %zu\n", total);
 
   if(recursive)
   {
@@ -682,14 +645,13 @@ bool FAT_list::Print(const char *base, uint32_t cluster) const
       {
         len = snprintf(path, sizeof(path), "%s\\", base);
         if(len >= sizeof(path))
-          return false;
+          continue;
       }
 
       e->name(path + len, sizeof(path) - len);
-      Print(path, e->cluster()); // TODO: cluster32
+      search_r(dest, filter, filter_flags, path, e->cluster(), recursive); // TODO: cluster32
     }
   }
-  return true;
 }
 
 
@@ -773,7 +735,7 @@ public:
 class AtariSTLoader: public DiskImageLoader
 {
 public:
-  virtual DiskImage *Load(FILE *fp) const override
+  virtual DiskImage *Load(FILE *fp, long file_length) const override
   {
     AtariST_FAT12_boot d{};
     uint8_t boot_sector[512];

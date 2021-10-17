@@ -20,19 +20,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <memory>
+#include <vector>
 
-struct DiskList
-{
-  const char *start_base;
-  const char *pattern;
-  uint32_t directory;
-  bool recursive;
+#include "FileInfo.hpp"
 
-  virtual ~DiskList() {}
-
-  /* "Driver" implemented functions. */
-  virtual bool Print(const char *base = nullptr, uint32_t index = UINT32_MAX) const = 0;
-};
+typedef std::vector<FileInfo> FileList;
 
 class DiskImage
 {
@@ -45,17 +37,16 @@ public:
   virtual ~DiskImage() {}
 
   /* "Driver" implemented functions. */
-  virtual bool      PrintSummary() const = 0;
-  virtual DiskList *CreateList(const char *filename, const char *pattern = nullptr, bool recursive = false) const = 0;
+  virtual bool PrintSummary() const = 0;
+  virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
+   const char *base, bool recursive = false) const = 0;
 
   /* Shorthand functions. */
-  bool List(const char *filename, const char *pattern = nullptr, bool recursive = false) const
+  bool Search(FileList &dest, const char *base, bool recursive = false) const
   {
-    std::unique_ptr<DiskList> list(CreateList(filename, pattern, recursive));
-    if(list && list->Print())
-      return true;
-
-    return false;
+    FileInfo dummy;
+    uint32_t filter_flags = 0;
+    return Search(dest, dummy, filter_flags, base, recursive);
   }
 };
 
@@ -65,9 +56,9 @@ public:
   DiskImageLoader();
   virtual ~DiskImageLoader() {}
 
-  virtual DiskImage *Load(FILE *fp) const = 0;
+  virtual DiskImage *Load(FILE *fp, long file_length) const = 0;
 
-  static DiskImage *TryLoad(FILE *fp);
+  static DiskImage *TryLoad(FILE *fp, long file_length);
 };
 
 #endif /* MZXTEST_DIMGUTIL_DISKIMAGE_HPP */
