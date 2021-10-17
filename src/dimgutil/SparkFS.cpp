@@ -70,6 +70,9 @@ struct ARC_entry
   /* 29 */ //uint8_t  attributes[12];
   /* 41 */
 
+  static constexpr int ARC_HEADER_SIZE = 29;
+  static constexpr int SPARK_HEADER_SIZE = ARC_HEADER_SIZE + 12;
+
   uint8_t data[41];
 
   bool is_valid() const
@@ -108,6 +111,13 @@ struct ARC_entry
     return ARC_INVALID;
   }
 
+  bool is_spark() const
+  {
+    if(data[1] >= SPARK_END_OF_ARCHIVE)
+      return true;
+    return false;
+  }
+
   const char *filename() const
   {
     return reinterpret_cast<const char *>(data + 2);
@@ -143,11 +153,11 @@ struct ARC_entry
 
   bool read_header(FILE *fp)
   {
-    if(!fread(data, 29, 1, fp))
+    if(!fread(data, ARC_HEADER_SIZE, 1, fp))
       return false;
 
-    if(data[1] >= SPARK_END_OF_ARCHIVE)
-      if(!fread(data + 29, 12, 1, fp))
+    if(is_spark())
+      if(!fread(data + ARC_HEADER_SIZE, SPARK_HEADER_SIZE - ARC_HEADER_SIZE, 1, fp))
         return false;
 
     // Make sure filename is terminated...
@@ -157,9 +167,9 @@ struct ARC_entry
 
   int get_header_size() const
   {
-    if(static_cast<ARC_type>(data[1]) >= SPARK_END_OF_ARCHIVE)
-      return 41;
-    return 29;
+    if(is_spark())
+      return SPARK_HEADER_SIZE;
+    return ARC_HEADER_SIZE;
   }
 
   /**
@@ -190,8 +200,8 @@ struct ARC_entry
   ARC_entry *next_header(uint8_t *data_start, size_t data_length)
   {
     uint8_t *data_end = data_start + data_length;
-    uint8_t *current = reinterpret_cast<uint8_t *>(this);
-    if(current < data_start || current >= data_end)
+    ptrdiff_t left = data_end - data;
+    if(data < data_start || data >= data_end)
       return nullptr;
 
     ARC_type t = type();
@@ -201,10 +211,10 @@ struct ARC_entry
     ptrdiff_t header_size = get_header_size();
     ptrdiff_t offset = compressed_size() + header_size;
 
-    if(offset > data_end - current || header_size > data_end - current - offset)
+    if(offset > left || header_size > left - offset)
       return nullptr;
 
-    ARC_entry *ret = reinterpret_cast<ARC_entry *>(current + offset);
+    ARC_entry *ret = reinterpret_cast<ARC_entry *>(data + offset);
     ret->data[14] = '\0';
     return ret;
   }
@@ -245,6 +255,9 @@ struct ARC_entry
    */
   static bool is_valid_arc(uint8_t *buffer_start, size_t buffer_length)
   {
+    if(buffer_length < ARC_HEADER_SIZE)
+      return false;
+
     ARC_entry *h = reinterpret_cast<ARC_entry *>(buffer_start);
     do
     {
@@ -296,7 +309,9 @@ public:
    const char *base, bool recursive = false) const override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
-   const char *base, bool recursive, ARC_entry *h) const;
+   const char *base, bool recursive, ARC_entry *h, uint8_t *start, size_t length) const;
+
+  ARC_entry *get_entry(const char *path, uint8_t **start, size_t *length) const;
 };
 
 bool SparkImage::PrintSummary() const
@@ -317,14 +332,43 @@ bool SparkImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_
   if(error_state)
     return false;
 
-  ARC_entry *first = reinterpret_cast<ARC_entry *>(data);
+  ARC_entry *h = reinterpret_cast<ARC_entry *>(data);
+  uint8_t *start = data;
+  size_t length = data_length;
 
-  search_r(list, filter, filter_flags, base, recursive, first);
+  if(base && base[0])
+  {
+    uint8_t *_start;
+    size_t _length;
+    h = get_entry(base, &start, &length);
+    if(!h || !h->get_buffer(&_start, &_length))
+      return false;
+
+    ARC_entry *_h = reinterpret_cast<ARC_entry *>(_start);
+    if(!_length || !_h->is_valid())
+    {
+      // Base is file.
+      FileInfo tmp("", base, h->get_filetype(false), h->uncompressed_size());
+      tmp.priv = h;
+      tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
+      if(tmp.filter(filter, filter_flags))
+        list.push_back(std::move(tmp));
+
+      return true;
+    }
+
+    // Base is directory.
+    h = _h;
+    start = _start;
+    length = _length;
+  }
+
+  search_r(list, filter, filter_flags, base, recursive, h, start, length);
   return true;
 }
 
 void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
- const char *base, bool recursive, ARC_entry *h) const
+ const char *base, bool recursive, ARC_entry *h, uint8_t *start, size_t length) const
 {
   std::vector<ARC_entry *> dirs;
   uint8_t *dir_buf;
@@ -352,17 +396,64 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
     if(tmp.filter(filter, filter_flags))
       list.push_back(std::move(tmp));
   }
-  while((h = h->next_header(data, data_length)));
+  while((h = h->next_header(start, length)));
 
+  char path_buf[1024];
   for(ARC_entry *dir : dirs)
   {
     if(dir->get_buffer(&dir_buf, &dir_length))
     {
-      ARC_entry *d = reinterpret_cast<ARC_entry *>(dir_buf);
+      h = reinterpret_cast<ARC_entry *>(dir_buf);
 
-      search_r(list, filter, filter_flags, base, recursive, d);
+      if(base && base[0])
+      {
+        snprintf(path_buf, sizeof(path_buf), "%s%c%s", base, DIR_SEPARATOR, dir->filename());
+      }
+      else
+        snprintf(path_buf, sizeof(path_buf), "%s", dir->filename());
+
+      search_r(list, filter, filter_flags, path_buf, recursive, h, dir_buf, dir_length);
     }
   }
+}
+
+ARC_entry *SparkImage::get_entry(const char *path, uint8_t **start, size_t *length) const
+{
+  char buffer[1024];
+  uint8_t *h_buf = data;
+  size_t h_length = data_length;
+  ARC_entry *h;
+
+  snprintf(buffer, sizeof(buffer), "%s", path);
+  path_clean_slashes(buffer);
+
+  char *cursor = buffer;
+  char *current;
+  while((current = path_tokenize(&cursor)))
+  {
+    h = reinterpret_cast<ARC_entry *>(h_buf);
+    if(h->type() == ARC_INVALID)
+      return nullptr;
+
+    do
+    {
+      if(!strcasecmp(current, h->filename()))
+        break;
+    }
+    while((h = h->next_header(h_buf, h_length)));
+
+    if(!h)
+      return nullptr;
+
+    if(cursor)
+    {
+      if(!h->get_buffer(&h_buf, &h_length))
+        return nullptr;
+    }
+  }
+  *start = h_buf;
+  *length = h_length;
+  return h;
 }
 
 
@@ -383,7 +474,7 @@ public:
       if(!h.is_valid())
         return nullptr;
 
-      if(h.type() >= SPARK_END_OF_ARCHIVE)
+      if(h.is_spark())
         is_spark = true;
     }
     while(h.next_header(fp));
