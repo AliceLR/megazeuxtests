@@ -148,11 +148,6 @@ public:
      ((uint64_t)year << 40) | ((uint64_t)month << 32) |
      ((uint64_t)day << 24) | (hour << 16) | (minute << 8) | second;
   }
-
-  static uint64_t convert_DOS(uint32_t datetime)
-  {
-    return convert_DOS(datetime >> 16, datetime & 0xffff);
-  }
 };
 
 #endif /* MZXTEST_DIMGUTIL_FILEIO_HPP */

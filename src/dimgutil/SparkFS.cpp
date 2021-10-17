@@ -26,7 +26,7 @@
 #include "../format.hpp"
 
 
-enum ARCType
+enum ARC_type
 {
   END_OF_ARCHIVE,
   UNPACKED_OLD,
@@ -38,6 +38,10 @@ enum ARCType
   CRUNCHED_7,
   CRUNCHED,
   SQUASHED,
+
+  ARCHIVE_INFO = 20,
+  FILE_INFO    = 21,
+  OS_INFO      = 22,
 
   SPARK_END_OF_ARCHIVE = 0x80,
   SPARK_UNPACKED_OLD   = 0x81,
@@ -56,7 +60,8 @@ struct ARC_entry
   /*  1 */ //uint8_t  type;
   /*  2 */ //char     filename[13];
   /* 15 */ //uint32_t compressed_size;
-  /* 19 */ //uint32_t dos_timestamp;
+  /* 19 */ //uint16_t dos_date;
+  /* 21 */ //uint16_t dos_time;
   /* 23 */ //uint16_t crc16;
   /* 25 */ //uint32_t uncompressed_size;
   /* 29 */
@@ -72,7 +77,7 @@ struct ARC_entry
     return data[0] == 0x1a && type() != ARC_INVALID;
   }
 
-  ARCType type() const
+  ARC_type type() const
   {
     switch(data[1])
     {
@@ -86,14 +91,19 @@ struct ARC_entry
       case CRUNCHED_7:
       case CRUNCHED:
       case SQUASHED:
+      case ARCHIVE_INFO:
+      case FILE_INFO:
+      case OS_INFO:
       case SPARK_END_OF_ARCHIVE:
       case SPARK_UNPACKED_OLD:
       case SPARK_UNPACKED:
       case SPARK_PACKED:
       case SPARK_CRUNCHED:
       case SPARK_SQUASHED:
+        return static_cast<ARC_type>(data[1] & 0x7f); // & 0x7f to convert Spark types to normal.
+
       case SPARK_COMPRESSED:
-        return static_cast<ARCType>(data[1]);
+        return SPARK_COMPRESSED; // Leave as 255.
     }
     return ARC_INVALID;
   }
@@ -108,9 +118,15 @@ struct ARC_entry
     return mem_u32le(data + 15);
   }
 
-  uint32_t dos_timestamp() const
+  /* Some places erroneously claim the timestamp is a single little endian u32 with date in the high bytes. */
+  uint16_t dos_date() const
   {
-    return mem_u32le(data + 19);
+    return mem_u16le(data + 19);
+  }
+
+  uint16_t dos_time() const
+  {
+    return mem_u16le(data + 21);
   }
 
   uint16_t crc16() const
@@ -139,6 +155,13 @@ struct ARC_entry
     return true;
   }
 
+  int get_header_size() const
+  {
+    if(static_cast<ARC_type>(data[1]) >= SPARK_END_OF_ARCHIVE)
+      return 41;
+    return 29;
+  }
+
   /**
    * Get the next header for an ARC_entry that exists in a stream.
    * The returned ARC_entry * will be a pointer to this entry, and the
@@ -146,7 +169,7 @@ struct ARC_entry
    */
   ARC_entry *next_header(FILE *fp)
   {
-    ARCType t = type();
+    ARC_type t = type();
     if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE)
       return nullptr;
 
@@ -171,14 +194,11 @@ struct ARC_entry
     if(current < data_start || current >= data_end)
       return nullptr;
 
-    ARCType t = type();
+    ARC_type t = type();
     if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE)
       return nullptr;
 
-    ptrdiff_t header_size = 29;
-    if(t >= SPARK_END_OF_ARCHIVE)
-      header_size += 12;
-
+    ptrdiff_t header_size = get_header_size();
     ptrdiff_t offset = compressed_size() + header_size;
 
     if(offset > data_end - current || header_size > data_end - current - offset)
@@ -187,6 +207,65 @@ struct ARC_entry
     ARC_entry *ret = reinterpret_cast<ARC_entry *>(current + offset);
     ret->data[14] = '\0';
     return ret;
+  }
+
+  /**
+   * Only use on headers stored in continuous archive memory pls :-(
+   */
+  bool get_buffer(uint8_t **dest, size_t *dest_length)
+  {
+    if(!is_valid())
+      return false;
+
+    *dest = data + get_header_size();
+    *dest_length = compressed_size();
+    return true;
+  }
+
+  int get_filetype(bool is_dir) const
+  {
+    if(is_dir)
+      return FileInfo::IS_DIRECTORY;
+    switch(type())
+    {
+      case ARCHIVE_INFO:
+      case FILE_INFO:
+      case OS_INFO:
+        return FileInfo::IS_INFO;
+      default:
+        return 0;
+    }
+  }
+
+
+  /**
+   * Determine if a block of memory represents an ARC/Spark archive.
+   * `buffer_start` generally should be this archive + get_header_size()
+   * and `buffer_length` generally should be `uncompressed_size()`.
+   */
+  static bool is_valid_arc(uint8_t *buffer_start, size_t buffer_length)
+  {
+    ARC_entry *h = reinterpret_cast<ARC_entry *>(buffer_start);
+    do
+    {
+      if(!h->is_valid())
+        return false;
+    }
+    while((h = h->next_header(buffer_start, buffer_length)));
+    return true;
+  }
+
+  static bool is_info_type(ARC_type t)
+  {
+    switch(t)
+    {
+      case ARCHIVE_INFO:
+      case FILE_INFO:
+      case OS_INFO:
+        return true;
+      default:
+        return false;
+    }
   }
 };
 
@@ -215,10 +294,16 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+
+  void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
+   const char *base, bool recursive, ARC_entry *h) const;
 };
 
 bool SparkImage::PrintSummary() const
 {
+  if(error_state)
+    return false;
+
   format::line("Type",     "%s", type);
   format::line("Media",    "%s", media);
   format::line("Size",     "%zu", data_length);
@@ -229,8 +314,55 @@ bool SparkImage::PrintSummary() const
 bool SparkImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
  const char *base, bool recursive) const
 {
-  // FIXME
-  return false;
+  if(error_state)
+    return false;
+
+  ARC_entry *first = reinterpret_cast<ARC_entry *>(data);
+
+  search_r(list, filter, filter_flags, base, recursive, first);
+  return true;
+}
+
+void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
+ const char *base, bool recursive, ARC_entry *h) const
+{
+  std::vector<ARC_entry *> dirs;
+  uint8_t *dir_buf;
+  size_t dir_length;
+
+  do
+  {
+    // It might be possible for directories to be compressed, but detection would
+    // require partially unpacking them preemptively. Only scan uncompressed nested archives!
+    bool is_dir = false;
+    if(h->is_valid() && (h->type() == UNPACKED || h->type() == UNPACKED_OLD))
+    {
+      if(h->get_buffer(&dir_buf, &dir_length) && ARC_entry::is_valid_arc(dir_buf, dir_length))
+      {
+        is_dir = true;
+        if(recursive)
+          dirs.push_back(h);
+      }
+    }
+
+    FileInfo tmp(base, h->filename(), h->get_filetype(is_dir), h->uncompressed_size());
+    tmp.priv = h;
+    tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
+
+    if(tmp.filter(filter, filter_flags))
+      list.push_back(std::move(tmp));
+  }
+  while((h = h->next_header(data, data_length)));
+
+  for(ARC_entry *dir : dirs)
+  {
+    if(dir->get_buffer(&dir_buf, &dir_length))
+    {
+      ARC_entry *d = reinterpret_cast<ARC_entry *>(dir_buf);
+
+      search_r(list, filter, filter_flags, base, recursive, d);
+    }
+  }
 }
 
 
