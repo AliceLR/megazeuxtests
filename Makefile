@@ -8,6 +8,7 @@ LINKCXX  := ${CXX}
 
 ifneq (${MSYSTEM},)
 BINEXT := .exe
+LDLIBS += -lshlwapi
 endif
 
 SRC  = src
@@ -46,6 +47,7 @@ DIMGUTIL_EXE  := dimgutil${BINEXT}
 DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/dimgutil.o \
   ${DIMG_OBJ}/DiskImage.o \
+  ${DIMG_OBJ}/FileIO.o \
   ${DIMG_OBJ}/FileInfo.o \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/FAT.o \

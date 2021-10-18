@@ -209,8 +209,8 @@ void FileInfo::print() const
     snprintf(size_str, sizeof(size_str), "%15zu", size);
 
   fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  : %s\n",
-    (unsigned)(modify_d >> 40), (unsigned)((modify_d >> 32) & 0xff), (unsigned)((modify_d >> 24) & 0xff),
-    (unsigned)((modify_d >> 16) & 0xff), (unsigned)((modify_d >> 8) & 0xff), (unsigned)(modify_d & 0xff),
+    date_year(modify_d), date_month(modify_d), date_day(modify_d),
+    time_hours(modify_d), time_minutes(modify_d), time_seconds(modify_d),
     size_str, name()
   );
 }

@@ -14,8 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef MZXTEST_DIMGUTIL_FILEIO_HPP
-#define MZXTEST_DIMGUTIL_FILEIO_HPP
+#ifndef MZXTEST_DIMGUTIL_FILEINFO_HPP
+#define MZXTEST_DIMGUTIL_FILEINFO_HPP
 
 #include <stdint.h>
 
@@ -148,6 +148,36 @@ public:
      ((uint64_t)year << 40) | ((uint64_t)month << 32) |
      ((uint64_t)day << 24) | (hour << 16) | (minute << 8) | second;
   }
+
+  static uint16_t date_year(uint64_t d)
+  {
+    return d >> 40;
+  }
+
+  static uint8_t date_month(uint64_t d)
+  {
+    return (d >> 32) & 0xff;
+  }
+
+  static uint8_t date_day(uint64_t d)
+  {
+    return (d >> 24) & 0xff;
+  }
+
+  static uint8_t time_hours(uint64_t d)
+  {
+    return (d >> 16) & 0xff;
+  }
+
+  static uint8_t time_minutes(uint64_t d)
+  {
+    return (d >> 8) & 0xff;
+  }
+
+  static uint8_t time_seconds(uint64_t d)
+  {
+    return d & 0xff;
+  }
 };
 
-#endif /* MZXTEST_DIMGUTIL_FILEIO_HPP */
+#endif /* MZXTEST_DIMGUTIL_FILEINFO_HPP */
