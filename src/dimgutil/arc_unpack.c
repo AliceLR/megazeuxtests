@@ -16,6 +16,7 @@
 
 #include "arc_unpack.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -262,24 +263,37 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
     {
       arc->in_rle_code = 0;
       if(i >= src_len)
+      {
+        //fprintf(stderr, "end of input stream mid-code @ %zu\n", i);
         return -1;
+      }
 
       if(src[i] == 0)
       {
         if(arc->rle_out >= dest_len)
+        {
+          //fprintf(stderr, "end of output stream @ %zu emitting 0x90\n", i);
           return -1;
+        }
 
+        //fprintf(stderr, "@ %zu: literal 0x90\n", i);
         dest[arc->rle_out++] = 0x90;
         arc->last_code = 0x90;
       }
       else
       {
-        if(arc->rle_out + src[i] > dest_len)
+        len = src[i] - 1;
+        if(arc->rle_out + len > dest_len)
+        {
+          //fprintf(stderr, "end of output stream @ %zu emitting RLE of %02xh times %zu\n", i, arc->last_code, len);
           return -1;
+        }
 
-        memset(dest + arc->rle_out, arc->last_code, src[i]);
-        arc->rle_out += src[i];
+        //fprintf(stderr, "@ %zu: run of %02xh times %zu\n", i, arc->last_code, len);
+        memset(dest + arc->rle_out, arc->last_code, len);
+        arc->rle_out += len;
       }
+      i++;
     }
 
     start = i;
@@ -290,14 +304,18 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
     {
       len = i - start;
       if(len + arc->rle_out > dest_len)
+      {
+        //fprintf(stderr, "end of output_stream @ %zu emitting literal block of length %zu\n", i, len);
         return -1;
+      }
 
+      //fprintf(stderr, "@ %zu: literal block of length %zu\n", i, len);
       memcpy(dest + arc->rle_out, src + start, len);
       arc->rle_out += len;
       arc->last_code = src[i - 1];
     }
 
-    if(src[i] == 0x90)
+    if(i < src_len && src[i] == 0x90)
       arc->in_rle_code = 1;
   }
   arc->rle_in += i;
@@ -312,10 +330,16 @@ int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
     return -1;
 
   if(arc_unrle90_block(&arc, dest, dest_len, src, src_len) != 0)
+  {
+    //fprintf(stderr, "arc_unrle90_block failed\n");
     goto err;
+  }
 
   if(arc.rle_out != dest_len)
+  {
+    //fprintf(stderr, "out %zu != buffer size %zu\n", arc.rle_out, dest_len);
     goto err;
+  }
 
   arc_unpack_free(&arc);
   return 0;

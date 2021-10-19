@@ -372,7 +372,7 @@ bool SparkImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_
     if(!_length || !_h->is_valid())
     {
       // Base is file.
-      FileInfo tmp("", base, h->get_filetype(false), h->uncompressed_size());
+      FileInfo tmp("", base, h->get_filetype(false), h->uncompressed_size(), h->compressed_size());
       tmp.priv = h;
       tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
       if(tmp.filter(filter, filter_flags))
@@ -473,13 +473,12 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
 
     ARC_type type = h->type();
 
-    std::unique_ptr<uint8_t *> _free_me(nullptr);
+    std::unique_ptr<uint8_t> _free_me(nullptr);
     if(type != UNPACKED_OLD && type != UNPACKED)
     {
-    /*
-      _free_me = output = new uint8_t[output_size];
       output_size = h->uncompressed_size();
-    */
+      output = new uint8_t[output_size];
+      _free_me.reset(output);
     }
 
     switch(type)
@@ -488,6 +487,14 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
       case UNPACKED:
         output = const_cast<uint8_t *>(input);
         output_size = input_size;
+        break;
+
+      case PACKED:
+        if(arc_unpack_rle90(output, output_size, input, input_size) < 0)
+        {
+          format::error("failed to unpack file");
+          return false;
+        }
         break;
 
       default:
