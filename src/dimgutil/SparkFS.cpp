@@ -70,7 +70,9 @@ struct ARC_entry
   /* 29 */ //uint8_t  attributes[12];
   /* 41 */
 
+  static constexpr int ARC_HEADER_1_SIZE = 25;
   static constexpr int ARC_HEADER_SIZE = 29;
+  static constexpr int SPARK_HEADER_1_SIZE = ARC_HEADER_1_SIZE + 12;
   static constexpr int SPARK_HEADER_SIZE = ARC_HEADER_SIZE + 12;
 
   uint8_t data[41];
@@ -146,6 +148,9 @@ struct ARC_entry
 
   uint32_t uncompressed_size() const
   {
+    // Type 1 doesn't store a separate uncompressed size field.
+    if(data[1] == UNPACKED_OLD || data[1] == SPARK_UNPACKED_OLD)
+      return mem_u32le(data + 15);
     return mem_u32le(data + 25);
   }
 
@@ -167,6 +172,10 @@ struct ARC_entry
 
   int get_header_size() const
   {
+    if(data[1] == UNPACKED_OLD)
+      return ARC_HEADER_1_SIZE;
+    if(data[1] == SPARK_UNPACKED_OLD)
+      return SPARK_HEADER_1_SIZE;
     if(is_spark())
       return SPARK_HEADER_SIZE;
     return ARC_HEADER_SIZE;

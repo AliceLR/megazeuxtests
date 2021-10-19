@@ -3,6 +3,7 @@ all:
 
 CFLAGS   := -std=gnu99   -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CFLAGS}
 CXXFLAGS := -std=gnu++17 -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
+CC       := @${CC}
 CXX      := @${CXX}
 LINKCXX  := ${CXX}
 
@@ -52,6 +53,7 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/FAT.o \
   ${DIMG_OBJ}/SparkFS.o \
+  ${DIMG_OBJ}/arc_unpack.o \
   ${OBJ}/Config.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}
