@@ -47,6 +47,7 @@ FILE *FileIO::get_file()
 
 bool FileIO::commit(const FileInfo &dest, const char *destdir)
 {
+  // FIXME clean_path_token all destination components
   // FIXME either split dest name to dir+filename or use destdir+filename.
   // FIXME make the destination dir recursively if it doesn't exist.
   // FIXME unlink the destination file if it does exist.

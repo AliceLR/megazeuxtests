@@ -114,4 +114,19 @@ bool FileIO::match_path(const char *path, const char *pattern)
   return fnmatch(pattern, path, FNM_PATHNAME|FNM_NOESCAPE) == 0;
 }
 
+bool FileIO::clean_path_token(char *filename)
+{
+  // The only reserved chars generally are \0 (not an issue) and /.
+  // Reject any values <32 since they're of questionable use and
+  // potentially annoying or dangerous.
+  while(*filename)
+  {
+    if(*filename == '/' || *filename < 32)
+      *filename = '_';
+
+    filename++;
+  }
+  return true;
+}
+
 #endif /* MZXTEST_DIMGUTIL_FILEIO_POSIX_HPP */

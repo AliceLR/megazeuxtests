@@ -62,6 +62,7 @@ public:
   static int  io_get_file_type(const char *path);
   static bool set_file_times(const FileInfo &info, FILE *fp);
   static bool match_path(const char *path, const char *pattern);
+  static bool clean_path_token(char *filename);
 };
 
 #endif /* MZXTEST_DIMGUTIL_FILEIO_HPP */

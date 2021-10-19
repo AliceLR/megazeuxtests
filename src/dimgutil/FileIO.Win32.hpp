@@ -222,4 +222,55 @@ bool FileIO::match_path(const char *path, const char *pattern)
   return PathMatchSpec(path, pattern);
 }
 
+#define FILTER_NAME(fn, str) \
+ (!strncmp(fn, str, strlen(str)) && (fn[strlen(str)] == '\0' || fn[strlen(str)] == '.'))
+#define FILTER_NAME_NUM(fn, str) \
+ (!strncmp(fn, str, strlen(str)) && isdigit((int)fn[strlen(str)]) && (fn[strlen(str)+1] == '\0' || fn[strlen(str)+1] == '.'))
+
+bool FileIO::clean_path_token(char *filename)
+{
+  /**
+   * "Do not use the following reserved names for the name of a file:
+   *
+   * CON, PRN, AUX, NUL, COM1, ... and LPT9.
+   *
+   * Also avoid these names followed immediately by an extension; for example,
+   * NUL.txt is not recommended."
+   */
+  if(FILTER_NAME(filename, "CON") ||
+     FILTER_NAME(filename, "PRN") ||
+     FILTER_NAME(filename, "AUX") ||
+     FILTER_NAME(filename, "NUL") ||
+     FILTER_NAME_NUM(filename, "COM") ||
+     FILTER_NAME_NUM(filename, "LPT"))
+  {
+    filename[2] = '~';
+    return true;
+  }
+
+  while(*filename)
+  {
+    switch(*filename)
+    {
+      case '<':
+      case '>':
+      case ':':
+      case '"':
+      case '/':
+      case '\\':
+      case '|':
+      case '?':
+      case '*':
+        *filename = '_';
+        break;
+      default:
+        if(*filename < 32)
+          *filename = '_';
+        break;
+    }
+    filename++;
+  }
+  return true;
+}
+
 #endif /* MZXTEST_DIMGUTIL_FILEIO_WIN32_HPP */
