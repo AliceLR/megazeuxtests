@@ -53,6 +53,7 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/FAT.o \
   ${DIMG_OBJ}/SparkFS.o \
+  ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
   ${OBJ}/Config.o \
 

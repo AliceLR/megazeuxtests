@@ -14,12 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-/**
- * Unpacker for ARC/ArcFS/Spark compressed streams.
- */
-
-#ifndef MZXTEST_DIMGUTIL_ARC_UNPACK_H
-#define MZXTEST_DIMGUTIL_ARC_UNPACK_H
+#ifndef MZXTEST_DIMGUTIL_ARC_CRC16_H
+#define MZXTEST_DIMGUTIL_ARC_CRC16_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,22 +23,10 @@ extern "C" {
 
 #include <stdint.h>
 
-/* Spark method 0xff: read maximum code width from stream. */
-#define ARC_MAX_CODE_IN_STREAM 0x7fff
-
-#define ARC_RESTRICT __restrict__
-
-int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len);
-
-int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width);
-
-int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width);
+uint16_t arc_crc16(const uint8_t *src, size_t src_len);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MZXTEST_DIMGUTIL_ARC_UNPACK_H */
+#endif /* MZXTEST_DIMGUTIL_ARC_CRC16_H */

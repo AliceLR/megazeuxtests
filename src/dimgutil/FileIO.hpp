@@ -34,7 +34,6 @@ private:
     INIT,
     OPEN,
     SUCCESS,
-    ERROR,
   } state;
 
   FILE *fp;
@@ -52,6 +51,8 @@ public:
     TYPE_FILE,
     TYPE_DIR,
   };
+
+  static bool io_mkdir_recursive(const char *path);
 
   /* Implemented by Win32/POSIX specialized headers. */
   static FILE *io_tempfile(char (&dest)[TEMPFILE_SIZE]);

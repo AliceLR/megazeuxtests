@@ -22,8 +22,8 @@
 
 #include "../common.hpp"
 
-FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size):
- size(_size), flags(0)
+FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size, size_t _packed):
+ size(_size), packed(_packed ? _packed : _size), flags(0)
 {
   set_type(_type);
   set_path_alloc(base, name);
@@ -51,6 +51,7 @@ FileInfo &FileInfo::operator=(const FileInfo &src)
     delete[] path.ptr;
 
   size  = src.size;
+  packed= src.packed;
   priv  = src.priv;
   flags = src.flags;
   access(src.access_d, src.access_ns);
@@ -76,6 +77,7 @@ FileInfo &FileInfo::operator=(FileInfo &&src)
     delete[] path.ptr;
 
   size  = src.size;
+  packed= src.packed;
   priv  = src.priv;
   flags = src.flags;
   access(src.access_d, src.access_ns);
@@ -208,9 +210,9 @@ void FileInfo::print() const
   else
     snprintf(size_str, sizeof(size_str), "%15zu", size);
 
-  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  : %s\n",
+  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  :  %10zu  : %s\n",
     date_year(modify_d), date_month(modify_d), date_day(modify_d),
     time_hours(modify_d), time_minutes(modify_d), time_seconds(modify_d),
-    size_str, name()
+    size_str, packed, name()
   );
 }

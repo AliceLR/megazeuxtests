@@ -26,12 +26,13 @@ enum disk_op
 {
   OP_INFO,
   OP_LIST,
+  OP_EXTRACT,
   NUM_DISK_OPS
 };
 
 static constexpr char op_chars[NUM_DISK_OPS] =
 {
-  'i', 'l',
+  'i', 'l', 'x',
 };
 
 int main(int argc, char *argv[])
@@ -95,6 +96,30 @@ int main(int argc, char *argv[])
 
       fprintf(stderr, "\n  Total: %zu\n", list.size());
       break;
+    }
+
+    case OP_EXTRACT:
+    {
+      // TODO filter
+      // TODO destination directory
+      char *base = (argc > 3) ? argv[3] : nullptr;
+      FileList list;
+
+      disk->PrintSummary();
+      disk->Search(list, base, true);
+
+      fprintf(stderr, "\nExtracting '%s':\n\n", base ? base : "");
+      for(FileInfo &f : list)
+      {
+        f.print();
+        if(!disk->Extract(f))
+        {
+          fprintf(stderr, "  Error: failed to extract '%s'.\n", f.name());
+          break;
+        }
+      }
+
+      fprintf(stderr, "\n  Total: %zu\n", list.size());
     }
   }
 

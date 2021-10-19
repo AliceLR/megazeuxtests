@@ -40,6 +40,7 @@ public:
   virtual bool PrintSummary() const = 0;
   virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const = 0;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const = 0;
 
   /* Shorthand functions. */
   bool Search(FileList &dest, const char *base, bool recursive = false) const

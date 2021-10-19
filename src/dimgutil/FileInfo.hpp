@@ -29,8 +29,9 @@ public:
     IS_DEVICE      = (1<<2),
     IS_INFO        = (1<<3),
     IS_LFN         = (1<<4),
+    IS_REG         = (1<<5),
 
-    TYPEMASK       = (IS_DIRECTORY | IS_VOLUME | IS_DEVICE | IS_INFO | IS_LFN),
+    TYPEMASK       = (IS_DIRECTORY | IS_VOLUME | IS_DEVICE | IS_INFO | IS_LFN | IS_REG),
 
     HAS_NAME_ALLOC = (1<<14),
     HAS_NAME_PTR   = (1<<15),
@@ -50,6 +51,7 @@ public:
   };
 
   size_t size;
+  size_t packed;
 
   /* Backreference to implementation-defined data for operations. */
   void *priv;
@@ -85,7 +87,7 @@ protected:
 public:
   FileInfo(): size(0), priv(0), flags(0) { path.ptr = nullptr; filetime(0); }
 
-  FileInfo(const char *base, const char *name, int type, size_t file_size = 0);
+  FileInfo(const char *base, const char *name, int type, size_t file_size = 0, size_t file_packed = 0);
   FileInfo(const FileInfo &src);
   FileInfo(FileInfo &&src);
   ~FileInfo();

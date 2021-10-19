@@ -157,7 +157,7 @@ int FileIO::io_get_file_type(const char *path)
   {
     attr = GetFileAttributes(path);
   }
-  if(!attr)
+  if(attr == INVALID_FILE_ATTRIBUTES || !attr)
     return TYPE_UNKNOWN;
 
   return (attr & FILE_ATTRIBUTE_DIRECTORY) ? TYPE_DIR : TYPE_FILE;

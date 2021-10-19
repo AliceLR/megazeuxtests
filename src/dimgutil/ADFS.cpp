@@ -124,6 +124,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const override;
 };
 
 bool ADFSImage::PrintSummary() const
@@ -138,6 +139,12 @@ bool ADFSImage::PrintSummary() const
 
 bool ADFSImage::Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
  const char *base, bool recursive) const
+{
+  // FIXME
+  return false;
+}
+
+bool ADFSImage::Extract(const FileInfo &file, const char *destdir) const
 {
   // FIXME
   return false;

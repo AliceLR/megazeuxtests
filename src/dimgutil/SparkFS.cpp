@@ -23,6 +23,10 @@
 #include <string.h>
 
 #include "DiskImage.hpp"
+#include "FileIO.hpp"
+#include "arc_crc16.h"
+#include "arc_unpack.h"
+
 #include "../format.hpp"
 
 
@@ -241,6 +245,16 @@ struct ARC_entry
     return true;
   }
 
+  bool get_buffer(const uint8_t **dest, size_t *dest_length) const
+  {
+    if(!is_valid())
+      return false;
+
+    *dest = data + get_header_size();
+    *dest_length = compressed_size();
+    return true;
+  }
+
   int get_filetype(bool is_dir) const
   {
     if(is_dir)
@@ -252,7 +266,7 @@ struct ARC_entry
       case OS_INFO:
         return FileInfo::IS_INFO;
       default:
-        return 0;
+        return FileInfo::IS_REG;
     }
   }
 
@@ -316,6 +330,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive, ARC_entry *h, uint8_t *start, size_t length) const;
@@ -398,7 +413,7 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
       }
     }
 
-    FileInfo tmp(base, h->filename(), h->get_filetype(is_dir), h->uncompressed_size());
+    FileInfo tmp(base, h->filename(), h->get_filetype(is_dir), h->uncompressed_size(), h->compressed_size());
     tmp.priv = h;
     tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
 
@@ -424,6 +439,73 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
       search_r(list, filter, filter_flags, path_buf, recursive, h, dir_buf, dir_length);
     }
   }
+}
+
+bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
+{
+  const ARC_entry *h = reinterpret_cast<const ARC_entry *>(file.priv);
+
+  if(file.get_type() & FileInfo::IS_DIRECTORY)
+  {
+    // FIXME destdir!
+    if(!FileIO::io_mkdir_recursive(file.name()))
+    {
+      format::error("failed mkdir");
+      return false;
+    }
+  }
+  else
+
+  if(file.get_type() & FileInfo::IS_REG)
+  {
+    FileIO output_file;
+    FILE *fp = output_file.get_file();
+    if(!fp)
+      return false;
+
+    const uint8_t *input;
+    size_t input_size;
+    if(!h->get_buffer(&input, &input_size))
+      return false;
+
+    uint8_t *output;
+    size_t output_size;
+
+    ARC_type type = h->type();
+
+    std::unique_ptr<uint8_t *> _free_me(nullptr);
+    if(type != UNPACKED_OLD && type != UNPACKED)
+    {
+    /*
+      _free_me = output = new uint8_t[output_size];
+      output_size = h->uncompressed_size();
+    */
+    }
+
+    switch(type)
+    {
+      case UNPACKED_OLD:
+      case UNPACKED:
+        output = const_cast<uint8_t *>(input);
+        output_size = input_size;
+        break;
+
+      default:
+        fprintf(stderr, "  ERROR: unsupported compression type %u\n", type);
+        return false;
+    }
+
+    uint16_t crc16 = arc_crc16(output, output_size);
+    if(crc16 != h->crc16())
+      format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), crc16);
+
+    if(fwrite(output, 1, output_size, fp) != output_size)
+      return false;
+
+    return output_file.commit(file, destdir);
+  }
+
+  return true;
 }
 
 ARC_entry *SparkImage::get_entry(const char *path, uint8_t **start, size_t *length) const
