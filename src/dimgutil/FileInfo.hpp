@@ -74,6 +74,7 @@ public:
 
 protected:
   uint16_t flags;
+  uint16_t method;
 
   /* Full path name relative to archive/filesystem root. */
   union
@@ -87,7 +88,7 @@ protected:
 public:
   FileInfo(): size(0), priv(0), flags(0) { path.ptr = nullptr; filetime(0); }
 
-  FileInfo(const char *base, const char *name, int type, size_t file_size = 0, size_t file_packed = 0);
+  FileInfo(const char *base, const char *name, int type, size_t file_size = 0, size_t file_packed = 0, uint16_t method = 0);
   FileInfo(const FileInfo &src);
   FileInfo(FileInfo &&src);
   ~FileInfo();
@@ -135,6 +136,7 @@ public:
 
   /* Print summary. */
   void print() const;
+  static void print_header();
 
   /* Convert DOS time to seconds. */
   static uint64_t convert_DOS(uint16_t _date, uint16_t _time)

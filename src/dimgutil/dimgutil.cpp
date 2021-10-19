@@ -91,6 +91,7 @@ int main(int argc, char *argv[])
       disk->Search(list, base, true);
 
       fprintf(stderr, "\nListing '%s':\n\n", base ? base : "");
+      FileInfo::print_header();
       for(FileInfo &f : list)
         f.print();
 
@@ -109,6 +110,7 @@ int main(int argc, char *argv[])
       disk->Search(list, base, true);
 
       fprintf(stderr, "\nExtracting '%s':\n\n", base ? base : "");
+      FileInfo::print_header();
       for(FileInfo &f : list)
       {
         f.print();

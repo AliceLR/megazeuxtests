@@ -372,7 +372,7 @@ bool SparkImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_
     if(!_length || !_h->is_valid())
     {
       // Base is file.
-      FileInfo tmp("", base, h->get_filetype(false), h->uncompressed_size(), h->compressed_size());
+      FileInfo tmp("", base, h->get_filetype(false), h->uncompressed_size(), h->compressed_size(), h->data[1]);
       tmp.priv = h;
       tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
       if(tmp.filter(filter, filter_flags))
@@ -413,7 +413,7 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
       }
     }
 
-    FileInfo tmp(base, h->filename(), h->get_filetype(is_dir), h->uncompressed_size(), h->compressed_size());
+    FileInfo tmp(base, h->filename(), h->get_filetype(is_dir), h->uncompressed_size(), h->compressed_size(), h->data[1]);
     tmp.priv = h;
     tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
 

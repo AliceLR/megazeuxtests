@@ -22,8 +22,8 @@
 
 #include "../common.hpp"
 
-FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size, size_t _packed):
- size(_size), packed(_packed ? _packed : _size), flags(0)
+FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size, size_t _packed, uint16_t _method):
+ size(_size), packed(_packed ? _packed : _size), flags(0), method(_method)
 {
   set_type(_type);
   set_path_alloc(base, name);
@@ -54,6 +54,7 @@ FileInfo &FileInfo::operator=(const FileInfo &src)
   packed= src.packed;
   priv  = src.priv;
   flags = src.flags;
+  method= src.method;
   access(src.access_d, src.access_ns);
   create(src.create_d, src.create_ns);
   modify(src.modify_d, src.modify_ns);
@@ -80,6 +81,7 @@ FileInfo &FileInfo::operator=(FileInfo &&src)
   packed= src.packed;
   priv  = src.priv;
   flags = src.flags;
+  method= src.method;
   access(src.access_d, src.access_ns);
   create(src.create_d, src.create_ns);
   modify(src.modify_d, src.modify_ns);
@@ -210,9 +212,18 @@ void FileInfo::print() const
   else
     snprintf(size_str, sizeof(size_str), "%15zu", size);
 
-  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  :  %10zu  : %s\n",
+  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  :  %10zu  : %4Xh  : %s\n",
     date_year(modify_d), date_month(modify_d), date_day(modify_d),
     time_hours(modify_d), time_minutes(modify_d), time_seconds(modify_d),
-    size_str, packed, name()
+    size_str, packed, method, name()
   );
+}
+
+void FileInfo::print_header()
+{
+  static constexpr const char LINES[] = "--------------------";
+  fprintf(stderr, "  %-19.19s     %-15.15s    %-11.11s    %-6.6s   %-8.8s\n",
+   "Modified", "Type/size", "Stored size", "Method", "Filename");
+  fprintf(stderr, "  %-19.19s  :  %-15.15s  : %-11.11s  : %-6.6s : %-8.8s\n",
+   LINES, LINES, LINES, LINES, LINES);
 }
