@@ -27,6 +27,8 @@ extern "C" {
 
 #include <stdint.h>
 
+/* ARC method 0x08: read maximum code width from stream, but ignore it. */
+#define ARC_IGNORE_CODE_IN_STREAM 0x7ffe
 /* Spark method 0xff: read maximum code width from stream. */
 #define ARC_MAX_CODE_IN_STREAM 0x7fff
 

@@ -508,6 +508,14 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
         }
         break;
 
+      case CRUNCHED:
+        if(arc_unpack_lzw_rle90(output, output_size, input, input_size, 9, ARC_IGNORE_CODE_IN_STREAM))
+        {
+          format::error("failed to uncrunch (8) file");
+          return false;
+        }
+        break;
+
       case SQUASHED:
         if(arc_unpack_lzw(output, output_size, input, input_size, 9, 13))
         {

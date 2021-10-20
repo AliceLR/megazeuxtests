@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+//#define ARC_DEBUG
+
 #define ARC_NO_CODE 0xffff
 #define ARC_RESET_CODE 256
 
@@ -60,7 +62,7 @@ struct arc_unpack
   struct arc_code *tree;
 };
 
-static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width, int is_spark)
+static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width, int is_dynamic)
 {
   arc->rle_out = 0;
   arc->rle_in = 0;
@@ -73,7 +75,7 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   arc->lzw_in = 0;
   arc->lzw_out = 0;
   arc->max_code = (1 << max_width);
-  arc->first_code = 257;
+  arc->first_code = is_dynamic ? 257 : 256;
   arc->current_width = init_width;
   arc->init_width = init_width;
   arc->max_width = max_width;
@@ -91,9 +93,6 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
     arc->tree = (struct arc_code *)calloc(1 << max_width, sizeof(struct arc_code));
     if(!arc->tree)
       return -1;
-
-    if(init_width == max_width && !is_spark)
-      arc->first_code = 256;
 
     for(i = 0; i < 256; i++)
     {
@@ -123,8 +122,10 @@ static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_
   switch(src_len - arc->lzw_in)
   {
     case 1:
-      ret = pos[0];
-      break;
+      // Not usable...
+      arc->lzw_bits_in += num_bits;
+      arc->lzw_in += 1;
+      return -1;
     case 2:
       ret = pos[0] | (pos[1] << 8UL);
       break;
@@ -184,7 +185,9 @@ static void arc_unlzw_add(struct arc_unpack *arc)
     if(arc->next_code >= (1U << arc->current_width) && arc->current_width < arc->max_width)
     {
       arc->current_width++;
-      //fprintf(stderr, "width expanded to %u\n", arc->current_width);
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "width expanded to %u\n", arc->current_width);
+      #endif
     }
   }
 }
@@ -219,8 +222,11 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
   uint16_t start_code;
   uint16_t code;
   uint16_t len;
+  int set_last_first;
 
-//  int num_debug = 0;
+  #ifdef ARC_DEBUG
+  int num_debug = 0;
+  #endif
 
   while(arc->lzw_out < dest_len)
   {
@@ -228,6 +234,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
     if(arc->continue_code)
     {
       code = arc->continue_code;
+      set_last_first = 0;
       goto continue_code;
     }
 
@@ -235,18 +242,20 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
     if(code >= arc->max_code)
       break;
 
-/*
+    #ifdef ARC_DEBUG
     fprintf(stderr, "%04x ", code);
     num_debug++;
     if(!(num_debug & 15))
       fprintf(stderr, "\n");
-*/
+    #endif
 
     if(code == ARC_RESET_CODE && arc->first_code == 257)
     {
       size_t i;
       // Reset width for dynamic modes 8, 9, and 255.
-      //fprintf(stderr, "reset at size = %u codes\n", arc->next_code);
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "reset at size = %u codes\n", arc->next_code);
+      #endif
       arc->next_code = arc->first_code;
       arc->current_width = arc->init_width;
       arc->last_code = ARC_NO_CODE;
@@ -265,6 +274,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
     }
 
     // Emit code.
+    set_last_first = 1;
 
 continue_code:
     start_code = code;
@@ -274,7 +284,13 @@ continue_code:
     {
       len = arc_unlzw_get_length(arc, e);
       if(!len)
+      {
+        #ifdef ARC_DEBUG
+        fprintf(stderr, "failed to get length for %04xh (code count is %04xh)\n",
+         code, arc->next_code);
+        #endif
         return -1;
+      }
     }
     else
       len = arc->continue_left;
@@ -302,11 +318,14 @@ continue_code:
       *(pos--) = code;
       e = &(arc->tree[e->prev]);
     }
+    // Only set this if this is the tail end of the chain,
+    // i.e., the first section written.
+    if(set_last_first)
+      arc->last_first_value = code;
 
     if(arc->continue_code)
       return 0;
 
-    arc->last_first_value = code;
     if(!arc->kwkwk)
       arc_unlzw_add(arc);
 
@@ -323,14 +342,16 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
   size_t len;
   size_t i;
 
-  for(i = 0; i < src_len; i++)
+  for(i = 0; i < src_len;)
   {
     if(arc->in_rle_code)
     {
       arc->in_rle_code = 0;
       if(i >= src_len)
       {
-        //fprintf(stderr, "end of input stream mid-code @ %zu\n", i);
+        #ifdef ARC_DEBUG
+        fprintf(stderr, "end of input stream mid-code @ %zu\n", i);
+        #endif
         return -1;
       }
 
@@ -338,11 +359,15 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
       {
         if(arc->rle_out >= dest_len)
         {
-          //fprintf(stderr, "end of output stream @ %zu emitting 0x90\n", i);
+          #ifdef ARC_DEBUG
+          fprintf(stderr, "end of output stream @ %zu emitting 0x90\n", i);
+          #endif
           return -1;
         }
 
-        //fprintf(stderr, "@ %zu: literal 0x90\n", i);
+        #ifdef ARC_DEBUG
+        fprintf(stderr, "@ %zu: literal 0x90\n", i);
+        #endif
         dest[arc->rle_out++] = 0x90;
         arc->last_byte = 0x90;
       }
@@ -351,11 +376,16 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
         len = src[i] - 1;
         if(arc->rle_out + len > dest_len)
         {
-          //fprintf(stderr, "end of output stream @ %zu emitting RLE of %02xh times %zu\n", i, arc->last_byte, len);
+          #ifdef ARC_DEBUG
+          fprintf(stderr, "end of output stream @ %zu: run of %02xh times %zu\n",
+           i, arc->last_byte, len);
+          #endif
           return -1;
         }
 
-        //fprintf(stderr, "@ %zu: run of %02xh times %zu\n", i, arc->last_byte, len);
+        #ifdef ARC_DEBUG
+        fprintf(stderr, "@ %zu: run of %02xh times %zu\n", i, arc->last_byte, len);
+        #endif
         memset(dest + arc->rle_out, arc->last_byte, len);
         arc->rle_out += len;
       }
@@ -371,18 +401,26 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
       len = i - start;
       if(len + arc->rle_out > dest_len)
       {
-        //fprintf(stderr, "end of output_stream @ %zu emitting literal block of length %zu\n", i, len);
+        #ifdef ARC_DEBUG
+        fprintf(stderr, "end of output_stream @ %zu: block of length %zu\n",
+          i, len);
+        #endif
         return -1;
       }
 
-      //fprintf(stderr, "@ %zu: literal block of length %zu\n", i, len);
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "@ %zu: block of length %zu\n", i, len);
+      #endif
       memcpy(dest + arc->rle_out, src + start, len);
       arc->rle_out += len;
       arc->last_byte = src[i - 1];
     }
 
     if(i < src_len && src[i] == 0x90)
+    {
       arc->in_rle_code = 1;
+      i++;
+    }
   }
   arc->rle_in += i;
   return 0;
@@ -397,13 +435,17 @@ int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
 
   if(arc_unrle90_block(&arc, dest, dest_len, src, src_len) != 0)
   {
-    //fprintf(stderr, "arc_unrle90_block failed\n");
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "arc_unrle90_block failed\n");
+    #endif
     goto err;
   }
 
   if(arc.rle_out != dest_len)
   {
-    //fprintf(stderr, "out %zu != buffer size %zu\n", arc.rle_out, dest_len);
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "out %zu != buffer size %zu\n", arc.rle_out, dest_len);
+    #endif
     goto err;
   }
 
@@ -419,7 +461,7 @@ int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len, int init_width, int max_width)
 {
   struct arc_unpack arc;
-  int is_spark = 0;
+  int is_dynamic = (init_width != max_width);
 
   if(max_width == ARC_MAX_CODE_IN_STREAM)
   {
@@ -429,23 +471,27 @@ int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
     max_width = src[0];
     src++;
     src_len--;
-    is_spark = 1;
     if(max_width < 9 || max_width > 16)
       return -1;
   }
 
-  if(arc_unpack_init(&arc, init_width, max_width, is_spark) != 0)
+  if(arc_unpack_init(&arc, init_width, max_width, is_dynamic) != 0)
     return -1;
 
   if(arc_unlzw_block(&arc, dest, dest_len, src, src_len))
   {
-    //fprintf(stderr, "arc_unlzw_block failed (%zu in, %zu out)\n", arc.lzw_in, arc.lzw_out);
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "arc_unlzw_block failed (%zu in, %zu out)\n",
+     arc.lzw_in, arc.lzw_out);
+    #endif
     goto err;
   }
 
   if(arc.lzw_out != dest_len)
   {
-    //fprintf(stderr, "out %zu != buffer size %zu\n", arc.lzw_out, dest_len);
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "out %zu != buffer size %zu\n", arc.lzw_out, dest_len);
+    #endif
     goto err;
   }
 
@@ -462,28 +508,53 @@ int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
 {
   struct arc_unpack arc;
   uint8_t buffer[4096];
+  int is_dynamic = (init_width != max_width);
 
   // This is only used for Spark method 0xff, which doesn't use RLE.
   if(max_width == ARC_MAX_CODE_IN_STREAM)
     return -1;
+  if(max_width == ARC_IGNORE_CODE_IN_STREAM)
+  {
+    src++;
+    src_len--;
+    max_width = 12;
+  }
   if(max_width < 9 || max_width > 16)
     return -1;
 
-  if(arc_unpack_init(&arc, init_width, max_width, 0) != 0)
+  if(arc_unpack_init(&arc, init_width, max_width, is_dynamic) != 0)
     return -1;
 
   while(arc.lzw_in < src_len)
   {
     arc.lzw_out = 0;
-    if(arc_unlzw_block(&arc, buffer, sizeof(buffer), src, src_len))
+    if(arc_unlzw_block(&arc, buffer, sizeof(buffer), src, src_len) || !arc.lzw_out)
+    {
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "arc_unlzw_block failed "
+       "(%zu in, %zu out in buffer, %zu out in stream)\n",
+       arc.lzw_in, arc.lzw_out, arc.rle_out);
+      #endif
       goto err;
+    }
 
     if(arc_unrle90_block(&arc, dest, dest_len, buffer, arc.lzw_out))
+    {
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "arc_unrle90_block failed (%zu in, %zu out)\n",
+       arc.lzw_in, arc.rle_out);
+      #endif
       goto err;
+    }
   }
 
   if(arc.rle_out != dest_len)
+  {
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "out %zu != buffer size %zu\n", arc.rle_out, dest_len);
+    #endif
     goto err;
+  }
 
   arc_unpack_free(&arc);
   return 0;
