@@ -458,8 +458,7 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
 
   if(file.get_type() & FileInfo::IS_DIRECTORY)
   {
-    // FIXME destdir!
-    if(!FileIO::io_mkdir_recursive(file.name()))
+    if(!FileIO::create_directory(file.name(), destdir))
     {
       format::error("failed mkdir");
       return false;

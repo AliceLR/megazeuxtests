@@ -29,6 +29,10 @@ static bool _io_mkdir_recursive(char (&buffer)[1024])
 
   while((current = path_tokenize(&cursor)))
   {
+    // Fix dir separators.
+    if(current > buffer)
+      current[-1] = DIR_SEPARATOR;
+
     int res = FileIO::io_get_file_type(buffer);
     if(res == FileIO::TYPE_UNKNOWN)
     {
@@ -39,10 +43,6 @@ static bool _io_mkdir_recursive(char (&buffer)[1024])
 
     if(res == FileIO::TYPE_FILE)
       return false;
-
-    // Fix dir separators.
-    if(current > buffer)
-      current[-1] = DIR_SEPARATOR;
   }
   return true;
 }
@@ -67,6 +67,17 @@ FILE *FileIO::get_file()
   return fp;
 }
 
+static void apply_destdir(char (&buffer)[1024], const char *name, const char *destdir = nullptr)
+{
+  if(destdir)
+  {
+    snprintf(buffer, sizeof(buffer), "%s%c%s", destdir, DIR_SEPARATOR, name);
+    path_clean_slashes(buffer);
+  }
+  else
+    snprintf(buffer, sizeof(buffer), "%s", name);
+}
+
 bool FileIO::commit(const FileInfo &dest, const char *destdir)
 {
   if(state != OPEN)
@@ -76,19 +87,8 @@ bool FileIO::commit(const FileInfo &dest, const char *destdir)
   char *current;
   char *cursor;
   char *last_separator = nullptr;
-  const char *name = dest.name();
 
-  if(destdir)
-  {
-    const char *sep = strrchr(name, DIR_SEPARATOR);
-    if(sep)
-      name = sep + 1;
-
-    snprintf(buffer, sizeof(buffer), "%s%c%s", destdir, DIR_SEPARATOR, name);
-    path_clean_slashes(buffer);
-  }
-  else
-    snprintf(buffer, sizeof(buffer), "%s", dest.name());
+  apply_destdir(buffer, dest.name(), destdir);
 
   // 1. Clean illegal characters from the destination path.
   cursor = buffer;
@@ -170,10 +170,10 @@ bool FileIO::commit(const FileInfo &dest, const char *destdir)
   return true;
 }
 
-bool FileIO::io_mkdir_recursive(const char *path)
+bool FileIO::create_directory(const char *filename, const char *destdir)
 {
   char buffer[1024];
-  snprintf(buffer, sizeof(buffer), "%s", path);
+  apply_destdir(buffer, filename, destdir);
 
   return _io_mkdir_recursive(buffer);
 }

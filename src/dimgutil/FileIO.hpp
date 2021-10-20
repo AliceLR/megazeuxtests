@@ -52,7 +52,7 @@ public:
     TYPE_DIR,
   };
 
-  static bool io_mkdir_recursive(const char *path);
+  static bool create_directory(const char *filename, const char *destdir = nullptr);
 
   /* Implemented by Win32/POSIX specialized headers. */
   static FILE *io_tempfile(char (&dest)[TEMPFILE_SIZE]);
