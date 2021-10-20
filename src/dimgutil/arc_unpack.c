@@ -32,6 +32,17 @@ struct arc_code
   uint8_t value;
 };
 
+struct arc_lookup
+{
+  uint16_t value;
+  uint8_t length;
+};
+
+struct arc_huffman_index
+{
+  int16_t value[2];
+};
+
 struct arc_unpack
 {
   // RLE90.
@@ -40,7 +51,7 @@ struct arc_unpack
   int in_rle_code;
   int last_byte;
 
-  // LZW.
+  // LZW and huffman.
   uint16_t codes_buffered[8];
   unsigned buffered_pos;
   unsigned buffered_width;
@@ -60,6 +71,9 @@ struct arc_unpack
   uint8_t last_first_value;
 
   struct arc_code *tree;
+  struct arc_lookup *huffman_lookup;
+  struct arc_huffman_index *huffman_tree;
+  uint16_t num_huffman;
 };
 
 static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width, int is_dynamic)
@@ -85,6 +99,9 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   arc->last_first_value = 0;
   arc->kwkwk = 0;
   arc->tree = NULL;
+  arc->huffman_lookup = NULL;
+  arc->huffman_tree = NULL;
+  arc->num_huffman = 0;
 
   if(max_width)
   {
@@ -111,27 +128,33 @@ static void arc_unpack_free(struct arc_unpack *arc)
   free(arc->tree);
 }
 
-static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_len, unsigned int num_bits)
+static uint32_t arc_get_bytes(const uint8_t *pos, int num)
 {
-  const uint8_t *pos = src + arc->lzw_in;
-  uint32_t ret = 0;
-
-  if(arc->lzw_in >= src_len)
-    return -1;
-
-  switch(src_len - arc->lzw_in)
+  switch(num)
   {
     case 1:
-      // Not usable...
-      arc->lzw_bits_in += num_bits;
-      arc->lzw_in += 1;
-      return -1;
+      return pos[0];
     case 2:
-      ret = pos[0] | (pos[1] << 8UL);
-      break;
+      return pos[0] | (pos[1] << 8UL);
+    case 3:
+      return pos[0] | (pos[1] << 8UL) | (pos[2] << 16UL);
     default:
-      ret = pos[0] | (pos[1] << 8UL) | (pos[2] << 16UL);
+      return pos[0] | (pos[1] << 8UL) | (pos[2] << 16UL) | (pos[3] << 24UL);
   }
+}
+
+static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_len, unsigned int num_bits)
+{
+  uint32_t ret;
+
+  if(arc->lzw_bits_in + num_bits > (src_len << 3))
+  {
+    arc->lzw_bits_in = src_len << 3;
+    arc->lzw_in = src_len;
+    return -1;
+  }
+
+  ret = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in);
 
   ret = (ret >> (arc->lzw_bits_in & 7)) & (0xffffUL << num_bits >> 16);
 
@@ -532,6 +555,176 @@ int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
     {
       #ifdef ARC_DEBUG
       fprintf(stderr, "arc_unlzw_block failed "
+       "(%zu in, %zu out in buffer, %zu out in stream)\n",
+       arc.lzw_in, arc.lzw_out, arc.rle_out);
+      #endif
+      goto err;
+    }
+
+    if(arc_unrle90_block(&arc, dest, dest_len, buffer, arc.lzw_out))
+    {
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "arc_unrle90_block failed (%zu in, %zu out)\n",
+       arc.lzw_in, arc.rle_out);
+      #endif
+      goto err;
+    }
+  }
+
+  if(arc.rle_out != dest_len)
+  {
+    #ifdef ARC_DEBUG
+    fprintf(stderr, "out %zu != buffer size %zu\n", arc.rle_out, dest_len);
+    #endif
+    goto err;
+  }
+
+  arc_unpack_free(&arc);
+  return 0;
+
+err:
+  arc_unpack_free(&arc);
+  return -1;
+}
+
+/**
+ * Huffman decoding based on this blog post by Phaeron.
+ * https://www.virtualdub.org/blog2/entry_345.html
+ */
+#define LOOKUP_BITS 10
+#define LOOKUP_MASK ((1 << LOOKUP_BITS) - 1)
+
+static int arc_huffman_init(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+{
+  size_t table_size = 1 << LOOKUP_BITS;
+  size_t iter;
+  size_t i;
+  size_t j;
+
+  arc->num_huffman = src[0] | (src[1] << 8);
+  if(!arc->num_huffman || arc->num_huffman > 256)
+    return -1;
+
+  arc->lzw_in = 2UL + 4UL * arc->num_huffman;
+  arc->lzw_bits_in = (arc->lzw_in << 3);
+  if(arc->lzw_in > src_len)
+    return -1;
+
+  // Precompute huffman tree and lookup table.
+  arc->huffman_lookup = (struct arc_lookup *)calloc(table_size, sizeof(struct arc_lookup));
+  arc->huffman_tree = (struct arc_huffman_index *)malloc(arc->num_huffman * sizeof(struct arc_huffman_index));
+
+  for(i = 0; i < arc->num_huffman; i++)
+  {
+    struct arc_huffman_index *e = &(arc->huffman_tree[i]);
+    e->value[0] = src[i * 4 + 2] | (src[i * 4 + 3] << 8);
+    e->value[1] = src[i * 4 + 4] | (src[i * 4 + 5] << 8);
+    if(e->value[0] >= arc->num_huffman || e->value[1] >= arc->num_huffman)
+      return -1;
+  }
+
+  for(i = 0; i < table_size; i++)
+  {
+    int index = 0;
+    int value = i;
+    int bits;
+    if(arc->huffman_lookup[i].length)
+      continue;
+
+    for(bits = 0; index >= 0 && bits < LOOKUP_BITS; bits++)
+    {
+      index = arc->huffman_tree[index].value[value & 1];
+      value >>= 1;
+    }
+    if(index >= 0)
+      continue;
+
+    iter = 1 << bits;
+    for(j = i; j < table_size; j += iter)
+    {
+      arc->huffman_lookup[j].value = ~index;
+      arc->huffman_lookup[j].length = bits;
+    }
+  }
+  return 0;
+}
+
+static int arc_huffman_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+{
+  struct arc_huffman_index *tree = arc->huffman_tree;
+  struct arc_lookup *e;
+  uint32_t peek;
+  size_t bits_end;
+  int index;
+
+  // Optimize short values with precomputed table.
+  peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
+
+  e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
+  if(e->length)
+  {
+    arc->lzw_bits_in += e->length;
+    arc->lzw_in = arc->lzw_bits_in >> 3;
+    return e->value;
+  }
+
+  bits_end = (src_len << 3);
+  index = 0;
+
+  while(index >= 0 && arc->lzw_bits_in < bits_end)
+  {
+    int bit = src[arc->lzw_bits_in >> 3] >> (arc->lzw_bits_in & 7);
+    arc->lzw_bits_in++;
+
+    index = tree[index].value[bit & 1];
+  }
+  if(index < 0)
+  {
+    arc->lzw_in = arc->lzw_bits_in >> 3;
+    return ~index;
+  }
+  return -1;
+}
+
+static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
+ uint8_t * ARC_RESTRICT dest, size_t dest_len, const uint8_t *src, size_t src_len)
+{
+  while(arc->lzw_in < src_len && arc->lzw_out < dest_len)
+  {
+    int value = arc_huffman_read_bits(arc, src, src_len);
+    if(value >= 256)
+    {
+      // End of stream code.
+      arc->lzw_in = src_len;
+      return 0;
+    }
+    if(value < 0)
+      return -1;
+
+    dest[arc->lzw_out++] = value;
+  }
+  return 0;
+}
+
+int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+ const uint8_t *src, size_t src_len)
+{
+  struct arc_unpack arc;
+  uint8_t buffer[4096];
+
+  if(arc_unpack_init(&arc, 0, 0, 0) != 0)
+    return -1;
+
+  if(arc_huffman_init(&arc, src, src_len) != 0)
+    goto err;
+
+  while(arc.lzw_in < src_len)
+  {
+    arc.lzw_out = 0;
+    if(arc_unhuffman_block(&arc, buffer, sizeof(buffer), src, src_len) || !arc.lzw_out)
+    {
+      #ifdef ARC_DEBUG
+      fprintf(stderr, "arc_unhuffman_block failed "
        "(%zu in, %zu out in buffer, %zu out in stream)\n",
        arc.lzw_in, arc.lzw_out, arc.rle_out);
       #endif

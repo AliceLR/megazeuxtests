@@ -43,6 +43,9 @@ int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
 int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len, int init_width, int max_width);
 
+int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+ const uint8_t *src, size_t src_len);
+
 #ifdef __cplusplus
 }
 #endif

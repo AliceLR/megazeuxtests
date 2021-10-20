@@ -507,6 +507,14 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
         }
         break;
 
+      case SQUEEZED:
+        if(arc_unpack_huffman_rle90(output, output_size, input, input_size) < 0)
+        {
+          format::error("failed to unsqueeze (4) file");
+          return false;
+        }
+        break;
+
       case CRUNCHED:
         if(arc_unpack_lzw_rle90(output, output_size, input, input_size, 9, ARC_IGNORE_CODE_IN_STREAM))
         {
