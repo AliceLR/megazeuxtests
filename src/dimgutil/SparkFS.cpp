@@ -51,6 +51,7 @@ enum ARC_type
   SPARK_UNPACKED_OLD   = 0x81,
   SPARK_UNPACKED       = 0x82,
   SPARK_PACKED         = 0x83,
+  SPARK_SQUEEZED       = 0x84,
   SPARK_CRUNCHED       = 0x88,
   SPARK_SQUASHED       = 0x89,
   SPARK_COMPRESSED     = 0xff,
@@ -107,6 +108,7 @@ struct ARC_entry
       case SPARK_UNPACKED_OLD:
       case SPARK_UNPACKED:
       case SPARK_PACKED:
+      case SPARK_SQUEEZED:
       case SPARK_CRUNCHED:
       case SPARK_SQUASHED:
         return static_cast<ARC_type>(data[1] & 0x7f); // & 0x7f to convert Spark types to normal.
@@ -162,11 +164,12 @@ struct ARC_entry
 
   bool read_header(FILE *fp)
   {
-    if(!fread(data, ARC_HEADER_SIZE, 1, fp))
+    if(!fread(data, 2, 1, fp))
       return false;
 
-    if(is_spark())
-      if(!fread(data + ARC_HEADER_SIZE, SPARK_HEADER_SIZE - ARC_HEADER_SIZE, 1, fp))
+    size_t header_size = get_header_size();
+    if(header_size > 2)
+      if(!fread(data + 2, header_size - 2, 1, fp))
         return false;
 
     // Make sure filename is terminated...
@@ -174,8 +177,10 @@ struct ARC_entry
     return true;
   }
 
-  int get_header_size() const
+  size_t get_header_size() const
   {
+    if(data[1] == END_OF_ARCHIVE || data[1] == SPARK_END_OF_ARCHIVE)
+      return 2;
     if(data[1] == UNPACKED_OLD)
       return ARC_HEADER_1_SIZE;
     if(data[1] == SPARK_UNPACKED_OLD)
@@ -224,10 +229,16 @@ struct ARC_entry
     ptrdiff_t header_size = get_header_size();
     ptrdiff_t offset = compressed_size() + header_size;
 
-    if(offset > left || header_size > left - offset)
+    if(offset > left || 2 > left - offset)
       return nullptr;
 
     ARC_entry *ret = reinterpret_cast<ARC_entry *>(data + offset);
+    if(ret->data[0] != 0x1a || ret->type() == END_OF_ARCHIVE)
+      return nullptr;
+
+    if((ptrdiff_t)ret->get_header_size() > left - offset)
+      return nullptr;
+
     ret->data[14] = '\0';
     return ret;
   }
@@ -492,7 +503,23 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
       case PACKED:
         if(arc_unpack_rle90(output, output_size, input, input_size) < 0)
         {
-          format::error("failed to unpack file");
+          format::error("failed to unpack (3) file");
+          return false;
+        }
+        break;
+
+      case SQUASHED:
+        if(arc_unpack_lzw(output, output_size, input, input_size, 9, 13))
+        {
+          format::error("failed to unsquash (9) file");
+          return false;
+        }
+        break;
+
+      case SPARK_COMPRESSED:
+        if(arc_unpack_lzw(output, output_size, input, input_size, 9, ARC_MAX_CODE_IN_STREAM))
+        {
+          format::error("failed to uncompress (ff) file");
           return false;
         }
         break;

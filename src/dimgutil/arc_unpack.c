@@ -39,6 +39,9 @@ struct arc_unpack
   int last_byte;
 
   // LZW.
+  uint16_t codes_buffered[8];
+  unsigned buffered_pos;
+  unsigned buffered_width;
   size_t lzw_bits_in;
   size_t lzw_in;
   size_t lzw_out;
@@ -51,6 +54,7 @@ struct arc_unpack
   unsigned continue_left;
   unsigned continue_code;
   unsigned last_code;
+  unsigned kwkwk;
   uint8_t last_first_value;
 
   struct arc_code *tree;
@@ -63,6 +67,8 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   arc->in_rle_code = 0;
   arc->last_byte = 0;
 
+  arc->buffered_pos = 0;
+  arc->buffered_width = 0;
   arc->lzw_bits_in = 0;
   arc->lzw_in = 0;
   arc->lzw_out = 0;
@@ -75,6 +81,7 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   arc->continue_code = 0;
   arc->last_code = ARC_NO_CODE;
   arc->last_first_value = 0;
+  arc->kwkwk = 0;
   arc->tree = NULL;
 
   if(max_width)
@@ -132,6 +139,56 @@ static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_
   return ret;
 }
 
+static uint16_t arc_next_code(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+{
+  /**
+   * Codes are read 8 at a time in the original ARC/ArcFS/Spark software,
+   * presumably to simplify file IO. This buffer needs to be simulated.
+   *
+   * When the code width changes, the extra buffered codes are discarded.
+   * Despite this, the final number of codes won't always be a multiple of 8.
+   */
+  if(arc->buffered_pos >= 8 || arc->buffered_width != arc->current_width)
+  {
+    size_t i;
+    for(i = 0; i < 8; i++)
+    {
+      int value = arc_read_bits(arc, src, src_len, arc->current_width);
+      if(value < 0)
+        break;
+
+      arc->codes_buffered[i] = value;
+    }
+    for(; i < 8; i++)
+      arc->codes_buffered[i] = ARC_NO_CODE;
+
+    arc->buffered_pos = 0;
+    arc->buffered_width = arc->current_width;
+  }
+  return arc->codes_buffered[arc->buffered_pos++];
+}
+
+static void arc_unlzw_add(struct arc_unpack *arc)
+{
+  if(arc->last_code != ARC_NO_CODE && arc->next_code < arc->max_code)
+  {
+    uint16_t len = arc->tree[arc->last_code].length;
+    struct arc_code *e;
+
+    e = &(arc->tree[arc->next_code++]);
+    e->prev = arc->last_code;
+    e->length = len ? len + 1 : 0;
+    e->value = arc->last_first_value;
+
+    // Automatically expand width.
+    if(arc->next_code >= (1U << arc->current_width) && arc->current_width < arc->max_width)
+    {
+      arc->current_width++;
+      //fprintf(stderr, "width expanded to %u\n", arc->current_width);
+    }
+  }
+}
+
 static uint16_t arc_unlzw_get_length(const struct arc_unpack *arc,
  const struct arc_code *e)
 {
@@ -159,59 +216,58 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
 {
   uint8_t *pos;
   struct arc_code *e;
-  int code;
-  int len;
-  int set_last_first;
+  uint16_t start_code;
+  uint16_t code;
+  uint16_t len;
 
-  while(arc->lzw_in < src_len && arc->lzw_out < dest_len)
+//  int num_debug = 0;
+
+  while(arc->lzw_out < dest_len)
   {
     // Interrupted while writing out code? Resume output...
     if(arc->continue_code)
     {
       code = arc->continue_code;
-      set_last_first = 0;
       goto continue_code;
     }
 
-    code = arc_read_bits(arc, src, src_len, arc->current_width);
-    if(code < 0)
+    code = arc_next_code(arc, src, src_len);
+    if(code >= arc->max_code)
       break;
+
+/*
+    fprintf(stderr, "%04x ", code);
+    num_debug++;
+    if(!(num_debug & 15))
+      fprintf(stderr, "\n");
+*/
 
     if(code == ARC_RESET_CODE && arc->first_code == 257)
     {
-      // Reset width for dynamic modes 8 and 255.
+      size_t i;
+      // Reset width for dynamic modes 8, 9, and 255.
+      //fprintf(stderr, "reset at size = %u codes\n", arc->next_code);
       arc->next_code = arc->first_code;
-      arc->current_width = arc->init_width; // FIXME does ARC do this?
-      // FIXME reset cached lengths?
+      arc->current_width = arc->init_width;
+      arc->last_code = ARC_NO_CODE;
+
+      for(i = 256; i < arc->max_code; i++)
+        arc->tree[i].length = 0;
+
       continue;
     }
 
     // Add next code first to avoid KwKwK problem.
-    if(arc->next_code < arc->max_code)
+    if((unsigned)code == arc->next_code)
     {
-      if(arc->last_code != ARC_NO_CODE)
-      {
-        arc->last_first_value = code;
-        len = 1;
-      }
-      else
-        len = arc->tree[arc->last_code].length;
-
-      e = &(arc->tree[arc->next_code]);
-      e->prev = arc->last_code;
-      e->length = len ? len + 1 : 0;
-      e->value = arc->last_first_value;
-      arc->last_code = (arc->next_code++);
-
-      // Automatically expand width.
-      if(arc->next_code >= (1U << arc->current_width))
-        arc->current_width++;
+      arc_unlzw_add(arc);
+      arc->kwkwk = 1;
     }
 
     // Emit code.
-    set_last_first = 1;
 
 continue_code:
+    start_code = code;
     e = &(arc->tree[code]);
 
     if(!arc->continue_code)
@@ -238,14 +294,24 @@ continue_code:
     else
       arc->continue_code = 0;
 
-    for(pos = dest + len - 1; len >= 0; len--)
+    pos = dest + arc->lzw_out + len - 1;
+    arc->lzw_out += len;
+    for(; len > 0; len--)
     {
       code = e->value;
       *(pos--) = code;
       e = &(arc->tree[e->prev]);
     }
-    if(set_last_first)
-      arc->last_first_value = code;
+
+    if(arc->continue_code)
+      return 0;
+
+    arc->last_first_value = code;
+    if(!arc->kwkwk)
+      arc_unlzw_add(arc);
+
+    arc->last_code = start_code;
+    arc->kwkwk = 0;
   }
   return 0;
 }
@@ -278,19 +344,19 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
 
         //fprintf(stderr, "@ %zu: literal 0x90\n", i);
         dest[arc->rle_out++] = 0x90;
-        arc->last_code = 0x90;
+        arc->last_byte = 0x90;
       }
       else
       {
         len = src[i] - 1;
         if(arc->rle_out + len > dest_len)
         {
-          //fprintf(stderr, "end of output stream @ %zu emitting RLE of %02xh times %zu\n", i, arc->last_code, len);
+          //fprintf(stderr, "end of output stream @ %zu emitting RLE of %02xh times %zu\n", i, arc->last_byte, len);
           return -1;
         }
 
-        //fprintf(stderr, "@ %zu: run of %02xh times %zu\n", i, arc->last_code, len);
-        memset(dest + arc->rle_out, arc->last_code, len);
+        //fprintf(stderr, "@ %zu: run of %02xh times %zu\n", i, arc->last_byte, len);
+        memset(dest + arc->rle_out, arc->last_byte, len);
         arc->rle_out += len;
       }
       i++;
@@ -312,7 +378,7 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
       //fprintf(stderr, "@ %zu: literal block of length %zu\n", i, len);
       memcpy(dest + arc->rle_out, src + start, len);
       arc->rle_out += len;
-      arc->last_code = src[i - 1];
+      arc->last_byte = src[i - 1];
     }
 
     if(i < src_len && src[i] == 0x90)
@@ -372,10 +438,16 @@ int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
     return -1;
 
   if(arc_unlzw_block(&arc, dest, dest_len, src, src_len))
+  {
+    //fprintf(stderr, "arc_unlzw_block failed (%zu in, %zu out)\n", arc.lzw_in, arc.lzw_out);
     goto err;
+  }
 
   if(arc.lzw_out != dest_len)
+  {
+    //fprintf(stderr, "out %zu != buffer size %zu\n", arc.lzw_out, dest_len);
     goto err;
+  }
 
   arc_unpack_free(&arc);
   return 0;
