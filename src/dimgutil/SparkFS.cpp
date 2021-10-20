@@ -454,7 +454,7 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
 
 bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
 {
-  const ARC_entry *h = reinterpret_cast<const ARC_entry *>(file.priv);
+  ARC_entry *h = reinterpret_cast<ARC_entry *>(file.priv);
 
   if(file.get_type() & FileInfo::IS_DIRECTORY)
   {
@@ -473,7 +473,7 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
     if(!fp)
       return false;
 
-    const uint8_t *input;
+    uint8_t *input;
     size_t input_size;
     if(!h->get_buffer(&input, &input_size))
       return false;
@@ -489,59 +489,18 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
       output_size = h->uncompressed_size();
       output = new uint8_t[output_size];
       _free_me.reset(output);
-    }
 
-    switch(type)
-    {
-      case UNPACKED_OLD:
-      case UNPACKED:
-        output = const_cast<uint8_t *>(input);
-        output_size = input_size;
-        break;
-
-      case PACKED:
-        if(arc_unpack_rle90(output, output_size, input, input_size) < 0)
-        {
-          format::error("failed to unpack (3) file");
-          return false;
-        }
-        break;
-
-      case SQUEEZED:
-        if(arc_unpack_huffman_rle90(output, output_size, input, input_size) < 0)
-        {
-          format::error("failed to unsqueeze (4) file");
-          return false;
-        }
-        break;
-
-      case CRUNCHED:
-        if(arc_unpack_lzw_rle90(output, output_size, input, input_size, 9, ARC_IGNORE_CODE_IN_STREAM))
-        {
-          format::error("failed to uncrunch (8) file");
-          return false;
-        }
-        break;
-
-      case SQUASHED:
-        if(arc_unpack_lzw(output, output_size, input, input_size, 9, 13))
-        {
-          format::error("failed to unsquash (9) file");
-          return false;
-        }
-        break;
-
-      case SPARK_COMPRESSED:
-        if(arc_unpack_lzw(output, output_size, input, input_size, 9, ARC_MAX_CODE_IN_STREAM))
-        {
-          format::error("failed to uncompress (ff) file");
-          return false;
-        }
-        break;
-
-      default:
-        fprintf(stderr, "  ERROR: unsupported compression type %u\n", type);
+      const char *err = arc_unpack(output, output_size, input, input_size, type);
+      if(err)
+      {
+        format::error("%s (%u)", err, type);
         return false;
+      }
+    }
+    else
+    {
+      output = input;
+      output_size = input_size;
     }
 
     uint16_t crc16 = arc_crc16(output, output_size);

@@ -25,26 +25,12 @@
 extern "C" {
 #endif
 
-#include <stdint.h>
-
-/* ARC method 0x08: read maximum code width from stream, but ignore it. */
-#define ARC_IGNORE_CODE_IN_STREAM 0x7ffe
-/* Spark method 0xff: read maximum code width from stream. */
-#define ARC_MAX_CODE_IN_STREAM 0x7fff
+#include <stdlib.h>
 
 #define ARC_RESTRICT __restrict__
 
-int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len);
-
-int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width);
-
-int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width);
-
-int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len);
+const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len, int method);
 
 #ifdef __cplusplus
 }

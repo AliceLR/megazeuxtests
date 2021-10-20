@@ -16,11 +16,17 @@
 
 #include "arc_unpack.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 //#define ARC_DEBUG
+
+/* ARC method 0x08: read maximum code width from stream, but ignore it. */
+#define ARC_IGNORE_CODE_IN_STREAM 0x7ffe
+/* Spark method 0xff: read maximum code width from stream. */
+#define ARC_MAX_CODE_IN_STREAM 0x7fff
 
 #define ARC_NO_CODE 0xffff
 #define ARC_RESET_CODE 256
@@ -449,7 +455,7 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
   return 0;
 }
 
-int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+static int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len)
 {
   struct arc_unpack arc;
@@ -480,7 +486,7 @@ err:
   return -1;
 }
 
-int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+static int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len, int init_width, int max_width)
 {
   struct arc_unpack arc;
@@ -526,7 +532,7 @@ err:
   return -1;
 }
 
-int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+static int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len, int init_width, int max_width)
 {
   struct arc_unpack arc;
@@ -706,7 +712,7 @@ static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
   return 0;
 }
 
-int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
+static int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
  const uint8_t *src, size_t src_len)
 {
   struct arc_unpack arc;
@@ -755,4 +761,44 @@ int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
 err:
   arc_unpack_free(&arc);
   return -1;
+}
+
+const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len, int method)
+{
+  switch(method)
+  {
+    case 1: // unpacked (old)
+    case 2: // unpacked
+      break; // Shouldn't be handled here.
+
+    case 3: // packed (RLE)
+      if(arc_unpack_rle90(dest, dest_len, src, src_len) < 0)
+        return "failed unpack";
+      break;
+
+    case 4: // squeezed (RLE, huffman)
+      if(arc_unpack_huffman_rle90(dest, dest_len, src, src_len) < 0)
+        return "failed unsqueeze";
+      break;
+
+    case 8: // crunched (RLE, dynamic LZW 9 to 12)
+      if(arc_unpack_lzw_rle90(dest, dest_len, src, src_len, 9, ARC_IGNORE_CODE_IN_STREAM))
+        return "failed uncrunch";
+      break;
+
+    case 9: // PK squashed (dynamic LZW 9 to 13)
+      if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, 13))
+        return "failed unsquash";
+      break;
+
+    case 0xff: // Spark compressed (dynamic LZW 9 to 16)
+      if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, ARC_MAX_CODE_IN_STREAM))
+        return "failed uncompress";
+      break;
+
+    default:
+      return "unsupported method";
+  }
+  return NULL;
 }
