@@ -30,7 +30,7 @@ extern "C" {
 #define ARC_RESTRICT __restrict__
 
 const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int method);
+ const unsigned char *src, size_t src_len, int method, int max_width);
 
 #ifdef __cplusplus
 }

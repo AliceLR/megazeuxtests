@@ -490,7 +490,7 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
       output = new uint8_t[output_size];
       _free_me.reset(output);
 
-      const char *err = arc_unpack(output, output_size, input, input_size, type);
+      const char *err = arc_unpack(output, output_size, input, input_size, type, 0);
       if(err)
       {
         format::error("%s (%u)", err, type);

@@ -764,7 +764,7 @@ err:
 }
 
 const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int method)
+ const unsigned char *src, size_t src_len, int method, int max_width)
 {
   switch(method)
   {
@@ -783,7 +783,11 @@ const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
       break;
 
     case 8: // crunched (RLE, dynamic LZW 9 to 12)
-      if(arc_unpack_lzw_rle90(dest, dest_len, src, src_len, 9, ARC_IGNORE_CODE_IN_STREAM))
+      if(max_width > 16)
+        return "invalid uncrunch width";
+      if(!max_width)
+        max_width = ARC_IGNORE_CODE_IN_STREAM;
+      if(arc_unpack_lzw_rle90(dest, dest_len, src, src_len, 9, max_width))
         return "failed uncrunch";
       break;
 
@@ -793,7 +797,11 @@ const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
       break;
 
     case 0xff: // Spark compressed (dynamic LZW 9 to 16)
-      if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, ARC_MAX_CODE_IN_STREAM))
+      if(max_width > 16)
+        return "invalid uncompress width";
+      if(!max_width)
+        max_width = ARC_MAX_CODE_IN_STREAM;
+      if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, max_width))
         return "failed uncompress";
       break;
 

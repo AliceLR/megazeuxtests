@@ -51,6 +51,7 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/FileIO.o \
   ${DIMG_OBJ}/FileInfo.o \
   ${DIMG_OBJ}/ADFS.o \
+  ${DIMG_OBJ}/ArcFS.o \
   ${DIMG_OBJ}/FAT.o \
   ${DIMG_OBJ}/SparkFS.o \
   ${DIMG_OBJ}/arc_crc16.o \
