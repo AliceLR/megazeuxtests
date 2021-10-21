@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "DiskImage.hpp"
 #include "FileIO.hpp"
@@ -224,8 +225,7 @@ struct ArcFS_entry
 
   uint64_t get_timestamp() const
   {
-    // TODO directories are guaranteed to be datestamped.
-    // The documentation is vague on whether or not this is valid for files too.
+    // The documentation is vague, but both directories and files seem to have datestamps.
     // Datestamps are measured in centiseconds starting from Jan 1st, 1900.
 
     // Low byte of load address + exec address.
@@ -292,6 +292,41 @@ struct ArcFS_entry
     if(is_directory())
       return FileInfo::IS_DIRECTORY;
     return FileInfo::IS_REG;
+  }
+
+  uint64_t get_fileinfo_date() const
+  {
+    uint64_t ts = get_timestamp() / 100;
+    if(!ts)
+      return 0;
+
+    static constexpr uint64_t EPOCH = date_to_total_days(1900, 1, 1);
+
+    int seconds = ts % 60;
+    int minutes = (ts / 60) % 60;
+    int hours = (ts / 3600) % 24;
+    int day;
+    int month;
+    int year;
+    uint64_t total_days = ts / 86400 + EPOCH;
+    total_days_to_date(total_days, &year, &month, &day);
+
+    struct tm tm
+    {
+      /* tm_sec  */ seconds,
+      /* tm_min  */ minutes,
+      /* tm_hour */ hours,
+      /* tm_mday */ day,
+      /* tm_mon  */ month - 1,
+      /* tm_year */ year - 1900,
+      0, 0, 0,
+    };
+    return FileInfo::convert_tm(&tm);
+  }
+
+  uint32_t get_fileinfo_ns() const
+  {
+    return (get_timestamp() % 100) * 10 * 10000000;
   }
 };
 
@@ -363,8 +398,7 @@ bool ArcFSImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_
       // Base is file.
       FileInfo tmp("", base, h->get_filetype(), h->uncompressed_size(), h->compressed_size(), h->data[0]);
       tmp.priv = h;
-      tmp.filetime(0); // FIXME
-      //tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
+      tmp.filetime(h->get_fileinfo_date(), h->get_fileinfo_ns());
       if(tmp.filter(filter, filter_flags))
         list.push_back(std::move(tmp));
 
@@ -393,8 +427,7 @@ void ArcFSImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
 
     FileInfo tmp(base, h->filename(), h->get_filetype(), h->uncompressed_size(), h->compressed_size(), h->data[0]);
     tmp.priv = h;
-    tmp.filetime(0); // FIXME
-    //tmp.filetime(FileInfo::convert_DOS(h->dos_date(), h->dos_time()));
+    tmp.filetime(h->get_fileinfo_date(), h->get_fileinfo_ns());
 
     if(tmp.filter(filter, filter_flags))
       list.push_back(std::move(tmp));

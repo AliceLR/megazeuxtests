@@ -18,6 +18,7 @@
 #define MZXTEST_DIMGUTIL_FILEINFO_HPP
 
 #include <stdint.h>
+#include <time.h>
 
 class FileInfo
 {
@@ -151,6 +152,14 @@ public:
     return
      ((uint64_t)year << 40) | ((uint64_t)month << 32) |
      ((uint64_t)day << 24) | (hour << 16) | (minute << 8) | second;
+  }
+
+  /* Convert a tm to the FileInfo timestamp format. */
+  static uint64_t convert_tm(const struct tm *tm)
+  {
+    return
+     ((uint64_t)(tm->tm_year + 1900) << 40) | (((uint64_t)tm->tm_mon + 1) << 32) |
+     ((uint64_t)tm->tm_mday << 24) | (tm->tm_hour << 16) | (tm->tm_min << 8) | tm->tm_sec;
   }
 
   static uint16_t date_year(uint64_t d)

@@ -292,4 +292,43 @@ static inline size_t path_clean_slashes(char *path)
   return len;
 }
 
+/* Date functions. */
+
+/* Utility function: get the number of days since the extended
+ * Gregorian date 0000-03-01. Useful for conversion of dates
+ * defined in "number of [days,seconds] since [epoch]". */
+static inline constexpr uint64_t date_to_total_days(int year, int month, int day)
+{
+  uint64_t m = (month + 9) % 12;
+  uint64_t y = year - m / 10;
+  y = 365 * y + (y / 4) - (y / 100) + (y / 400);
+  m = (m * 306 + 5) / 10;
+
+  return y + m + (day - 1);
+}
+
+/**
+ * Utility function: convert a number days since the extended Gregorian
+ * date 0000-03-01 to a real date.
+ */
+static inline void total_days_to_date(uint64_t total_days, int *year, int *month, int *day)
+{
+  int y = (10000 * total_days + 14780) / 3652425;
+  int64_t dayofyear = total_days - (365 * y + (y / 4) - (y / 100) + (y / 400));
+  if(dayofyear < 0)
+  {
+    y--;
+    dayofyear = total_days - (365 * y + (y / 4) - (y / 100) + (y / 400));
+  }
+  int m = (100 * dayofyear + 52) / 3060;
+  int d = dayofyear - (m * 306 + 5) / 10 + 1;
+
+  y += (m + 2) / 12;
+  m = (m + 2) % 12 + 1;
+
+  *year = y;
+  *month = m;
+  *day = d;
+}
+
 #endif /* MZXTEST_COMMON_HPP */
