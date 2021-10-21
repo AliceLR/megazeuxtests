@@ -434,7 +434,13 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
         fprintf(stderr, "end of output_stream @ %zu: block of length %zu\n",
           i, len);
         #endif
-        return -1;
+
+        /* In some uncommon cases, ArcFS seems to output extra data beyond the
+         * expected end of the file when unpacking crunched files. In the few
+         * that have CRCs, ignoring the extra data still passes the check. */
+        len = dest_len - arc->rle_out;
+        if(!len)
+          break;
       }
 
       #ifdef ARC_DEBUG
