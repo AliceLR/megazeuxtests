@@ -27,6 +27,7 @@ static size_t num_musx = 0;
 static constexpr size_t MAX_ORDERS   = 128;
 static constexpr size_t MAX_PATTERNS = 64;
 static constexpr size_t MAX_SAMPLES  = 36;
+static constexpr size_t MAX_CHANNELS = 8;
 static constexpr size_t MAX_ROWS     = 64;
 
 enum MUSX_chunks
@@ -160,7 +161,7 @@ public:
     m.present_chunks |= MVOX;
 
     m.num_channels = fget_u32le(fp);
-    if(m.num_channels < 1 || m.num_channels > 8)
+    if(m.num_channels < 1 || m.num_channels > MAX_CHANNELS)
     {
       format::error("invalid number of channels %u", m.num_channels);
       return modutil::INVALID;
@@ -336,10 +337,6 @@ public:
   }
 } SEQU_handler("SEQU", false);
 
-static const IFF<MUSX_data> MUSX_inner_parser(Endian::LITTLE, IFFPadding::BYTE,
-{
-});
-
 static const class _PATT_handler final: public IFFHandler<MUSX_data>
 {
 public:
@@ -359,10 +356,31 @@ public:
       m.current_pattern++;
       return modutil::SUCCESS;
     }
-    m.current_pattern++;
+    MUSX_pattern &p = m.patterns[m.current_pattern++];
 
-    // FIXME load pattern
+    if(len < m.num_channels * p.num_rows * 4)
+    {
+      format::error("PATT chunk too short for pattern %" PRIu32, m.num_patterns);
+      return modutil::INVALID;
+    }
 
+    uint8_t buffer[MAX_CHANNELS * MAX_ROWS * 4];
+
+    if(!fread(buffer, m.num_channels * p.num_rows * 4, 1, fp))
+      return modutil::READ_ERROR;
+
+    p.allocate(m.num_channels);
+
+    uint8_t *pos = buffer;
+    MUSX_event *current = p.events;
+    for(size_t row = 0; row < p.num_rows; row++)
+    {
+      for(size_t track = 0; track < m.num_channels; track++)
+      {
+        *(current++) = MUSX_event(mem_u32le(pos));
+        pos += 4;
+      }
+    }
     return modutil::SUCCESS;
   }
 } PATT_handler("PATT", false);
@@ -472,7 +490,39 @@ public:
 
     if(Config.dump_patterns)
     {
-      // FIXME
+      format::line();
+      format::orders("Orders", m.orders, m.num_orders);
+
+      if(!Config.dump_pattern_rows)
+        format::line();
+
+      for(size_t i = 0; i < m.num_patterns; i++)
+      {
+        MUSX_pattern &p = m.patterns[i];
+
+        using EVENT = format::event<format::note, format::sample, format::effectWide>;
+        format::pattern<EVENT> pattern(i, m.num_channels, p.num_rows);
+
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary();
+          continue;
+        }
+
+        MUSX_event *ev = p.events;
+        for(size_t row = 0; row < p.num_rows; row++)
+        {
+          for(size_t track = 0; track < m.num_channels; track++, ev++)
+          {
+            format::note       a{ ev->note };
+            format::sample     b{ ev->sample };
+            format::effectWide c{ ev->effect, ev->param };
+
+            pattern.insert(EVENT(a, b, c));
+          }
+        }
+        pattern.print();
+      }
     }
 
     return modutil::SUCCESS;
