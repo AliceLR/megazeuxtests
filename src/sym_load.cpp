@@ -27,23 +27,106 @@ static size_t num_syms = 0;
 
 enum SYM_features
 {
+  FT_NONE,
+
   FT_SAMPLE_VIDC,
   FT_SAMPLE_LZW,
   FT_SAMPLE_LINEAR,
   FT_SAMPLE_LINEAR_16,
   FT_SAMPLE_SIGMA_DELTA_LINEAR,
   FT_SAMPLE_SIGMA_DELTA_VIDC,
+
+  FT_E_ARPEGGIO_VOLSLIDE_UP,
+  FT_E_PORTA_UP_VOLSLIDE_UP,
+  FT_E_PORTA_DN_VOLSLIDE_UP,
+  FT_E_TONE_PORTA,
+  FT_E_VIBRATO,
+  FT_E_TONE_PORTA_VOLSLIDE,
+  FT_E_VIBRATO_VOLSLIDE,
+  FT_E_TREMOLO,
+  FT_E_OFFSET,
+  FT_E_OFFSET_HIGH,
+  FT_E_VOLSLIDE_FINE_PORTA_UP,
+  FT_E_JUMP,
+  FT_E_VOLUME,
+  FT_E_BREAK,
+  FT_E_SPEED,
+  FT_E_FILTER_CTRL,
+  FT_E_FINE_PORTA_UP_FINE_VOLSLIDE_UP,
+  FT_E_FINE_PORTA_DN_FINE_VOLSLIDE_UP,
+  FT_E_GLISSANDO_CTRL,
+  FT_E_VIBRATO_WAVEFORM,
+  FT_E_FINETUNE,
+  FT_E_LOOP,
+  FT_E_TREMOLO_WAVEFORM,
+  FT_E_RETRIGGER_NOTE,
+  FT_E_FINE_PORTA_UP_FINE_VOLSLIDE_DN,
+  FT_E_FINE_PORTA_DN_FINE_VOLSLIDE_DN,
+  FT_E_NOTE_CUT,
+  FT_E_NOTE_DELAY,
+  FT_E_PATTERN_DELAY,
+  FT_E_INVERT_LOOP,
+  FT_E_ARPEGGIO_VOLSLIDE_DN,
+  FT_E_PORTA_UP_VOLSLIDE_DN,
+  FT_E_PORTA_DN_VOLSLIDE_DN,
+  FT_E_VOLSLIDE_FINE_PORTA_DN,
+  FT_E_LINE_JUMP,
+  FT_E_TEMPO,
+  FT_E_SET_STEREO,
+  FT_E_SONG_UPCALL,
+  FT_E_UNSET_SAMPLE_REPEAT,
   NUM_FEATURES
 };
 
 static constexpr const char *FEATURE_STR[] =
 {
+  "",
   "S:Log",
   "S:LZW",
-  "S:Lin",
+  "S:8",
   "S:16",
   "S:SigmaLin",
   "S:SigmaLog",
+
+  "E:Arpeggio+",
+  "E:PortaUp+",
+  "E:PortaDn+",
+  "E:Tporta",
+  "E:Vib",
+  "E:TportaVS",
+  "E:VibVS",
+  "E:Tremolo",
+  "E:Offset",
+  "E:OffsetHi",
+  "E:VolslideP+",
+  "E:Jump",
+  "E:Vol",
+  "E:Break",
+  "E:Speed",
+  "E:Filter",
+  "E:FPortaUp+",
+  "E:FPortaDn+",
+  "E:Glissando",
+  "E:VibWF",
+  "E:Finetune",
+  "E:Loop",
+  "E:TremoloWF",
+  "E:Retrig",
+  "E:FPortaUp-",
+  "E:FPortaDn-",
+  "E:Cut",
+  "E:Delay",
+  "E:PattDelay",
+  "E:InvLoop",
+  "E:Arpeggio-",
+  "E:PortaUp-",
+  "E:PortaDn-",
+  "E:VolslideP-",
+  "E:LineJump",
+  "E:Tempo",
+  "E:Stereo",
+  "E:Upcall",
+  "E:UnsetLoop",
 };
 
 static constexpr char MAGIC[] = "\x02\x01\x13\x13\x14\x12\x01\x0B"; /* BASSTRAK */
@@ -55,6 +138,64 @@ enum SYM_packing
 {
   UNPACKED,
   LZW,
+};
+
+enum SYM_effects
+{
+  E_ARPEGGIO_VOLSLIDE_UP,
+  E_PORTA_UP_VOLSLIDE_UP,
+  E_PORTA_DN_VOLSLIDE_UP,
+  E_TONE_PORTA,
+  E_VIBRATO,
+  E_TONE_PORTA_VOLSLIDE,
+  E_VIBRATO_VOLSLIDE,
+  E_TREMOLO,
+  E_UNUSED_08,
+  E_OFFSET,
+  E_VOLSLIDE_FINE_PORTA_UP,
+  E_JUMP,
+  E_VOLUME,
+  E_BREAK,
+  E_UNUSED_0E,
+  E_SPEED,
+
+  E_FILTER_CTRL,
+  E_FINE_PORTA_UP_FINE_VOLSLIDE_UP,
+  E_FINE_PORTA_DN_FINE_VOLSLIDE_UP,
+  E_GLISSANDO_CTRL,
+  E_VIBRATO_WAVEFORM,
+  E_FINETUNE,
+  E_LOOP,
+  E_TREMOLO_WAVEFORM,
+  E_UNUSED_18,
+  E_RETRIGGER_NOTE,
+  E_FINE_PORTA_UP_FINE_VOLSLIDE_DN,
+  E_FINE_PORTA_DN_FINE_VOLSLIDE_DN,
+  E_NOTE_CUT,
+  E_NOTE_DELAY,
+  E_PATTERN_DELAY,
+  E_INVERT_LOOP,
+
+  E_ARPEGGIO_VOLSLIDE_DN,
+  E_PORTA_UP_VOLSLIDE_DN,
+  E_PORTA_DN_VOLSLIDE_DN,
+  E_UNUSED_23,
+  E_UNUSED_24,
+  E_UNUSED_25,
+  E_UNUSED_26,
+  E_UNUSED_27,
+  E_UNUSED_28,
+  E_UNUSED_29,
+  E_VOLSLIDE_FINE_PORTA_DN,
+  E_LINE_JUMP,
+  E_UNUSED_2C,
+  E_UNUSED_2D,
+  E_UNUSED_2E,
+  E_TEMPO,
+
+  E_SET_STEREO,
+  E_SONG_UPCALL,
+  E_UNSET_SAMPLE_REPEAT,
 };
 
 struct SYM_header
@@ -257,6 +398,59 @@ public:
   }
 };
 
+static SYM_features get_effect_feature(const SYM_event &ev)
+{
+  switch(ev.effect)
+  {
+    case E_ARPEGGIO_VOLSLIDE_UP:           return FT_E_ARPEGGIO_VOLSLIDE_UP;
+    case E_PORTA_UP_VOLSLIDE_UP:           return FT_E_PORTA_UP_VOLSLIDE_UP;
+    case E_PORTA_DN_VOLSLIDE_UP:           return FT_E_PORTA_DN_VOLSLIDE_UP;
+    case E_TONE_PORTA:                     return FT_E_TONE_PORTA;
+    case E_VIBRATO:                        return FT_E_VIBRATO;
+    case E_TONE_PORTA_VOLSLIDE:            return FT_E_TONE_PORTA_VOLSLIDE;
+    case E_VIBRATO_VOLSLIDE:               return FT_E_VIBRATO_VOLSLIDE;
+    case E_TREMOLO:                        return FT_E_TREMOLO;
+    case E_OFFSET:                         return (ev.param >= 0x200) ? FT_E_OFFSET_HIGH : FT_E_OFFSET;
+    case E_VOLSLIDE_FINE_PORTA_UP:         return FT_E_VOLSLIDE_FINE_PORTA_UP;
+    case E_JUMP:                           return FT_E_JUMP;
+    case E_VOLUME:                         return FT_E_VOLUME;
+    case E_BREAK:                          return FT_E_BREAK;
+    case E_SPEED:                          return FT_E_SPEED;
+    case E_FILTER_CTRL:                    return FT_E_FILTER_CTRL;
+    case E_FINE_PORTA_UP_FINE_VOLSLIDE_UP: return FT_E_FINE_PORTA_UP_FINE_VOLSLIDE_UP;
+    case E_FINE_PORTA_DN_FINE_VOLSLIDE_UP: return FT_E_FINE_PORTA_DN_FINE_VOLSLIDE_UP;
+    case E_GLISSANDO_CTRL:                 return FT_E_GLISSANDO_CTRL;
+    case E_VIBRATO_WAVEFORM:               return FT_E_VIBRATO_WAVEFORM;
+    case E_FINETUNE:                       return FT_E_FINETUNE;
+    case E_LOOP:                           return FT_E_LOOP;
+    case E_TREMOLO_WAVEFORM:               return FT_E_TREMOLO_WAVEFORM;
+    case E_RETRIGGER_NOTE:                 return FT_E_RETRIGGER_NOTE;
+    case E_FINE_PORTA_UP_FINE_VOLSLIDE_DN: return FT_E_FINE_PORTA_UP_FINE_VOLSLIDE_DN;
+    case E_FINE_PORTA_DN_FINE_VOLSLIDE_DN: return FT_E_FINE_PORTA_DN_FINE_VOLSLIDE_DN;
+    case E_NOTE_CUT:                       return FT_E_NOTE_CUT;
+    case E_NOTE_DELAY:                     return FT_E_NOTE_DELAY;
+    case E_PATTERN_DELAY:                  return FT_E_PATTERN_DELAY;
+    case E_INVERT_LOOP:                    return FT_E_INVERT_LOOP;
+    case E_ARPEGGIO_VOLSLIDE_DN:           return FT_E_ARPEGGIO_VOLSLIDE_DN;
+    case E_PORTA_UP_VOLSLIDE_DN:           return FT_E_PORTA_UP_VOLSLIDE_DN;
+    case E_PORTA_DN_VOLSLIDE_DN:           return FT_E_PORTA_DN_VOLSLIDE_DN;
+    case E_VOLSLIDE_FINE_PORTA_DN:         return FT_E_VOLSLIDE_FINE_PORTA_DN;
+    case E_LINE_JUMP:                      return FT_E_LINE_JUMP;
+    case E_TEMPO:                          return FT_E_TEMPO;
+    case E_SET_STEREO:                     return FT_E_SET_STEREO;
+    case E_SONG_UPCALL:                    return FT_E_SONG_UPCALL;
+    case E_UNSET_SAMPLE_REPEAT:            return FT_E_UNSET_SAMPLE_REPEAT;
+  }
+  return FT_NONE;
+}
+
+static void check_event_features(SYM_data &m, const SYM_event &ev)
+{
+  SYM_features effect_feature = get_effect_feature(ev);
+  if(effect_feature && (ev.effect || ev.param))
+    m.uses[effect_feature] = true;
+}
+
 
 class SYM_loader: public modutil::loader
 {
@@ -387,7 +581,10 @@ public:
         t.allocate(NUM_ROWS);
 
         for(size_t row = 0; row < NUM_ROWS; row++, pos += 4)
+        {
           t.events[row] = SYM_event(pos[0], pos[1], pos[2], pos[3]);
+          check_event_features(m, t.events[row]);
+        }
       }
     }
 
