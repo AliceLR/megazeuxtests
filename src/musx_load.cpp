@@ -24,11 +24,84 @@
 static size_t num_musx = 0;
 
 
+enum MUSX_features
+{
+  FT_NONE,
+  FT_E_ARPEGGIO,
+  FT_E_PORTA_UP,
+  FT_E_PORTA_DN,
+  FT_E_TONE_PORTA,
+  FT_E_BREAK,
+  FT_E_SET_STEREO,
+  FT_E_VOLSLIDE_UP,
+  FT_E_VOLSLIDE_DN,
+  FT_E_JUMP,
+  FT_E_LINE_JUMP,
+  FT_E_SET_STEREO_P,
+  FT_E_SPEED,
+  FT_E_VOLUME,
+  NUM_FEATURES
+};
+
+static constexpr const char *FEATURE_STR[NUM_FEATURES] =
+{
+  "",
+  "E:Arpeggio",
+  "E:PortaUp",
+  "E:PortaDn",
+  "E:Tporta",
+  "E:Break",
+  "E:Stereo",
+  "E:VolslideUp",
+  "E:VolslideDn",
+  "E:Jump",
+  "E:LineJump",
+  "E:PStereo",
+  "E:Speed",
+  "E:Vol",
+};
+
 static constexpr size_t MAX_ORDERS   = 128;
 static constexpr size_t MAX_PATTERNS = 64;
 static constexpr size_t MAX_SAMPLES  = 36;
 static constexpr size_t MAX_CHANNELS = 8;
 static constexpr size_t MAX_ROWS     = 64;
+
+enum MUSX_effects
+{
+  E_ARPEGGIO,
+  E_PORTA_UP,
+  E_PORTA_DN,
+  E_TONE_PORTA,
+  E_UNUSED_04,
+  E_UNUSED_05,
+  E_UNUSED_06,
+  E_UNUSED_07,
+  E_UNUSED_08,
+  E_UNUSED_09,
+  E_UNUSED_0A,
+  E_BREAK,
+  E_UNUSED_0C,
+  E_UNUSED_0D,
+  E_SET_STEREO,
+  E_UNUSED_0F,
+  E_VOLSLIDE_UP,
+  E_VOLSLIDE_DN,
+  E_UNUSED_12,
+  E_JUMP,
+  E_UNUSED_14,
+  E_LINE_JUMP,
+  E_UNUSED_16,
+  E_UNUSED_17,
+  E_UNUSED_18,
+  E_SET_STEREO_P,
+  E_UNUSED_1A,
+  E_UNUSED_1B,
+  E_SPEED,
+  E_UNUSED_1D,
+  E_UNUSED_1E,
+  E_VOLUME,
+};
 
 enum MUSX_chunks
 {
@@ -119,7 +192,36 @@ struct MUSX_data
   size_t current_sample;
 
   uint32_t present_chunks;
+  bool uses[NUM_FEATURES];
 };
+
+static MUSX_features get_effect_feature(const MUSX_event &ev)
+{
+  switch(ev.effect)
+  {
+    case E_ARPEGGIO:     return FT_E_ARPEGGIO;
+    case E_PORTA_UP:     return FT_E_PORTA_UP;
+    case E_PORTA_DN:     return FT_E_PORTA_DN;
+    case E_TONE_PORTA:   return FT_E_TONE_PORTA;
+    case E_BREAK:        return FT_E_BREAK;
+    case E_SET_STEREO:   return FT_E_SET_STEREO;
+    case E_VOLSLIDE_UP:  return FT_E_VOLSLIDE_UP;
+    case E_VOLSLIDE_DN:  return FT_E_VOLSLIDE_DN;
+    case E_JUMP:         return FT_E_JUMP;
+    case E_LINE_JUMP:    return FT_E_LINE_JUMP;
+    case E_SET_STEREO_P: return FT_E_SET_STEREO_P;
+    case E_SPEED:        return FT_E_SPEED;
+    case E_VOLUME:       return FT_E_VOLUME;
+  }
+  return FT_NONE;
+}
+
+static void check_event_features(MUSX_data &m, const MUSX_event &ev)
+{
+  MUSX_features feature = get_effect_feature(ev);
+  if(feature && (ev.effect || ev.param))
+    m.uses[feature] = true;
+}
 
 
 /**
@@ -135,10 +237,13 @@ public:
   {
     ins.present_chunks |= SNAM;
 
-    if(!fread(ins.name, 20, 1, fp))
+    if(len > 20)
+      len = 20;
+
+    if(!fread(ins.name, len, 1, fp))
       return modutil::READ_ERROR;
 
-    ins.name[20] = '\0';
+    ins.name[len] = '\0';
     return modutil::SUCCESS;
   }
 };
@@ -488,8 +593,10 @@ public:
     {
       for(size_t track = 0; track < m.num_channels; track++)
       {
-        *(current++) = MUSX_event(mem_u32le(pos));
+        *current = MUSX_event(mem_u32le(pos));
         pos += 4;
+
+        check_event_features(m, *(current++));
       }
     }
     return modutil::SUCCESS;
@@ -609,6 +716,7 @@ public:
     format::line("Channels", "%" PRIu32, m.num_channels);
     format::line("Patterns", "%" PRIu32, m.num_patterns);
     format::line("Orders",   "%" PRIu32, m.num_orders);
+    format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
     {
