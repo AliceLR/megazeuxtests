@@ -124,21 +124,132 @@ struct MUSX_data
 
 /**
  * SAMP chunk subchunks.
- * FIXME!!!
  */
 
+class SNAM_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("SNAM");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    ins.present_chunks |= SNAM;
+
+    if(!fread(ins.name, 20, 1, fp))
+      return modutil::READ_ERROR;
+
+    ins.name[20] = '\0';
+    return modutil::SUCCESS;
+  }
+};
+
+class SVOL_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("SVOL");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    ins.present_chunks |= SVOL;
+
+    ins.volume = fget_u32le(fp);
+    if(feof(fp))
+      return modutil::READ_ERROR;
+
+    return modutil::SUCCESS;
+  }
+};
+
+class SLEN_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("SLEN");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    ins.present_chunks |= SLEN;
+
+    ins.length = fget_u32le(fp);
+    if(feof(fp))
+      return modutil::READ_ERROR;
+
+    return modutil::SUCCESS;
+  }
+};
+
+class ROFS_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("ROFS");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    ins.present_chunks |= ROFS;
+
+    ins.loop_start = fget_u32le(fp);
+    if(feof(fp))
+      return modutil::READ_ERROR;
+
+    return modutil::SUCCESS;
+  }
+};
+
+class RLEN_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("RLEN");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    ins.present_chunks |= RLEN;
+
+    ins.loop_length = fget_u32le(fp);
+    if(feof(fp))
+      return modutil::READ_ERROR;
+
+    return modutil::SUCCESS;
+  }
+};
+
+class SDAT_handler
+{
+public:
+  static constexpr IFFCode id = IFFCode("SDAT");
+
+  static modutil::error parse(FILE *fp, size_t len, MUSX_sample &ins)
+  {
+    if(~ins.present_chunks & (SLEN | ROFS | RLEN))
+    {
+      format::error("invalid SDAT prior to SLEN, ROFS, or RLEN");
+      return modutil::INVALID;
+    }
+    ins.present_chunks |= SDAT;
+
+    // Ignore.
+    return modutil::SUCCESS;
+  }
+};
+
+static const IFF<
+  MUSX_sample,
+  SNAM_handler,
+  SVOL_handler,
+  SLEN_handler,
+  ROFS_handler,
+  RLEN_handler,
+  SDAT_handler> SAMP_parser(Endian::LITTLE, IFFPadding::BYTE);
 
 
 /**
  * MUSX chunks.
  */
 
-static const class _TINF_handler final: public IFFHandler<MUSX_data>
+class TINF_handler
 {
 public:
-  _TINF_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("TINF");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & TINF)
       format::warning("duplicate TINF chunk");
@@ -147,14 +258,14 @@ public:
     m.timestamp = fget_u32le(fp);
     return modutil::SUCCESS;
   }
-} TINF_handler("TINF", false);
+};
 
-static const class _MVOX_handler final: public IFFHandler<MUSX_data>
+class MVOX_handler
 {
 public:
-  _MVOX_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("MVOX");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & MVOX)
       format::warning("duplicate MVOX chunk");
@@ -168,14 +279,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} MVOX_handler("MVOX", false);
+};
 
-static const class _STER_handler final: public IFFHandler<MUSX_data>
+class STER_handler
 {
 public:
-  _STER_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("STER");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & STER)
       format::warning("duplicate STER chunk");
@@ -188,14 +299,14 @@ public:
       return modutil::READ_ERROR;
     return modutil::SUCCESS;
   }
-} STER_handler("STER", false);
+};
 
-static const class _MNAM_handler final: public IFFHandler<MUSX_data>
+class MNAM_handler
 {
 public:
-  _MNAM_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("MNAM");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & MNAM)
       format::warning("duplicate MNAM chunk");
@@ -211,14 +322,14 @@ public:
     strip_module_name(m.name, len + 1);
     return modutil::SUCCESS;
   }
-} MNAM_handler("MNAM", false);
+};
 
-static const class _ANAM_handler final: public IFFHandler<MUSX_data>
+class ANAM_handler
 {
 public:
-  _ANAM_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("ANAM");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & ANAM)
       format::warning("duplicate ANAM chunk");
@@ -234,14 +345,14 @@ public:
     strip_module_name(m.author, len + 1);
     return modutil::SUCCESS;
   }
-} ANAM_handler("ANAM", false);
+};
 
-static const class _MLEN_handler final: public IFFHandler<MUSX_data>
+class MLEN_handler
 {
 public:
-  _MLEN_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("MLEN");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & MLEN)
       format::warning("duplicate MLEN chunk");
@@ -255,14 +366,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} MLEN_handler("MLEN", false);
+};
 
-static const class _PNUM_handler final: public IFFHandler<MUSX_data>
+class PNUM_handler
 {
 public:
-  _PNUM_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PNUM");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & PNUM)
     {
@@ -279,14 +390,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PNUM_handler("PNUM", false);
+};
 
-static const class _PLEN_handler final: public IFFHandler<MUSX_data>
+class PLEN_handler
 {
 public:
-  _PLEN_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PLEN");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     uint8_t tmp[MAX_PATTERNS];
 
@@ -314,14 +425,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PLEN_handler("PLEN", false);
+};
 
-static const class _SEQU_handler final: public IFFHandler<MUSX_data>
+class SEQU_handler
 {
 public:
-  _SEQU_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SEQU");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.present_chunks & SEQU)
       format::warning("duplicate SEQU chunk");
@@ -335,14 +446,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} SEQU_handler("SEQU", false);
+};
 
-static const class _PATT_handler final: public IFFHandler<MUSX_data>
+class PATT_handler
 {
 public:
-  _PATT_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PATT");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(~m.present_chunks & (MVOX | PNUM | PLEN))
     {
@@ -383,14 +494,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PATT_handler("PATT", false);
+};
 
-static const class _SAMP_handler final: public IFFHandler<MUSX_data>
+class SAMP_handler
 {
 public:
-  _SAMP_handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SAMP");
 
-  modutil::error parse(FILE *fp, size_t len, MUSX_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, MUSX_data &m)
   {
     if(m.current_sample >= MAX_SAMPLES)
     {
@@ -399,28 +510,44 @@ public:
       m.current_sample++;
       return modutil::SUCCESS;
     }
-    m.current_sample++;
+    MUSX_sample &ins = m.samples[m.current_sample++];
 
-    // FIXME load sample
+    auto parser = SAMP_parser;
+    modutil::error err = parser.parse_iff(fp, len, ins);
+    if(err)
+      return err;
+
+    // Any missing chunks?
+    if(~ins.present_chunks & SNAM)
+      format::warning("missing SNAM in %zu", m.current_sample - 1);
+    if(~ins.present_chunks & SVOL)
+      format::warning("missing SVOL in %zu", m.current_sample - 1);
+    if(~ins.present_chunks & SLEN)
+      format::warning("missing SLEN in %zu", m.current_sample - 1);
+    if(~ins.present_chunks & ROFS)
+      format::warning("missing ROFS in %zu", m.current_sample - 1);
+    if(~ins.present_chunks & RLEN)
+      format::warning("missing RLEN in %zu", m.current_sample - 1);
+    if(~ins.present_chunks & SDAT)
+      format::warning("missing SDAT in %zu", m.current_sample - 1);
 
     return modutil::SUCCESS;
   }
-} SAMP_handler("SAMP", false);
+};
 
-static const IFF<MUSX_data> MUSX_parser(Endian::LITTLE, IFFPadding::BYTE,
-{
-  &TINF_handler,
-  &MVOX_handler,
-  &STER_handler,
-  &MNAM_handler,
-  &ANAM_handler,
-  &MLEN_handler,
-  &PNUM_handler,
-  &PLEN_handler,
-  &SEQU_handler,
-  &PATT_handler,
-  &SAMP_handler,
-});
+static const IFF<
+  MUSX_data,
+  TINF_handler,
+  MVOX_handler,
+  STER_handler,
+  MNAM_handler,
+  ANAM_handler,
+  MLEN_handler,
+  PNUM_handler,
+  PLEN_handler,
+  SEQU_handler,
+  PATT_handler,
+  SAMP_handler> MUSX_parser(Endian::LITTLE, IFFPadding::BYTE);
 
 
 class MUSX_loader: modutil::loader
@@ -442,7 +569,7 @@ public:
     if(file_length < 8 || mem_u32le(tmp + 4) > (size_t)file_length - 8)
       return modutil::FORMAT_ERROR;
 
-    IFF<MUSX_data> parser = MUSX_parser;
+    auto parser = MUSX_parser;
     modutil::error err = parser.parse_iff(fp, file_length, m);
     if(err)
       return err;
@@ -485,7 +612,32 @@ public:
 
     if(Config.dump_samples)
     {
-      // FIXME
+      namespace table = format::table;
+
+      static constexpr const char *labels[] =
+      {
+        "Name", "Length", "LoopStart", "LoopLen", "Vol"
+      };
+
+      table::table<
+        table::string<20>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
+        table::number<4>> s_table;
+
+      format::line();
+      s_table.header("Sample", labels);
+
+      for(size_t i = 0; i < MAX_SAMPLES; i++)
+      {
+        MUSX_sample &ins = m.samples[i];
+        s_table.row(i + 1, ins.name, {},
+          ins.length, ins.loop_start, ins.loop_length, {},
+          ins.volume);
+      }
     }
 
     if(Config.dump_patterns)

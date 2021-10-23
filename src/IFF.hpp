@@ -36,6 +36,35 @@ enum class IFFCodeSize
   FOUR = 4,
 };
 
+class IFFCode
+{
+public:
+  static constexpr uint64_t NO_CODE = 0x7f7f7f7f7f7f7f7fULL;
+  uint64_t value;
+  bool is_container;
+
+  constexpr IFFCode(): value(NO_CODE), is_container(false) {}
+
+  constexpr IFFCode(char a, char b, bool is_c = false):
+    value((uint64_t)a | ((uint64_t)b << 8) | (NO_CODE << 16)), is_container(is_c) {}
+
+  constexpr IFFCode(char a, char b, char c, char d, bool is_c = false):
+    value((uint64_t)a | ((uint64_t)b << 8) | ((uint64_t)c << 16) | ((uint64_t)d << 24) | (NO_CODE << 32)),
+    is_container(is_c) {}
+
+  constexpr IFFCode(const char (&arr)[2], bool is_c = false): IFFCode(arr[0], arr[1], is_c) {}
+  constexpr IFFCode(const char (&arr)[3], bool is_c = false): IFFCode(arr[0], arr[1], is_c) {}
+  constexpr IFFCode(const char (&arr)[4], bool is_c = false): IFFCode(arr[0], arr[1], arr[2], arr[3], is_c) {}
+  constexpr IFFCode(const char (&arr)[5], bool is_c = false): IFFCode(arr[0], arr[1], arr[2], arr[3], is_c) {}
+
+  static constexpr IFFCode ANY_CODE() { return IFFCode(); }
+};
+
+inline bool operator==(const IFFCode &lhs, const IFFCode &rhs)
+{
+  return lhs.value == rhs.value;
+}
+
 template<class T>
 class IFFHandler
 {
@@ -51,7 +80,7 @@ public:
     id(id), is_container(is_container) {}
 };
 
-template<class T>
+template<class T, class... HANDLERS>
 class IFF
 {
 private:
@@ -61,14 +90,55 @@ private:
   IFFPadding padding = IFFPadding::WORD;
   IFFCodeSize codesize = IFFCodeSize::FOUR;
 
-  const IFFHandler<T> *find_handler(const char *id) const
+  /**
+   * Attempt to execute a static IFF handler. Most of the time dynamically
+   * changing handlers isn't necessary, and these are cleaner to write in loaders.
+   */
+  template<int I>
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  {
+    return modutil::IFF_NO_HANDLER;
+  }
+
+  template<int I, class H, class... REST>
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  {
+    if(I < sizeof...(HANDLERS))
+    {
+      if(H::id == IFFCode::ANY_CODE() || H::id == id)
+      {
+        if(!H::id.is_container)
+          return H::parse(fp, len, m);
+        else
+          return parse_iff(fp, len, m);
+      }
+
+      return exec_static_handler<I + 1, REST...>(fp, len, m, id);
+    }
+    return modutil::IFF_NO_HANDLER;
+  }
+
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  {
+    return exec_static_handler<0, HANDLERS...>(fp, len, m, id);
+  }
+
+  /**
+   * Attempt to execute a dynamic IFF handler.
+   */
+  modutil::error exec_dynamic_handler(FILE *fp, size_t len, T &m, const char *id) const
   {
     for(const IFFHandler<T> *h : handlers)
     {
       if(use_generic || !memcmp(h->id, id, static_cast<size_t>(codesize)))
-        return h;
+      {
+        if(!h->is_container)
+          return h->parse(fp, len, m);
+        else
+          return parse_iff(fp, len, m);
+      }
     }
-    return nullptr;
+    return modutil::IFF_NO_HANDLER;
   }
 
 public:
@@ -110,12 +180,17 @@ public:
       handlers.push_back(handlers_in[i]);
   }
 
+  IFF(Endian e, IFFPadding p, IFFCodeSize c): endian(e), padding(p), codesize(c) {}
+  IFF(Endian e, IFFPadding p): endian(e), padding(p) {}
+  IFF() {}
+
   modutil::error parse_iff(FILE *fp, size_t container_len, T &m) const
   {
     size_t start_pos = ftell(fp);
     size_t current_pos = start_pos;
     size_t end_pos = start_pos;
     int codelen = static_cast<int>(codesize);
+    IFFCode id_code;
     char id[5];
 
     switch(codesize)
@@ -138,6 +213,16 @@ public:
 
       if(!fread(id, codelen, 1, fp))
         break;
+
+      switch(codesize)
+      {
+        case IFFCodeSize::TWO:
+          id_code = IFFCode(id[0], id[1]);
+          break;
+        case IFFCodeSize::FOUR:
+          id_code = IFFCode(id[0], id[1], id[2], id[3]);
+          break;
+      }
 
       memcpy(current_id, id, codelen);
       current_id[codelen] = '\0';
@@ -171,26 +256,20 @@ public:
           break;
       }
 
-      const IFFHandler<T> *handler = find_handler(id);
-      if(!handler)
+      /* Attempt static handlers first. */
+      modutil::error result = exec_static_handler(fp, len, m, id_code);
+      if(result == modutil::IFF_NO_HANDLER)
       {
-        format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
-         codelen, codelen, id, ftell(fp) - 8);
+        result = exec_dynamic_handler(fp, len, m, id);
+        if(result == modutil::IFF_NO_HANDLER)
+        {
+          format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
+           codelen, codelen, id, ftell(fp) - 8);
+          result = modutil::SUCCESS;
+        }
       }
-      else
-
-      if(!handler->is_container)
-      {
-        modutil::error result = handler->parse(fp, len, m);
-        if(result)
-          return result;
-      }
-      else
-      {
-        modutil::error result = parse_iff(fp, len, m);
-        if(result)
-          return result;
-      }
+      if(result)
+        return result;
 
       if(fseek(fp, end_pos, SEEK_SET))
         return modutil::SEEK_ERROR;
