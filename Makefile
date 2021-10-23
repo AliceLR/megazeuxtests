@@ -33,6 +33,7 @@ MODUTIL_OBJS := \
   ${OBJ}/coco_load.o \
   ${OBJ}/dbm_load.o \
   ${OBJ}/dsm_load.o \
+  ${OBJ}/dtt_load.o \
   ${OBJ}/far_load.o \
   ${OBJ}/gdm_load.o \
   ${OBJ}/masi_load.o \
