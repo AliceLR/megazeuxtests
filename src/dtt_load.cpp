@@ -19,6 +19,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <memory>
 
 static size_t num_dtts = 0;
 
@@ -68,6 +69,7 @@ struct DTT_sample
   /* Compressed samples only. */
   uint32_t uncompressed_size;
   uint32_t compressed_size;
+  uint32_t compression_flags;
   bool is_compressed;
 };
 
@@ -119,6 +121,7 @@ struct DTT_pattern
   /* Compressed patterns only. */
   uint32_t uncompressed_size;
   uint32_t compressed_size;
+  uint32_t compression_flags;
   bool is_compressed;
 
   ~DTT_pattern()
@@ -156,9 +159,15 @@ struct DTT_data
   }
 };
 
+/* Compressed offsets are stored negated (two's-complement). */
 static bool is_compressed_offset(uint32_t off)
 {
   return (off & 0x80000000UL) != 0;
+}
+
+static bool DTT_uncompress(uint8_t *dest, size_t dest_len, const uint8_t *src, size_t src_len)
+{
+  return false;
 }
 
 
@@ -280,10 +289,12 @@ public:
     for(size_t i = 0; i < h.num_patterns; i++)
     {
       DTT_pattern &p = m.patterns[i];
+      p.allocate(h.num_channels);
+
       uint32_t real_offset = p.offset;
       if(is_compressed_offset(p.offset))
       {
-        real_offset = ~p.offset;
+        real_offset = ~p.offset + 1;
         p.is_compressed = true;
       }
 
@@ -293,32 +304,54 @@ public:
         continue;
       }
 
+      std::unique_ptr<uint8_t> u_data(nullptr);
+
       if(p.is_compressed)
       {
         p.uncompressed_size = fget_u32le(fp);
-        p.compressed_size = fget_u32le(fp);
-        // FIXME
-        format::warning("can't read compressed pattern %zu!", i);
-        continue;
+        p.compressed_size   = fget_u32le(fp);
+        p.compression_flags = fget_u32le(fp);
+
+        std::unique_ptr<uint8_t> c_data(new uint8_t[p.compressed_size]);
+        u_data = std::unique_ptr<uint8_t>(new uint8_t[p.uncompressed_size]);
+
+        if(!fread(c_data.get(), p.compressed_size, 1, fp))
+          return modutil::READ_ERROR;
+
+        if(!DTT_uncompress(u_data.get(), p.uncompressed_size, c_data.get(), p.compressed_size))
+        {
+          format::warning("error depacking pattern %zu", i);
+          continue;
+        }
       }
       else
         p.compressed_size = 0;
 
-      p.allocate(h.num_channels);
-
       DTT_event *current = p.events;
+      uint8_t *pos = u_data.get();
       for(size_t row = 0; row < p.num_rows; row++)
       {
         for(size_t track = 0; track < h.num_channels; track++, current++)
         {
           uint32_t a, b;
-          a = fget_u32le(fp);
-          p.compressed_size += 4;
+          if(!p.is_compressed)
+          {
+            a = fget_u32le(fp);
+            p.compressed_size += 4;
+          }
+          else
+            a = mem_u32le((pos += 4));
 
           if(DTT_event::is_multieffect(a))
           {
-            b = fget_u32le(fp);
-            p.compressed_size += 4;
+            if(!p.is_compressed)
+            {
+              b = fget_u32le(fp);
+              p.compressed_size += 4;
+            }
+            else
+              b = mem_u32le((pos += 4));
+
             *current = DTT_event(a, b);
           }
           else
@@ -335,14 +368,15 @@ public:
       DTT_sample &s = m.samples[i];
       if(is_compressed_offset(s.offset))
       {
-        uint32_t real_offset = ~s.offset;
+        uint32_t real_offset = ~s.offset + 1;
         if(fseek(fp, real_offset, SEEK_SET))
         {
           format::warning("failed to seek to sample %zu", i);
           continue;
         }
         s.uncompressed_size = fget_u32le(fp);
-        s.compressed_size = fget_u32le(fp);
+        s.compressed_size   = fget_u32le(fp);
+        s.compression_flags = fget_u32le(fp);
         s.is_compressed = true;
         m.any_compressed_samples = true;
       }
@@ -395,11 +429,12 @@ public:
       {
         static constexpr const char *c_labels[] =
         {
-          "Uncmp.Sz.", "Cmp.Sz."
+          "Uncmp.Sz.", "Cmp.Sz.", "Flags"
         };
         table::table<
           table::number<10>,
-          table::number<10>> c_table;
+          table::number<10>,
+          table::number<8, table::RIGHT | table::HEX>> c_table;
 
         format::line();
         c_table.header("Samples", c_labels);
@@ -408,7 +443,7 @@ public:
         {
           DTT_sample &s = m.samples[i];
           if(s.is_compressed)
-            c_table.row(i + 1, s.uncompressed_size, s.compressed_size);
+            c_table.row(i + 1, s.uncompressed_size, s.compressed_size, s.compression_flags);
         }
       }
     }
