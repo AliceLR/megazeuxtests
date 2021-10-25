@@ -240,10 +240,10 @@ struct SYM_instrument
 
 struct SYM_event
 {
-  uint8_t  note;
-  uint8_t  instrument;
-  uint8_t  effect;
-  uint16_t param;
+  uint8_t  note = 0;
+  uint8_t  instrument = 0;
+  uint8_t  effect = 0;
+  uint16_t param = 0;
 
   SYM_event() {}
   SYM_event(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
@@ -282,6 +282,8 @@ struct SYM_data
   SYM_track      *tracks = nullptr;
   SYM_order      *orders = nullptr;
   char           *text = nullptr;
+
+  SYM_track blank_track;
 
   uint8_t *buffer = nullptr;
   size_t buffer_size;
@@ -539,7 +541,7 @@ public:
         for(size_t j = 0; j < h.num_channels; j++, pos += 2)
         {
           uint16_t trk = mem_u16le(pos);
-          m.orders[i].tracks[j] = trk < 0x1000 ? trk : h.num_tracks;
+          m.orders[i].tracks[j] = trk;
         }
       }
     }
@@ -587,6 +589,7 @@ public:
         }
       }
     }
+    m.blank_track.allocate(NUM_ROWS);
 
     /**
      * Samples.
@@ -738,7 +741,8 @@ public:
 
     if(Config.dump_patterns)
     {
-      format::line();
+      if(!Config.dump_pattern_rows)
+        format::line();
 
       struct effectSYM
       {
@@ -769,7 +773,8 @@ public:
         {
           for(size_t track = 0; track < h.num_channels; track++)
           {
-            SYM_track &t = m.tracks[p.tracks[track]];
+            int idx = p.tracks[track];
+            SYM_track &t = idx < h.num_tracks ? m.tracks[idx] : m.blank_track;
             SYM_event &e = t.events[row];
 
             format::note   a{ e.note };
