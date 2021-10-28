@@ -665,13 +665,13 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     // Prior versions store them all at the very end of the module.
     if(m.header.version >= 0x0104)
     {
-      char tmp[4];
-      if(fread(tmp, 4, 1, fp))
+      char tmp[8];
+      if(fread(tmp, 8, 1, fp))
       {
-        if(!memcmp(tmp, "OggS", 4))
+        if(!memcmp(tmp + 4, "OggS", 4))
           m.uses[FT_SAMPLE_OGG] = true;
 
-        sample_total_length -=4;
+        sample_total_length -= 8;
       }
       if(fseek(fp, sample_total_length, SEEK_CUR))
         return modutil::SEEK_ERROR;
