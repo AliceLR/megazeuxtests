@@ -109,7 +109,7 @@ public:
       char hexbuf[9];
       size_t j = 0;
 
-      for(size_t i = 0; i < codelen && j + 1 < arraysize(hexbuf); i++)
+      for(size_t i = 0; i < codelen && j + 1 < (size_t)arraysize(hexbuf); i++)
       {
         hexbuf[j++] = hex[static_cast<uint8_t>(current_id[i]) >> 4];
         hexbuf[j++] = hex[current_id[i] & 0xF];

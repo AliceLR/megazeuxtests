@@ -678,7 +678,7 @@ static modutil::error AMF_read(FILE *fp)
     if(Config.dump_pattern_rows)
     {
       O_("FX Key  : ");
-      for(unsigned int i = 0; i < arraysize(AMF_effect_strings); i++)
+      for(int i = 0; i < arraysize(AMF_effect_strings); i++)
         fprintf(stderr, "%s%s=%02x", (i > 0)?",":"", AMF_effect_strings[i], i + 0x81);
       fprintf(stderr, "\n");
     }

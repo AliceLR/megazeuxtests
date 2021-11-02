@@ -22,6 +22,15 @@
 #include "FileIO.POSIX.hpp"
 #endif
 
+#if defined(__GNUC__) && __GNUC__ >= 11
+#define ANNOYING_WARNING
+#endif
+
+#ifdef ANNOYING_WARNING
+// GCC can't figure out that the dir separator fix will never actually index buffer[-1] ;-(
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 static bool _io_mkdir_recursive(char (&buffer)[1024])
 {
   char *cursor = buffer;
@@ -46,6 +55,9 @@ static bool _io_mkdir_recursive(char (&buffer)[1024])
   }
   return true;
 }
+#ifdef ANNOYING_WARNING
+#pragma GCC diagnostic pop
+#endif
 
 FileIO::~FileIO()
 {
