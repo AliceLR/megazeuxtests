@@ -24,6 +24,57 @@
 static int total_far = 0;
 
 
+enum FAR_feature
+{
+  FT_NONE,
+  FT_E_RAMP_DELAY_ON,
+  FT_E_RAMP_DELAY_OFF,
+  FT_E_FULFILL_LOOP,
+  FT_E_OLD_FAR_TEMPO,
+  FT_E_NEW_FAR_TEMPO,
+  FT_E_PORTA_UP,
+  FT_E_PORTA_DN,
+  FT_E_TONEPORTA,
+  FT_E_RETRIGGER,
+  FT_E_SET_VIBRATO_DEPTH,
+  FT_E_VIBRATO_NOTE,
+  FT_E_VOLSLIDE_UP,
+  FT_E_VOLSLIDE_DN,
+  FT_E_VIBRATO_SUSTAIN,
+  FT_E_SLIDE_TO_VOLUME,
+  FT_E_BALANCE,
+  FT_E_NOTE_OFFSET,
+  FT_E_FINE_TEMPO_DN,
+  FT_E_FINE_TEMPO_UP,
+  FT_E_TEMPO,
+  NUM_FEATURES
+};
+
+static constexpr const char *FEATURE_STR[NUM_FEATURES] =
+{
+  "",
+  "E:RampDelayOn",
+  "E:RampDelayOff",
+  "E:FulfillLoop",
+  "E:OldTempo",
+  "E:NewTempo",
+  "E:PortaUp",
+  "E:PortaDn",
+  "E:TPorta",
+  "E:Retrig",
+  "E:VibDepth",
+  "E:VibNote",
+  "E:VSlideUp",
+  "E:VSlideDn",
+  "E:VibSustain",
+  "E:Slide2Vol",
+  "E:Balance",
+  "E:NoteOffset",
+  "E:FTempoDn",
+  "E:FTempoUp",
+  "E:Tempo",
+};
+
 static const char MAGIC[] = "FAR\xFE";
 static const char MAGIC_EOF[] = "\x0d\x0a\x1a";
 
@@ -52,6 +103,31 @@ enum FAR_editor_memory_2
   GRID_SIZE,
   EDIT_MODE,
   MAX_EDITOR_MEMORY_2
+};
+
+enum FAR_effects
+{
+  E_GLOBAL_FUNCTION   = 0x00,
+  E_RAMP_DELAY_ON     = 0x01,
+  E_RAMP_DELAY_OFF    = 0x02,
+  E_FULFILL_LOOP      = 0x03,
+  E_OLD_FAR_TEMPO     = 0x04,
+  E_NEW_FAR_TEMPO     = 0x05,
+  E_PORTA_UP          = 0x10,
+  E_PORTA_DN          = 0x20,
+  E_TONEPORTA         = 0x30,
+  E_RETRIGGER         = 0x40,
+  E_SET_VIBRATO_DEPTH = 0x50,
+  E_VIBRATO_NOTE      = 0x60,
+  E_VOLSLIDE_UP       = 0x70,
+  E_VOLSLIDE_DN       = 0x80,
+  E_VIBRATO_SUSTAIN   = 0x90,
+  E_SLIDE_TO_VOLUME   = 0xa0,
+  E_BALANCE           = 0xb0,
+  E_NOTE_OFFSET       = 0xc0,
+  E_FINE_TEMPO_DN     = 0xd0,
+  E_FINE_TEMPO_UP     = 0xe0,
+  E_TEMPO             = 0xf0,
 };
 
 #define HAS_INSTRUMENT(x) (!!(h.sample_mask[x >> 3] & (1 << (x & 7))))
@@ -153,12 +229,53 @@ struct FAR_data
 
   char name[41];
   size_t num_instruments;
+  bool uses[NUM_FEATURES];
 
   ~FAR_data()
   {
     delete[] text;
   }
 };
+
+static FAR_feature get_effect_feature(uint8_t effect)
+{
+  switch(effect & 0xf0)
+  {
+    case E_GLOBAL_FUNCTION:
+      switch(effect)
+      {
+        case E_RAMP_DELAY_ON:  return FT_E_RAMP_DELAY_ON;
+        case E_RAMP_DELAY_OFF: return FT_E_RAMP_DELAY_OFF;
+        case E_FULFILL_LOOP:   return FT_E_FULFILL_LOOP;
+        case E_OLD_FAR_TEMPO:  return FT_E_OLD_FAR_TEMPO;
+        case E_NEW_FAR_TEMPO:  return FT_E_NEW_FAR_TEMPO;
+      }
+      break;
+    case E_PORTA_UP:           return FT_E_PORTA_UP;
+    case E_PORTA_DN:           return FT_E_PORTA_DN;
+    case E_TONEPORTA:          return FT_E_TONEPORTA;
+    case E_RETRIGGER:          return FT_E_RETRIGGER;
+    case E_SET_VIBRATO_DEPTH:  return FT_E_SET_VIBRATO_DEPTH;
+    case E_VIBRATO_NOTE:       return FT_E_VIBRATO_NOTE;
+    case E_VOLSLIDE_UP:        return FT_E_VOLSLIDE_UP;
+    case E_VOLSLIDE_DN:        return FT_E_VOLSLIDE_DN;
+    case E_VIBRATO_SUSTAIN:    return FT_E_VIBRATO_SUSTAIN;
+    case E_SLIDE_TO_VOLUME:    return FT_E_SLIDE_TO_VOLUME;
+    case E_BALANCE:            return FT_E_BALANCE;
+    case E_NOTE_OFFSET:        return FT_E_NOTE_OFFSET;
+    case E_FINE_TEMPO_DN:      return FT_E_FINE_TEMPO_DN;
+    case E_FINE_TEMPO_UP:      return FT_E_FINE_TEMPO_UP;
+    case E_TEMPO:              return FT_E_TEMPO;
+  }
+  return FT_NONE;
+}
+
+static void check_event_features(FAR_data &m, FAR_event &ev)
+{
+  FAR_feature ft = get_effect_feature(ev.effect);
+  if(ft)
+    m.uses[ft] = true;
+}
 
 
 class FAR_loader : modutil::loader
@@ -268,7 +385,7 @@ public:
       FAR_event *current = p.events;
       for(size_t row = 0; row < p.rows; row++)
       {
-        for(size_t track = 0; track < p.columns; track++)
+        for(size_t track = 0; track < p.columns; track++, current++)
         {
           uint8_t ev[4];
           if(!fread(ev, 4, 1, fp))
@@ -276,7 +393,8 @@ public:
             format::error("read error for pattern %02x", i);
             return modutil::READ_ERROR;
           }
-          *(current++) = FAR_event(ev[0], ev[1], ev[2], ev[3]);
+          *current = FAR_event(ev[0], ev[1], ev[2], ev[3]);
+          check_event_features(m, *current);
         }
       }
     }
@@ -324,6 +442,7 @@ public:
     format::line("Instr.",   "%zu", m.num_instruments);
     format::line("Patterns", "%d (claims %d)", num_patterns, h.num_patterns);
     format::line("Orders",   "%d", h.num_orders);
+    format::uses(m.uses, FEATURE_STR);
 
     format::description<132>("Desc.", m.text, h.text_length);
 
