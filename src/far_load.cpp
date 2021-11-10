@@ -27,6 +27,7 @@ static int total_far = 0;
 enum FAR_feature
 {
   FT_NONE,
+  FT_SAMPLE_16BIT,
   FT_E_RAMP_DELAY_ON,
   FT_E_RAMP_DELAY_OFF,
   FT_E_FULFILL_LOOP,
@@ -36,6 +37,7 @@ enum FAR_feature
   FT_E_PORTA_DN,
   FT_E_TONEPORTA,
   FT_E_RETRIGGER,
+  FT_E_RETRIGGER_CRASH,
   FT_E_SET_VIBRATO_DEPTH,
   FT_E_VIBRATO_NOTE,
   FT_E_VOLSLIDE_UP,
@@ -53,6 +55,7 @@ enum FAR_feature
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
   "",
+  "S:16",
   "E:RampDelayOn",
   "E:RampDelayOff",
   "E:FulfillLoop",
@@ -61,7 +64,8 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "E:PortaUp",
   "E:PortaDn",
   "E:TPorta",
-  "E:Retrig",
+  "E:Retrigger",
+  "E:RetrigCrash",
   "E:VibDepth",
   "E:VibNote",
   "E:VSlideUp",
@@ -254,7 +258,7 @@ static FAR_feature get_effect_feature(uint8_t effect)
     case E_PORTA_UP:           return FT_E_PORTA_UP;
     case E_PORTA_DN:           return FT_E_PORTA_DN;
     case E_TONEPORTA:          return FT_E_TONEPORTA;
-    case E_RETRIGGER:          return FT_E_RETRIGGER;
+    case E_RETRIGGER:          return (effect & 0x0f) ? FT_E_RETRIGGER : FT_E_RETRIGGER_CRASH;
     case E_SET_VIBRATO_DEPTH:  return FT_E_SET_VIBRATO_DEPTH;
     case E_VIBRATO_NOTE:       return FT_E_VIBRATO_NOTE;
     case E_VOLSLIDE_UP:        return FT_E_VOLSLIDE_UP;
@@ -332,6 +336,12 @@ public:
       m.text = new char[len + 1];
       if(!fread(m.text, len, 1, fp))
         return modutil::READ_ERROR;
+
+      /* Convert nulls to spaces :( */
+      for(size_t j = 0; j < h.text_length; j++)
+        if(m.text[j] == '\0')
+          m.text[j] = ' ';
+
       m.text[len] = '\0';
     }
 
@@ -424,6 +434,9 @@ public:
       ins.loop_end   = fget_u32le(fp);
       ins.type_flags = fgetc(fp);
       ins.loop_flags = fgetc(fp);
+
+      if(ins.type_flags & S_16BIT)
+        m.uses[FT_SAMPLE_16BIT] = true;
 
       if(feof(fp))
       {

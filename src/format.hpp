@@ -208,9 +208,15 @@ namespace format
             pos = line_start + WRAP;
 
           int segment = pos - line_start;
+          int skip = segment;
+
+          // Trim trailing spaces.
+          while(segment && isspace(line_start[segment - 1]))
+            segment--;
+
           fprintf(stderr, "%*.*s\n", segment, segment, line_start);
-          line_start += segment;
-          left -= segment;
+          line_start += skip;
+          left -= skip;
 
           O_("%-8.8s: ", "");
         }
