@@ -27,6 +27,7 @@ static int total_far = 0;
 enum FAR_feature
 {
   FT_NONE,
+  FT_SIZE_0_PATTERN,
   FT_SAMPLE_16BIT,
   FT_E_RAMP_DELAY_ON,
   FT_E_RAMP_DELAY_OFF,
@@ -55,6 +56,7 @@ enum FAR_feature
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
   "",
+  "P:Size0",
   "S:16",
   "E:RampDelayOn",
   "E:RampDelayOff",
@@ -355,6 +357,10 @@ public:
     for(i = 0; i < MAX_PATTERNS; i++)
       h.pattern_length[i] = fget_u16le(fp);
 
+    for(i = 0; i < (int)h.num_orders; i++)
+      if(h.pattern_length[h.orders[i]] == 0)
+        m.uses[FT_SIZE_0_PATTERN] = true;
+
     if(feof(fp))
       return modutil::READ_ERROR;
 
@@ -499,6 +505,7 @@ public:
     {
       format::line();
       format::orders("Orders", h.orders, h.num_orders);
+      format::line("Loop to", "%u", h.loop_to_position);
 
       if(!Config.dump_pattern_rows)
         format::line();
