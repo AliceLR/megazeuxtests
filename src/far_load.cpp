@@ -27,6 +27,7 @@ static int total_far = 0;
 enum FAR_feature
 {
   FT_NONE,
+  FT_LOOP_TO,
   FT_SIZE_0_PATTERN,
   FT_SAMPLE_16BIT,
   FT_E_RAMP_DELAY_ON,
@@ -56,6 +57,7 @@ enum FAR_feature
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
   "",
+  "O:LoopTo",
   "P:Size0",
   "S:16",
   "E:RampDelayOn",
@@ -361,6 +363,9 @@ public:
       if(h.pattern_length[h.orders[i]] == 0)
         m.uses[FT_SIZE_0_PATTERN] = true;
 
+    if(h.loop_to_position)
+      m.uses[FT_LOOP_TO] = true;
+
     if(feof(fp))
       return modutil::READ_ERROR;
 
@@ -495,7 +500,7 @@ public:
           continue;
 
         FAR_instrument &ins = m.instruments[i];
-        s_table.row(i + 1, ins.name, {},
+        s_table.row(i, ins.name, {},
           ins.length, ins.loop_start, ins.loop_end, {},
           ins.volume, ins.finetune, ins.type_flags, ins.loop_flags);
       }
