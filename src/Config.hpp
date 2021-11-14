@@ -60,6 +60,11 @@ struct ConfigInfo final
   {
     return init(argc, argv, nullptr, nullptr);
   }
+
+private:
+  void set_dump_descriptions(int level);
+  void set_dump_samples(int level);
+  void set_dump_patterns(int level);
 };
 
 extern ConfigInfo Config;

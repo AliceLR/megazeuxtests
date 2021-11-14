@@ -18,6 +18,7 @@
 #include "modutil.hpp"
 
 #include <ctype.h>
+#include <stdlib.h>
 
 ConfigInfo Config;
 
@@ -27,6 +28,7 @@ const char ConfigInfo::COMMON_FLAGS[] =
   "  -f=fmt... Filter by format loader extension and/or tag (see supported formats).\n"
   "            'fmt' can be a comma separated list or -f can be specified multiple\n"
   "            times to allow multiple formats.\n"
+  "  -a[=N]    Enable/disable all dump vars at a given level (if not provided, N=1).\n"
   "  -d[=N]    Dump description. N=1 (optional) enables, N=0 disables (default).\n"
   "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
   "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
@@ -45,6 +47,22 @@ static char next_char(const char **str)
     (*str)++;
 
   return *((*str)++);
+}
+
+static bool parse_int(char opt, const char *str, long *ret)
+{
+  if(str[0])
+  {
+    char *end;
+    long val = strtol(str, &end, 10);
+    if(!end || !end[0])
+    {
+      *ret = val;
+      return true;
+    }
+  }
+  format::error("invalid value for option -%c", opt);
+  return false;
 }
 
 static bool parse_highlight(const char *str)
@@ -107,10 +125,30 @@ static bool parse_highlight(const char *str)
   }
 }
 
+void ConfigInfo::set_dump_descriptions(int level)
+{
+  dump_descriptions = (level >= 1);
+  quiet = quiet && !dump_descriptions;
+}
+
+void ConfigInfo::set_dump_samples(int level)
+{
+  dump_samples = (level >= 1);
+  quiet = quiet && !dump_samples;
+}
+
+void ConfigInfo::set_dump_patterns(int level)
+{
+  dump_patterns = (level >= 1);
+  dump_pattern_rows = (level >= 2);
+  quiet = quiet && !dump_patterns;
+}
+
 bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, void *), void *priv)
 {
   int argc = *_argc;
   int new_argc = 1;
+  long value;
 
   for(int i = 1; i < argc; i++)
   {
@@ -145,65 +183,49 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           format::error("invalid config for -H");
           return false;
 
+        /* Dump all. */
+        case 'a':
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          set_dump_descriptions(value);
+          set_dump_patterns(value);
+          set_dump_samples(value);
+          continue;
+
         /* Dump description text. */
         case 'd':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_descriptions = true;
-            quiet = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_descriptions = false;
-            continue;
-          }
-          break;
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          set_dump_descriptions(value);
+          continue;
 
         /* Dump pattern/order info. */
         case 'p':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=2"))
-          {
-            dump_patterns = true;
-            dump_pattern_rows = true;
-            quiet = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_patterns = false;
-            dump_pattern_rows = false;
-            quiet = false;
-            continue;
-          }
-          break;
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          set_dump_patterns(value);
+          continue;
 
         /* Dump sample/instrument info. */
         case 's':
-          if(!arg[2] || !strcmp(arg + 2, "=1"))
-          {
-            dump_samples = true;
-            quiet = false;
-            continue;
-          }
-          if(!strcmp(arg + 2, "=0"))
-          {
-            dump_samples = false;
-            continue;
-          }
-          break;
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          set_dump_samples(value);
+          continue;
 
         /* Suppress text output. */
         case 'q':
-          dump_patterns = false;
-          dump_pattern_rows = false;
-          dump_samples = false;
+          set_dump_descriptions(0);
+          set_dump_patterns(0);
+          set_dump_samples(0);
           quiet = true;
           continue;
 
