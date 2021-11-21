@@ -538,7 +538,7 @@ public:
             format::note      a{ current->note };
             format::sample    b{ current->instrument };
             format::volume    c{ current->volume };
-            format::effect669 d{ current->effect };
+            format::effect669 d{ current->effect, current->effect > 0 };
             pattern.insert(EVENT(a, b, c, d));
           }
         }

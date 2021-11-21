@@ -489,8 +489,9 @@ namespace format
   struct effect669
   {
     uint8_t effect;
+    uint8_t enable = true;
     static constexpr int width() { return 3; }
-    bool can_print() const { return effect != 0; }
+    bool can_print() const { return enable; }
     void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%02x", effect >> 4, effect & 0xf), effect); else spaces(width()); }
   };
 

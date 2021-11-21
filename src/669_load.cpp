@@ -25,6 +25,96 @@ static int num_composer;
 static int num_unis;
 
 
+static constexpr size_t MAX_SAMPLES = 64;
+static constexpr size_t MAX_ORDERS = 128;
+static constexpr size_t MAX_PATTERNS = 128;
+static constexpr size_t NUM_ROWS = 64;
+static constexpr size_t NUM_CHANNELS = 8;
+
+struct _669_instrument
+{
+  /*   0 */ char     filename[13];
+  /*  13 */ uint32_t length;
+  /*  17 */ uint32_t loop_start;
+  /*  21 */ uint32_t loop_end;
+  /*  25 */
+};
+
+struct _669_event
+{
+  uint8_t note = 0;
+  uint8_t instrument = 0;
+  uint8_t volume = 0;
+  uint8_t effect = 0;
+
+  _669_event() {}
+  _669_event(uint8_t a, uint8_t b, uint8_t c)
+  {
+    note = (a >> 2);
+    instrument = ((a & 0x3) << 4) | (b >> 4);
+    volume = (b & 0xf);
+    effect = c;
+
+    if(a >= 0xfe)
+      note = a;
+  }
+
+  bool has_note()
+  {
+    return note < 0xfe;
+  }
+
+  bool has_volume()
+  {
+    return note < 0xff;
+  }
+
+  bool has_effect()
+  {
+    return effect < 0xff;
+  }
+};
+
+struct _669_pattern
+{
+  uint8_t brk; /* from header */
+  uint8_t tempo; /* from header */
+  _669_event *events = nullptr;
+
+  void allocate()
+  {
+    events = new _669_event[NUM_ROWS * NUM_CHANNELS]{};
+  }
+
+  ~_669_pattern()
+  {
+    delete[] events;
+  }
+};
+
+struct _669_header
+{
+  /*   0 */ char     magic[2];
+  /*   2 */ char     message[108];
+  /* 110 */ uint8_t  num_samples;
+  /* 111 */ uint8_t  num_patterns;
+  /* 112 */ uint8_t  repeat_pos;
+  /* 113 */ uint8_t  orders[MAX_ORDERS];
+  /* 241 */ uint8_t  pattern_tempos[MAX_PATTERNS];
+  /* 369 */ uint8_t  pattern_breaks[MAX_PATTERNS];
+  /* 497 */
+};
+
+struct _669_data
+{
+  _669_header     header;
+  _669_instrument instruments[MAX_SAMPLES];
+  _669_pattern    patterns[MAX_PATTERNS];
+
+  size_t num_orders;
+};
+
+
 class _669_loader : public modutil::loader
 {
 public:
@@ -32,26 +122,179 @@ public:
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {
-    char magic[2];
-    if(!fread(magic, 2, 1, fp))
+    _669_data m{};
+    _669_header &h = m.header;
+    const char *type;
+
+    if(!fread(h.magic, 2, 1, fp))
       return modutil::FORMAT_ERROR;
 
-    if(!memcmp(magic, "if", 2))
+    if(!memcmp(h.magic, "if", 2))
     {
-      format::line("Type", "Composer 669");
+      type = "Composer 669";
       num_composer++;
     }
     else
 
-    if(!memcmp(magic, "JN", 2))
+    if(!memcmp(h.magic, "JN", 2))
     {
-      format::line("Type", "UNIS 669");
+      type = "UNIS 669";
       num_unis++;
     }
     else
       return modutil::FORMAT_ERROR;
 
     num_669++;
+
+
+    /* Header */
+
+    if(!fread(h.message, sizeof(h.message), 1, fp))
+      return modutil::READ_ERROR;
+
+    h.num_samples = fgetc(fp);
+    h.num_patterns = fgetc(fp);
+    h.repeat_pos = fgetc(fp);
+
+    if(!fread(h.orders, sizeof(h.orders), 1, fp) ||
+       !fread(h.pattern_tempos, sizeof(h.pattern_tempos), 1, fp) ||
+       !fread(h.pattern_breaks, sizeof(h.pattern_breaks), 1, fp))
+      return modutil::READ_ERROR;
+
+    if(h.num_samples > MAX_SAMPLES)
+    {
+      format::error("sample count '%u' too high", h.num_samples);
+      return modutil::INVALID;
+    }
+    if(h.num_patterns > MAX_PATTERNS)
+    {
+      format::error("pattern count '%u' too high", h.num_patterns);
+      return modutil::INVALID;
+    }
+
+    size_t ord;
+    for(ord = 0; ord < MAX_ORDERS; ord++)
+      if(h.orders[ord] > h.num_patterns)
+        break;
+    m.num_orders = ord;
+
+    /* Samples */
+
+    for(size_t i = 0; i < h.num_samples; i++)
+    {
+      _669_instrument &ins = m.instruments[i];
+
+      if(!fread(ins.filename, sizeof(ins.filename), 1, fp))
+        return modutil::READ_ERROR;
+
+      ins.filename[12] = '\0';
+      ins.length     = fget_u32le(fp);
+      ins.loop_start = fget_u32le(fp);
+      ins.loop_end   = fget_u32le(fp);
+    }
+
+    /* Patterns */
+
+    for(size_t i = 0; i < h.num_patterns; i++)
+    {
+      _669_pattern &p = m.patterns[i];
+      p.brk = h.pattern_breaks[i];
+      p.tempo = h.pattern_tempos[i];
+
+      p.allocate();
+
+      _669_event *current = p.events;
+      for(size_t row = 0; row < NUM_ROWS; row++)
+      {
+        for(size_t track = 0; track < NUM_CHANNELS; track++, current++)
+        {
+          uint8_t ev[3];
+          if(!fread(ev, 3, 1, fp))
+            goto pat_read_error;
+
+          *current = _669_event(ev[0], ev[1], ev[2]);
+        }
+      }
+pat_read_error:
+      ;
+    }
+
+
+    /* Print information */
+
+    format::line("Type",     "%s", type);
+    format::line("Instr.",   "%u", h.num_samples);
+    format::line("Patterns", "%u", h.num_patterns);
+    format::line("Orders",   "%zu", m.num_orders);
+    format::description<36>("Message", h.message, 108);
+
+    if(Config.dump_samples)
+    {
+      namespace table = format::table;
+
+      static constexpr const char *labels[] =
+      {
+        "Filename", "Length", "LoopStart", "LoopEnd"
+      };
+
+      table::table<
+        table::string<12>,
+        table::spacer,
+        table::number<10>,
+        table::number<10>,
+        table::number<10>> i_table;
+
+      format::line();
+      i_table.header("Instr.", labels);
+
+      for(size_t i = 0; i < h.num_samples; i++)
+      {
+        _669_instrument &ins = m.instruments[i];
+        i_table.row(i, ins.filename, {}, ins.length, ins.loop_start, ins.loop_end);
+      }
+    }
+
+    if(Config.dump_patterns)
+    {
+      format::line();
+      format::orders("Orders", h.orders, m.num_orders);
+      format::line("Loop to", "%u", h.repeat_pos);
+
+      if(!Config.dump_pattern_rows)
+        format::line();
+
+      for(size_t i = 0; i < h.num_patterns; i++)
+      {
+        _669_pattern &p = m.patterns[i];
+
+        using EVENT = format::event<format::note, format::sample, format::volume, format::effect669>;
+        format::pattern<EVENT> pattern(i, NUM_CHANNELS, NUM_ROWS);
+
+        pattern.extra("Tempo=%u, Break=%u", p.tempo, p.brk);
+
+        if(!Config.dump_pattern_rows)
+        {
+          pattern.summary();
+          continue;
+        }
+
+        _669_event *current = p.events;
+        for(size_t row = 0; row < NUM_ROWS; row++)
+        {
+          for(size_t track = 0; track < NUM_CHANNELS; track++, current++)
+          {
+            format::note      a{ current->note, current->has_note() };
+            format::sample    b{ current->instrument, current->has_note() };
+            format::volume    c{ current->volume, current->has_volume() };
+            format::effect669 d{ current->effect, current->has_effect() };
+
+            pattern.insert(EVENT(a, b, c, d));
+          }
+        }
+        pattern.print();
+      }
+    }
+
     return modutil::SUCCESS;
   }
 
