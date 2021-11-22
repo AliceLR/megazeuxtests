@@ -50,8 +50,6 @@ const char *strerror(modutil::error err)
     case IT_INVALID_PATTERN_COUNT: return "invalid pattern count >256";
 
     /* GDM */
-    case GDM_BAD_CHANNEL:   return "invalid GDM channel index";
-    case GDM_BAD_PATTERN:   return "invalid GDM pattern data";
     case GDM_TOO_MANY_EFFECTS: return "note has more effects (>4) than allowed";
 
     /* AMF/DSMI */

@@ -49,8 +49,6 @@ namespace modutil
     IT_INVALID_PATTERN_COUNT,
 
     /* GDM */
-    GDM_BAD_CHANNEL,
-    GDM_BAD_PATTERN,
     GDM_TOO_MANY_EFFECTS,
 
     /* AMF/DSMI */

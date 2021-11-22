@@ -134,6 +134,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   ">256Rows",
 };
 
+
+static constexpr size_t MAX_CHANNELS = 32;
+
 static const char MAGIC[] = "GDM\xFE";
 static const char MAGIC_EOF[] = "\x0D\x0A\x1A";
 static const char MAGIC_2[] = "GMFS";
@@ -258,32 +261,33 @@ static const char *FLAG_STR(char (&buffer)[N], uint8_t flags)
 
 struct GDM_header
 {
-  char magic[4];
-  char name[33]; // Null-terminator not stored? array size is 1 larger than field.
-  char author[33]; // Ditto.
-  char eof[3];
-  char magic2[4];
-  uint16_t gdm_version;
-  uint16_t tracker_id;
-  uint16_t tracker_version;
-  uint8_t panning[32];
-  uint8_t global_volume;
-  uint8_t tempo;
-  uint8_t bpm;
-  uint16_t original_format;
-  uint32_t order_offset;
-  uint8_t num_orders;
-  uint32_t pattern_offset;
-  uint8_t num_patterns;
-  uint32_t sample_offset;
-  uint32_t sample_data_offset;
-  uint8_t num_samples;
-  uint32_t message_offset;
-  uint32_t message_length;
-  uint32_t scrolly_offset; // ??
-  uint16_t scrolly_length;
-  uint32_t graphic_offset; // ??
-  uint16_t graphic_length;
+  /*   0 */ char magic[4];
+  /*   4 */ char name[33]; /* Stored as 32 bytes. */
+  /*  36 */ char author[33]; /* Stored as 32 bytes. */
+  /*  68 */ char eof[3];
+  /*  71 */ char magic2[4];
+  /*  75 */ uint16_t gdm_version;
+  /*  77 */ uint16_t tracker_id;
+  /*  79 */ uint16_t tracker_version;
+  /*  81 */ uint8_t panning[32];
+  /* 113 */ uint8_t global_volume;
+  /* 114 */ uint8_t tempo;
+  /* 115 */ uint8_t bpm;
+  /* 116 */ uint16_t original_format;
+  /* 118 */ uint32_t order_offset;
+  /* 122 */ uint8_t num_orders;
+  /* 123 */ uint32_t pattern_offset;
+  /* 127 */ uint8_t num_patterns;
+  /* 128 */ uint32_t sample_offset;
+  /* 132 */ uint32_t sample_data_offset;
+  /* 136 */ uint8_t num_samples;
+  /* 137 */ uint32_t message_offset; /* MenTaLguY doc accidentally duplicates this. */
+  /* 141 */ uint32_t message_length;
+  /* 145 */ uint32_t scrolly_offset; // ??
+  /* 149 */ uint16_t scrolly_length;
+  /* 151 */ uint32_t graphic_offset; // ??
+  /* 155 */ uint16_t graphic_length;
+  /* 157 */
 };
 
 struct GDM_sample
@@ -300,31 +304,42 @@ struct GDM_sample
   uint8_t default_panning;
 };
 
-struct GDM_note
+struct GDM_event
 {
-  uint8_t note;
-  uint8_t sample;
+  uint8_t note = 0;
+  uint8_t sample = 0;
   struct
   {
-    uint8_t effect;
-    uint8_t param;
+    uint8_t effect = 0;
+    uint8_t param = 0;
   } effects[4];
+
+  GDM_event() {}
 };
 
 struct GDM_pattern
 {
-  // NOTE: this could theoretically be longer but this is probably the maximum.
-  GDM_note rows[256][32];
-  uint8_t max_track_effects[32];
+  GDM_event *events = nullptr;
   uint16_t raw_size;
   uint16_t num_rows;
+  uint16_t num_channels;
+
+  ~GDM_pattern()
+  {
+    delete[] events;
+  }
+
+  void allocate()
+  {
+    events = new GDM_event[num_rows * num_channels]{};
+  }
 };
 
 struct GDM_data
 {
   GDM_header header;
   GDM_sample samples[256];
-  GDM_pattern *patterns[256];
+  GDM_pattern patterns[256];
   uint8_t orders[256];
   uint8_t buffer[65536];
   uint8_t num_channels;
@@ -335,8 +350,6 @@ struct GDM_data
   ~GDM_data()
   {
     delete[] message;
-    for(int i = 0; i < 256; i++)
-      delete patterns[i];
   }
 };
 
@@ -402,6 +415,116 @@ static enum GDM_features get_effect_feature(uint8_t fx_effect, uint8_t fx_param)
     }
   }
 }
+
+/* Loading a GDM pattern takes two passes--first to get the row count, second to load. */
+static modutil::error GDM_load_pattern(GDM_data &m, GDM_pattern &p, const std::vector<uint8_t> &buffer)
+{
+  GDM_event dummy{};
+  size_t pos = 0;
+  size_t row = 0;
+  size_t channels = m.num_channels;
+  const bool is_scan = (p.events == nullptr);
+
+  while(pos < p.raw_size)
+  {
+    uint8_t t = buffer[pos++];
+
+    if(t == 0)
+    {
+      row++;
+      if(pos < p.raw_size)
+        continue;
+
+      break;
+    }
+
+    size_t track = (t & 0x1F);
+    GDM_event &ev = p.events ? p.events[row * p.num_channels + track] : dummy;
+
+    channels = MAX(track + 1, channels);
+
+    if(t & 0x20)
+    {
+      if(pos + 2 > p.raw_size)
+        return modutil::INVALID;
+
+      if(!is_scan)
+      {
+        ev.note = buffer[pos++];
+        ev.sample = buffer[pos++];
+
+        if(!ev.note)
+          m.uses[FT_EVENT_NO_NOTE] = true;
+        if(!ev.sample)
+          m.uses[FT_EVENT_NO_INST] = true;
+      }
+      else
+        pos += 2;
+    }
+
+    if(t & 0x40)
+    {
+      size_t j;
+      for(j = 0; j < 3; j++)
+      {
+        if(pos + 2 > p.raw_size)
+          return modutil::INVALID;
+
+        uint8_t fx = buffer[pos++];
+        uint8_t fx_param = buffer[pos++];
+
+        uint8_t fx_effect = fx & 0x1F;
+        uint8_t fx_channel = (fx >> 6) & 0x03;
+
+        if(!is_scan)
+        {
+          ev.effects[fx_channel].effect = fx_effect;
+          ev.effects[fx_channel].param = fx_param;
+
+          if(fx_channel == 0x02)
+            m.uses[FT_FX_CH3] = true;
+          if(fx_channel == 0x03)
+            m.uses[FT_FX_CH4] = true;
+
+          if(fx_effect)
+          {
+            enum GDM_features fx_feature = get_effect_feature(fx_effect, fx_param);
+            if(fx_feature == FT_FX_UNKNOWN)
+              format::warning("unknown effect: %02x %02x", fx_effect, fx_param);
+            m.uses[fx_feature] = true;
+          }
+        }
+
+        if(!(fx & 0x20))
+          break;
+      }
+      if(j >= 4)
+        return modutil::GDM_TOO_MANY_EFFECTS;
+    }
+  }
+
+  if(pos != p.raw_size)
+    return modutil::INVALID;
+
+  if(is_scan)
+  {
+    p.num_rows = row ? row : 1;
+    p.num_channels = channels ? channels : 1;
+    p.allocate();
+    if(!p.events)
+      return modutil::ALLOC_ERROR;
+
+    return GDM_load_pattern(m, p, buffer);
+  }
+
+  if(row > 64)
+    m.uses[FT_OVER_64_ROWS] = true;
+  if(row > 256)
+    m.uses[FT_OVER_256_ROWS] = true;
+
+  return modutil::SUCCESS;
+}
+
 
 static modutil::error GDM_read(FILE *fp)
 {
@@ -471,7 +594,7 @@ static modutil::error GDM_read(FILE *fp)
   if(fseek(fp, h.order_offset, SEEK_SET))
     return modutil::SEEK_ERROR;
 
-  if(!fread(m.orders, h.num_orders, 1, fp))
+  if(fread(m.orders, 1, h.num_orders, fp) != h.num_orders)
     return modutil::READ_ERROR;
 
   // Samples.
@@ -482,7 +605,10 @@ static modutil::error GDM_read(FILE *fp)
   {
     GDM_sample &s = m.samples[i];
     if(!fread(s.name, 32, 1, fp) || !fread(s.filename, 12, 1, fp))
+    {
+      format::error("read error at sample %zu", i);
       return modutil::READ_ERROR;
+    }
 
     s.name[32] = '\0';
     s.filename[12] = '\0';
@@ -518,98 +644,31 @@ static modutil::error GDM_read(FILE *fp)
   if(fseek(fp, h.pattern_offset, SEEK_SET))
     return modutil::SEEK_ERROR;
 
+  std::vector<uint8_t> patbuf(65536);
+
   for(size_t i = 0; i < h.num_patterns; i++)
   {
-    GDM_pattern *p = new GDM_pattern{};
-    m.patterns[i] = p;
-    if(!p)
-      return modutil::ALLOC_ERROR;
+    GDM_pattern &p = m.patterns[i];
 
-    p->raw_size = fget_u16le(fp) - 2;
+    p.raw_size = fget_u16le(fp) - 2;
 
-    size_t pos = 0;
-    size_t row = 0;
-    while(pos < p->raw_size && row < (size_t)arraysize(p->rows))
+    if(!fread(patbuf.data(), p.raw_size, 1, fp))
     {
-      uint8_t t = fgetc(fp);
-      pos++;
-
-      if(t == 0)
-      {
-        row++;
-        if(pos < p->raw_size)
-          continue;
-
-        break;
-      }
-
-      uint8_t track = (t & 0x1F);
-      GDM_note &n = p->rows[row][track];
-
-      if(t & 0x20)
-      {
-        uint8_t note = fgetc(fp);
-        uint8_t inst = fgetc(fp);
-        pos += 2;
-
-        n.note = note;
-        n.sample = inst;
-
-        if(!note)
-          m.uses[FT_EVENT_NO_NOTE] = true;
-        if(!inst)
-          m.uses[FT_EVENT_NO_INST] = true;
-      }
-
-      if(t & 0x40)
-      {
-        int j;
-        for(j = 0; j < 3; j++)
-        {
-          uint8_t fx = fgetc(fp);
-          uint8_t fx_param = fgetc(fp);
-          pos += 2;
-
-          uint8_t fx_effect = fx & 0x1F;
-          uint8_t fx_channel = (fx >> 6) & 0x03;
-
-          if(fx_channel + 1 > p->max_track_effects[track])
-            p->max_track_effects[track] = fx_channel + 1;
-
-          n.effects[fx_channel].effect = fx_effect;
-          n.effects[fx_channel].param = fx_param;
-
-          if(fx_channel == 0x02)
-            m.uses[FT_FX_CH3] = true;
-          if(fx_channel == 0x03)
-            m.uses[FT_FX_CH4] = true;
-
-          if(fx_effect)
-          {
-            enum GDM_features fx_feature = get_effect_feature(fx_effect, fx_param);
-            if(fx_feature == FT_FX_UNKNOWN)
-              format::warning("unknown effect: %02x %02x", fx_effect, fx_param);
-            m.uses[fx_feature] = true;
-          }
-
-          if(!(fx & 0x20))
-            break;
-        }
-        if(j >= 4)
-          return modutil::GDM_TOO_MANY_EFFECTS;
-      }
+      format::warning("read error at pattern %zu", i);
+      break;
     }
-    if(feof(fp))
-      return modutil::READ_ERROR;
 
-    if(pos != p->raw_size)
-      return modutil::GDM_BAD_PATTERN;
-
-    p->num_rows = row;
-    if(row > 64)
-      m.uses[FT_OVER_64_ROWS] = true;
-    if(row > 256)
-      m.uses[FT_OVER_256_ROWS] = true;
+    modutil::error err = GDM_load_pattern(m, p, patbuf);
+    if(err == modutil::INVALID)
+    {
+      format::warning("invalid pattern %zu", i);
+      continue;
+    }
+    if(err != modutil::SUCCESS)
+    {
+      format::error("error loading pattern %zu", i);
+      return err;
+    }
   }
 
   // Message.
@@ -685,23 +744,32 @@ static modutil::error GDM_read(FILE *fp)
 
     format::orders("Orders", m.orders, h.num_orders);
 
+    if(!Config.dump_pattern_rows)
+      format::line();
+
     for(unsigned int i = 0; i < h.num_patterns; i++)
     {
-      GDM_pattern *p = m.patterns[i];
+      GDM_pattern &p = m.patterns[i];
 
       using EVENT = format::event<format::note, format::sample, format::effectWide,
                                   format::effectWide, format::effectWide, format::effectWide>;
-      format::pattern<EVENT> pattern(i, m.num_channels, p->num_rows, p->raw_size);
+      format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.raw_size);
 
       if(!Config.dump_pattern_rows)
       {
         pattern.summary();
         continue;
       }
-
-      for(unsigned int row = 0; row < p->num_rows; row++)
+      if(!p.events)
       {
-        for(unsigned int track = 0; track < m.num_channels; track++)
+        pattern.print();
+        continue;
+      }
+
+      GDM_event *current = p.events;
+      for(unsigned int row = 0; row < p.num_rows; row++)
+      {
+        for(unsigned int track = 0; track < p.num_channels; track++, current++)
         {
           if(h.panning[track] == 255)
           {
@@ -709,13 +777,12 @@ static modutil::error GDM_read(FILE *fp)
             continue;
           }
 
-          GDM_note &n = p->rows[row][track];
-          format::note       a{ n.note };
-          format::sample     b{ n.sample };
-          format::effectWide c{ n.effects[0].effect, n.effects[0].param };
-          format::effectWide d{ n.effects[1].effect, n.effects[1].param };
-          format::effectWide e{ n.effects[2].effect, n.effects[2].param };
-          format::effectWide f{ n.effects[3].effect, n.effects[3].param };
+          format::note       a{ current->note };
+          format::sample     b{ current->sample };
+          format::effectWide c{ current->effects[0].effect, current->effects[0].param };
+          format::effectWide d{ current->effects[1].effect, current->effects[1].param };
+          format::effectWide e{ current->effects[2].effect, current->effects[2].param };
+          format::effectWide f{ current->effects[3].effect, current->effects[3].param };
 
           pattern.insert(EVENT(a, b, c, d, e, f));
         }
