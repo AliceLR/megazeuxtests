@@ -248,12 +248,12 @@ struct DBM_data
   }
 };
 
-static const class DBM_NAME_Handler final: public IFFHandler<DBM_data>
+class NAME_handler
 {
 public:
-  DBM_NAME_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("NAME");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(len < 44)
     {
@@ -277,14 +277,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} NAME_handler("NAME", false);
+};
 
-static const class DBM_INFO_Handler final: public IFFHandler<DBM_data>
+class INFO_handler
 {
 public:
-  DBM_INFO_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("INFO");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(len < 10)
     {
@@ -309,14 +309,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} INFO_handler("INFO", false);
+};
 
-static const class DBM_SONG_Handler final: public IFFHandler<DBM_data>
+class SONG_handler
 {
 public:
-  DBM_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SONG");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(len < 46 * m.num_songs)
     {
@@ -352,14 +352,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} SONG_handler("SONG", false);
+};
 
-static const class DBM_PATT_Handler final: public IFFHandler<DBM_data>
+class PATT_handler
 {
 public:
-  DBM_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PATT");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -483,14 +483,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PATT_handler("PATT", false);
+};
 
-static const class DBM_PNAM_Handler final: public IFFHandler<DBM_data>
+class PNAM_handler
 {
 public:
-  DBM_PNAM_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PNAM");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -520,14 +520,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PNAM_handler("PNAM", false);
+};
 
-static const class DBM_INST_Handler final: public IFFHandler<DBM_data>
+class INST_handler
 {
 public:
-  DBM_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("INST");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -566,14 +566,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} INST_handler("INST", false);
+};
 
-static const class DBM_SMPL_Handler final: public IFFHandler<DBM_data>
+class SMPL_handler
 {
 public:
-  DBM_SMPL_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SMPL");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -610,7 +610,7 @@ public:
     }
     return modutil::SUCCESS;
   }
-} SMPL_handler("SMPL", false);
+};
 
 static modutil::error read_envelope(DBM_data &m, DBM_envelope &env, size_t env_num, FILE *fp)
 {
@@ -681,12 +681,12 @@ static modutil::error read_envelope(DBM_data &m, DBM_envelope &env, size_t env_n
   return modutil::SUCCESS;
 }
 
-static const class DBM_VENV_Handler final: public IFFHandler<DBM_data>
+class VENV_handler
 {
 public:
-  DBM_VENV_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("VENV");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -731,14 +731,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} VENV_handler("VENV", false);
+};
 
-static const class DBM_PENV_Handler final: public IFFHandler<DBM_data>
+class PENV_handler
 {
 public:
-  DBM_PENV_Handler(const char *n, bool c): IFFHandler(n,c) {}
+  static constexpr IFFCode id = IFFCode("PENV");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     if(!m.read_info)
       m.uses[FT_CHUNK_ORDER] = true;
@@ -783,14 +783,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PENV_handler("PENV", false);
+};
 
-static const class DBM_DSPE_Handler final: public IFFHandler<DBM_data>
+class DSPE_handler
 {
 public:
-  DBM_DSPE_Handler(const char *n, bool c): IFFHandler(n,c) {}
+  static constexpr IFFCode id = IFFCode("DSPE");
 
-  modutil::error parse(FILE *fp, size_t len, DBM_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DBM_data &m)
   {
     m.uses[FT_DSPE_CHUNK] = true;
 
@@ -817,20 +817,20 @@ public:
 
     return modutil::SUCCESS;
   }
-} DSPE_handler("DSPE", false);
+};
 
-static const IFF<DBM_data> DBM_parser({
-  &NAME_handler,
-  &INFO_handler,
-  &SONG_handler,
-  &PATT_handler,
-  &PNAM_handler,
-  &INST_handler,
-  &SMPL_handler,
-  &VENV_handler,
-  &PENV_handler,
-  &DSPE_handler,
-});
+static const IFF<
+  DBM_data,
+  NAME_handler,
+  INFO_handler,
+  SONG_handler,
+  PATT_handler,
+  PNAM_handler,
+  INST_handler,
+  SMPL_handler,
+  VENV_handler,
+  PENV_handler,
+  DSPE_handler> DBM_parser;
 
 static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 {
@@ -881,7 +881,8 @@ public:
   virtual modutil::error load(FILE *fp, long file_length) const override
   {
     DBM_data m{};
-    DBM_parser.max_chunk_length = 0;
+    auto parser = DBM_parser;
+    parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 4, 1, fp))
       return modutil::FORMAT_ERROR;
@@ -894,11 +895,11 @@ public:
     m.tracker_version = fget_u16be(fp);
     fget_u16be(fp);
 
-    modutil::error err = DBM_parser.parse_iff(fp, 0, m);
+    modutil::error err = parser.parse_iff(fp, 0, m);
     if(err)
       return err;
 
-    if(DBM_parser.max_chunk_length > 4*1024*1024)
+    if(parser.max_chunk_length > 4*1024*1024)
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
     format::line("Name",      "%s", m.name_stripped);
@@ -914,7 +915,7 @@ public:
       format::line("P.Envs.", "%u", m.num_pan_envelopes);
     format::line("Channels",  "%u", m.num_channels);
     format::line("Patterns",  "%u", m.num_patterns);
-    format::line("MaxChunk",  "%zu", DBM_parser.max_chunk_length);
+    format::line("MaxChunk",  "%zu", parser.max_chunk_length);
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)

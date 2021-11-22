@@ -113,12 +113,12 @@ struct OKT_data
   bool uses[NUM_FEATURES];
 };
 
-static const class OKT_CMOD_Handler final: public IFFHandler<OKT_data>
+class CMOD_handler
 {
 public:
-  OKT_CMOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("CMOD");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     for(int i = 0; i < 4; i++)
     {
@@ -136,14 +136,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} CMOD_handler("CMOD", false);
+};
 
-static const class OKT_SAMP_Handler final: public IFFHandler<OKT_data>
+class SAMP_handler
 {
 public:
-  OKT_SAMP_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SAMP");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     int num_samples = len / 32;
     m.num_samples = num_samples;
@@ -168,28 +168,28 @@ public:
 
     return modutil::SUCCESS;
   }
-} SAMP_handler("SAMP", false);
+};
 
-static const class OKT_SPEE_Handler final: public IFFHandler<OKT_data>
+class SPEE_handler
 {
 public:
-  OKT_SPEE_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SPEE");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     m.initial_tempo = fget_u16be(fp);
     if(feof(fp))
       return modutil::READ_ERROR;
     return modutil::SUCCESS;
   }
-} SPEE_handler("SPEE", false);
+};
 
-static const class OKT_SLEN_Handler final: public IFFHandler<OKT_data>
+class SLEN_handler
 {
 public:
-  OKT_SLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SLEN");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     m.num_patterns = fget_u16be(fp);
     if(feof(fp))
@@ -202,14 +202,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} SLEN_handler("SLEN", false);
+};
 
-static const class OKT_PLEN_Handler final: public IFFHandler<OKT_data>
+class PLEN_handler
 {
 public:
-  OKT_PLEN_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PLEN");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     m.num_orders = fget_u16be(fp);
     if(feof(fp))
@@ -222,14 +222,14 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PLEN_handler("PLEN", false);
+};
 
-static const class OKT_PATT_Handler final: public IFFHandler<OKT_data>
+class PATT_handler
 {
 public:
-  OKT_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PATT");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     if(len < m.num_orders)
     {
@@ -248,14 +248,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} PATT_handler("PATT", false);
+};
 
-static const class OKT_PBOD_Handler final: public IFFHandler<OKT_data>
+class PBOD_handler
 {
 public:
-  OKT_PBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PBOD");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     if(len < 18) /* 2 line count + 1 row, 4 channels */
     {
@@ -297,31 +297,31 @@ public:
 
     return modutil::SUCCESS;
   }
-} PBOD_handler("PBOD", false);
+};
 
-static const class OKT_SBOD_Handler final: public IFFHandler<OKT_data>
+class SBOD_handler
 {
 public:
-  OKT_SBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SBOD");
 
-  modutil::error parse(FILE *fp, size_t len, OKT_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, OKT_data &m)
   {
     /* Ignore. */
     return modutil::SUCCESS;
   }
-} SBOD_handler("SBOD", false);
+};
 
 
-static const IFF<OKT_data> OKT_parser({
-  &CMOD_handler,
-  &SAMP_handler,
-  &SPEE_handler,
-  &SLEN_handler,
-  &PLEN_handler,
-  &PATT_handler,
-  &PBOD_handler,
-  &SBOD_handler
-});
+static const IFF<
+  OKT_data,
+  CMOD_handler,
+  SAMP_handler,
+  SPEE_handler,
+  SLEN_handler,
+  PLEN_handler,
+  PATT_handler,
+  PBOD_handler,
+  SBOD_handler> OKT_parser;
 
 
 class OKT_loader : modutil::loader
@@ -332,7 +332,8 @@ public:
   virtual modutil::error load(FILE *fp, long file_length) const override
   {
     OKT_data m{};
-    OKT_parser.max_chunk_length = 0;
+    auto parser = OKT_parser;
+    parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 8, 1, fp))
       return modutil::FORMAT_ERROR;
@@ -341,11 +342,11 @@ public:
       return modutil::FORMAT_ERROR;
 
     total_okts++;
-    modutil::error err = OKT_parser.parse_iff(fp, 0, m);
+    modutil::error err = parser.parse_iff(fp, 0, m);
     if(err)
       return err;
 
-    if(OKT_parser.max_chunk_length > 4*1024*1024)
+    if(parser.max_chunk_length > 4*1024*1024)
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
     format::line("Type",     "Oktalyzer");
@@ -353,7 +354,7 @@ public:
     format::line("Channels", "%u", m.num_channels);
     format::line("Patterns", "%u", m.num_patterns);
     format::line("Orders",   "%u", m.num_orders);
-    format::line("MaxChunk", "%zu", OKT_parser.max_chunk_length);
+    format::line("MaxChunk", "%zu", parser.max_chunk_length);
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)

@@ -167,12 +167,12 @@ struct DSIK_data
   bool uses[NUM_FEATURES];
 };
 
-static const class DSIK_SONG_Handler final: public IFFHandler<DSIK_data>
+class SONG_handler
 {
 public:
-  DSIK_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SONG");
 
-  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DSIK_data &m)
   {
     if(len < 192)
     {
@@ -227,14 +227,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} SONG_handler("SONG", false);
+};
 
-static const class DSIK_INST_Handler final: public IFFHandler<DSIK_data>
+class INST_handler
 {
 public:
-  DSIK_INST_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("INST");
 
-  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DSIK_data &m)
   {
     if(len < 64)
     {
@@ -270,14 +270,14 @@ public:
 
     return modutil::SUCCESS;
   }
-} INST_handler("INST", false);
+};
 
-static const class DSIK_PATT_Handler final: public IFFHandler<DSIK_data>
+class PATT_handler
 {
 public:
-  DSIK_PATT_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PATT");
 
-  modutil::error parse(FILE *fp, size_t len, DSIK_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, DSIK_data &m)
   {
     DSIK_song &s = m.song;
     if(len < 2)
@@ -379,21 +379,21 @@ public:
     }
     return modutil::SUCCESS;
   }
-} PATT_handler("PATT", false);
+};
 
-static const IFF<DSIK_data> DSIK_parser(Endian::LITTLE, IFFPadding::BYTE,
-{
-  &SONG_handler,
-  &INST_handler,
-  &PATT_handler,
-});
+static const IFF<
+  DSIK_data,
+  SONG_handler,
+  INST_handler,
+  PATT_handler> DSIK_parser(Endian::LITTLE, IFFPadding::BYTE);
 
 
 modutil::error DSIK_read(FILE *fp)
 {
   DSIK_data m{};
   DSIK_song &s = m.song;
-  DSIK_parser.max_chunk_length = 0;
+  auto parser = DSIK_parser;
+  parser.max_chunk_length = 0;
 
   if(!fread(m.header, 12, 1, fp))
     return modutil::FORMAT_ERROR;
@@ -423,11 +423,11 @@ modutil::error DSIK_read(FILE *fp)
 
   total_dsik++;
 
-  modutil::error err = DSIK_parser.parse_iff(fp, 0, m);
+  modutil::error err = parser.parse_iff(fp, 0, m);
   if(err)
     return err;
 
-  if(DSIK_parser.max_chunk_length > 4*1024*1024)
+  if(parser.max_chunk_length > 4*1024*1024)
     m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
   format::line("Name",     "%s", s.name);
@@ -436,7 +436,7 @@ modutil::error DSIK_read(FILE *fp)
   format::line("Channels", "%u", s.num_channels);
   format::line("Patterns", "%u", s.num_patterns);
   format::line("Orders",   "%u", s.num_orders);
-  format::line("MaxChunk", "%zu", DSIK_parser.max_chunk_length);
+  format::line("MaxChunk", "%zu", parser.max_chunk_length);
   format::uses(m.uses, FEATURE_STR);
 
   if(Config.dump_samples)

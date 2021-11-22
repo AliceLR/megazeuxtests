@@ -14,6 +14,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/**
+ * Protracker Studio Module / Epic MegaGames MASI "new format" handler.
+ * See ps16_load.cpp for the older format.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,10 +26,10 @@
 #include "IFF.hpp"
 #include "modutil.hpp"
 
-static int total_masi = 0;
+static int total_psm = 0;
 
 
-enum MASI_features
+enum PSM_features
 {
   FT_ROWS_OVER_64,
   FT_CHUNK_OVER_4_MIB,
@@ -41,14 +46,14 @@ static const int MAX_SAMPLES  = 256;
 static const int MAX_PATTERNS = 256;
 static const int MAX_ORDERS   = 256;
 
-struct MASI_pattern
+struct PSM_pattern
 {
   char id[9];
   uint16_t num_rows;
   // TODO: pattern data.
 };
 
-struct MASI_data
+struct PSM_data
 {
   /* Header (12) */
 
@@ -69,22 +74,22 @@ struct MASI_data
   size_t current_patt = 0;
   size_t num_patterns = 0;
   size_t max_rows = 0;
-  MASI_pattern patterns[MAX_PATTERNS];
+  PSM_pattern patterns[MAX_PATTERNS];
 
   bool uses[NUM_FEATURES];
 
-  ~MASI_data()
+  ~PSM_data()
   {
     delete[] name;
   }
 };
 
-static const class MASI_TITL_Handler final: public IFFHandler<MASI_data>
+class TITL_handler
 {
 public:
-  MASI_TITL_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("TITL");
 
-  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, PSM_data &m)
   {
     m.name = new char[len + 1];
 
@@ -94,14 +99,14 @@ public:
     m.name[len] = '\0';
     return modutil::SUCCESS;
   }
-} TITL_handler("TITL", false);
+};
 
-static const class MASI_SDFT_Handler final: public IFFHandler<MASI_data>
+class SDFT_handler
 {
 public:
-  MASI_SDFT_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SDFT");
 
-  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, PSM_data &m)
   {
     if(len < 8 || !fread(m.song_type, 8, 1, fp))
       return modutil::READ_ERROR;
@@ -109,14 +114,14 @@ public:
     m.song_type[8] = '\0';
     return modutil::SUCCESS;
   }
-} SDFT_handler("SDFT", false);
+};
 
-static const class MASI_PBOD_Handler final: public IFFHandler<MASI_data>
+class PBOD_handler
 {
 public:
-  MASI_PBOD_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("PBOD");
 
-  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, PSM_data &m)
   {
     if(m.num_patterns >= MAX_PATTERNS)
     {
@@ -127,7 +132,7 @@ public:
     /* Ignore duplicate pattern length dword (???) */
     fget_u32le(fp);
 
-    MASI_pattern &p = m.patterns[m.current_patt++];
+    PSM_pattern &p = m.patterns[m.current_patt++];
     m.num_patterns = m.current_patt;
 
     if(!fread(p.id, 4, 1, fp))
@@ -156,51 +161,51 @@ public:
     // TODO pattern data.
     return modutil::SUCCESS;
   }
-} PBOD_handler("PBOD", false);
+};
 
-static const class MASI_SONG_Handler final: public IFFHandler<MASI_data>
+class SONG_handler
 {
 public:
-  MASI_SONG_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("SONG");
 
-  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, PSM_data &m)
   {
     // FIXME
     return modutil::SUCCESS;
   }
-} SONG_handler("SONG", false);
+};
 
-static const class MASI_DSMP_Handler final: public IFFHandler<MASI_data>
+class DSMP_handler
 {
 public:
-  MASI_DSMP_Handler(const char *n, bool c): IFFHandler(n, c) {}
+  static constexpr IFFCode id = IFFCode("DSMP");
 
-  modutil::error parse(FILE *fp, size_t len, MASI_data &m) const override
+  static modutil::error parse(FILE *fp, size_t len, PSM_data &m)
   {
     // FIXME
     return modutil::SUCCESS;
   }
-} DSMP_handler("DSMP", false);
+};
 
-static const IFF<MASI_data> MASI_parser(Endian::LITTLE, IFFPadding::BYTE,
-{
-  &TITL_handler,
-  &SDFT_handler,
-  &PBOD_handler,
-  &SONG_handler,
-  &DSMP_handler
-});
+static const IFF<
+  PSM_data,
+  TITL_handler,
+  SDFT_handler,
+  PBOD_handler,
+  SONG_handler,
+  DSMP_handler> PSM_parser(Endian::LITTLE, IFFPadding::BYTE);
 
 
-class MASI_loader : modutil::loader
+class PSM_loader : modutil::loader
 {
 public:
-  MASI_loader(): modutil::loader("PSM", "masi", "Epic MegaGames MASI") {}
+  PSM_loader(): modutil::loader("PSM", "masi", "Protracker Studio Module / Epic MegaGames MASI") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {
-    MASI_data m{};
-    MASI_parser.max_chunk_length = 0;
+    PSM_data m{};
+    auto parser = PSM_parser;
+    parser.max_chunk_length = 0;
 
     if(!fread(m.magic, 4, 1, fp))
       return modutil::FORMAT_ERROR;
@@ -210,36 +215,29 @@ public:
     if(!fread(m.magic2, 4, 1, fp))
       return modutil::FORMAT_ERROR;
 
-    if(!strncmp(m.magic, "PSM\xFE", 4))
-    {
-      format::warning("ignoring old-format MASI.");
-      total_masi++;
-      return modutil::SUCCESS;
-    }
-
     if(strncmp(m.magic, "PSM ", 4) || strncmp(m.magic2, "FILE", 4))
       return modutil::FORMAT_ERROR;
 
-    total_masi++;
-    modutil::error err = MASI_parser.parse_iff(fp, 0, m);
+    total_psm++;
+    modutil::error err = parser.parse_iff(fp, 0, m);
     if(err)
       return err;
 
-    if(MASI_parser.max_chunk_length > 4*1024*1024)
+    if(parser.max_chunk_length > 4*1024*1024)
       m.uses[FT_CHUNK_OVER_4_MIB] = true;
 
     if(m.name)
       format::line("Name", "%s", m.name);
     if(strcmp(m.song_type, "MAINSONG"))
-      format::line("Type", "MASI / %s", m.song_type);
+      format::line("Type", "MASI PSM / %s", m.song_type);
     else
-      format::line("Type", "MASI");
+      format::line("Type", "MASI PSM");
 
 //    format::line("Samples",  "%u", m.num_samples);
 //    format::line("Channels", "%u", m.num_channels);
     format::line("Patterns", "%zu", m.num_patterns);
     format::line("Max rows", "%zu", m.max_rows);
-    format::line("MaxChunk", "%zu", MASI_parser.max_chunk_length);
+    format::line("MaxChunk", "%zu", parser.max_chunk_length);
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
@@ -256,7 +254,7 @@ public:
         if(i >= MAX_PATTERNS)
           break;
 
-        MASI_pattern &p = m.patterns[i];
+        PSM_pattern &p = m.patterns[i];
 
         // FIXME
         O_("Pat. %02x : '%s', %u rows\n", i, p.id, p.num_rows);
@@ -269,11 +267,11 @@ public:
 
   virtual void report() const override
   {
-    if(!total_masi)
+    if(!total_psm)
       return;
 
-    format::report("Total MASIs", total_masi);
+    format::report("Total PSMs", total_psm);
   }
 };
 
-static const MASI_loader loader;
+static const PSM_loader loader;

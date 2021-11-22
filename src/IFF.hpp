@@ -95,13 +95,13 @@ private:
    * changing handlers isn't necessary, and these are cleaner to write in loaders.
    */
   template<int I>
-  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id)
   {
     return modutil::IFF_NO_HANDLER;
   }
 
   template<int I, class H, class... REST>
-  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id)
   {
     if(I < sizeof...(HANDLERS))
     {
@@ -118,7 +118,7 @@ private:
     return modutil::IFF_NO_HANDLER;
   }
 
-  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id) const
+  modutil::error exec_static_handler(FILE *fp, size_t len, T &m, IFFCode &id)
   {
     return exec_static_handler<0, HANDLERS...>(fp, len, m, id);
   }
@@ -126,7 +126,7 @@ private:
   /**
    * Attempt to execute a dynamic IFF handler.
    */
-  modutil::error exec_dynamic_handler(FILE *fp, size_t len, T &m, const char *id) const
+  modutil::error exec_dynamic_handler(FILE *fp, size_t len, T &m, const char *id)
   {
     for(const IFFHandler<T> *h : handlers)
     {
@@ -142,9 +142,10 @@ private:
   }
 
 public:
-  mutable size_t max_chunk_length = 0;
-  mutable char current_id[5];
-  mutable size_t current_start;
+  size_t max_chunk_length = 0;
+  bool full_chunk_lengths = false;
+  char current_id[5];
+  size_t current_start;
 
   IFF(Endian e, IFFPadding p, IFFCodeSize c, const IFFHandler<T> *generic_handler):
    endian(e), padding(p), codesize(c)
@@ -184,7 +185,7 @@ public:
   IFF(Endian e, IFFPadding p): endian(e), padding(p) {}
   IFF() {}
 
-  modutil::error parse_iff(FILE *fp, size_t container_len, T &m) const
+  modutil::error parse_iff(FILE *fp, size_t container_len, T &m)
   {
     size_t start_pos = ftell(fp);
     size_t current_pos = start_pos;
@@ -238,6 +239,15 @@ public:
 
       if(len > max_chunk_length)
         max_chunk_length = len;
+
+      /* Annoying hack required for Protracker 3.6 modules. */
+      if(full_chunk_lengths)
+      {
+        if(len >= (size_t)codelen + 4)
+          len -= codelen + 4;
+        else
+          len = 0;
+      }
 
       end_pos = ftell(fp) + len;
       switch(padding)

@@ -33,6 +33,7 @@ struct IFFDumpConfig
   Endian endian        = Endian::BIG;
   IFFPadding padding   = IFFPadding::WORD;
   IFFCodeSize codesize = IFFCodeSize::FOUR;
+  bool full_chunk_lens = false;
 };
 
 static struct IFFDumpConfig IFFConfig{};
@@ -72,6 +73,10 @@ static bool config_handler(const char *arg, void *priv)
 
     case 'd':
       conf->padding = IFFPadding::DWORD;
+      break;
+
+    case 'f':
+      conf->full_chunk_lens = true;
       break;
   }
   return true;
@@ -132,6 +137,7 @@ static modutil::error IFF_dump(FILE *fp)
     return modutil::SEEK_ERROR;
 
   IFF<IFFDumpData> iff(IFFConfig.endian, IFFConfig.padding, IFFConfig.codesize, &iff_handler);
+  iff.full_chunk_lengths = IFFConfig.full_chunk_lens;
   IFFDumpData data{};
   data.current = &iff;
   return iff.parse_iff(fp, 0, data);
