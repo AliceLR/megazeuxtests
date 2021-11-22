@@ -469,7 +469,7 @@ public:
 
       static const char *labels[] =
       {
-        "Name", "Filename", "Length", "LoopStart", "LoopEnd", "Vol", "Flg", "Speed", "Fine"
+        "Name", "Filename", "Length", "LoopStart", "LoopEnd", "GUSStart", "GUSEnd", "Vol", "Flg", "Speed", "Fine"
       };
 
       namespace table = format::table;
@@ -478,6 +478,9 @@ public:
         table::string<12>,
         table::spacer,
         table::number<10>,
+        table::number<10>,
+        table::number<10>,
+        table::spacer,
         table::number<10>,
         table::number<10>,
         table::spacer,
@@ -492,7 +495,7 @@ public:
       {
         ULT_sample &ins = m.samples[i];
         s_table.row(i + 1, ins.name, ins.filename, {},
-          ins.length, ins.loop_start, ins.loop_end, {},
+          ins.length, ins.loop_start, ins.loop_end, {}, ins.size_start, ins.size_end, {},
           ins.default_volume, ins.bidi, ins.c2speed, ins.finetune
         );
       }
