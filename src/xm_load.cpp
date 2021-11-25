@@ -525,7 +525,10 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
 
     uint8_t *buffer = m.buffer;
     if(!fread(buffer, p.packed_size, 1, fp))
+    {
+      format::error("read error at pattern %zu", i);
       return modutil::READ_ERROR;
+    }
 
     XM_event *ev = p.events;
     uint8_t *current = buffer;
@@ -559,7 +562,10 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     XM_instrument &ins = m.instruments[i];
 
     if(!fread(buffer, 29, 1, fp))
+    {
+      format::error("read error at instrument %zu", i);
       return modutil::READ_ERROR;
+    }
 
     ins.header_size = mem_u32le(buffer + 0);
     ins.type        = buffer[26];
@@ -585,7 +591,10 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     }
 
     if(!fread(buffer + 29, (243 - 29), 1, fp))
+    {
+      format::error("read error at instrument %zu", i);
       return modutil::READ_ERROR;
+    }
 
     memcpy(ins.keymap, buffer + 33, sizeof(ins.keymap));
     memcpy(ins.volume_points, buffer + 129, sizeof(ins.volume_points));
@@ -628,7 +637,10 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
       XM_sample &s = ins.samples[j];
 
       if(!fread(buffer, 40, 1, fp))
+      {
+        format::error("read error at instrument %zu sample %zu", i, j);
         return modutil::READ_ERROR;
+      }
 
       s.length      = mem_u32le(buffer + 0);
       s.loop_start  = mem_u32le(buffer + 4);
