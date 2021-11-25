@@ -29,6 +29,17 @@
 static int total_asylum = 0;
 
 
+enum ASYLUM_features
+{
+  FT_FX_OVER_16,
+  NUM_FEATURES
+};
+
+static constexpr const char *FEATURE_STR[NUM_FEATURES] =
+{
+  "X:>16"
+};
+
 static constexpr char MAGIC[] = "ASYLUM Music Format V1.0\0\0\0\0\0\0\0\0";
 
 static constexpr size_t MAX_INSTRUMENTS = 64;
@@ -92,6 +103,8 @@ struct ASYLUM_data
   ASYLUM_header     header;
   ASYLUM_instrument instruments[MAX_INSTRUMENTS];
   ASYLUM_pattern    patterns[MAX_PATTERNS];
+
+  bool uses[NUM_FEATURES];
 };
 
 
@@ -172,11 +185,13 @@ public:
 
       for(size_t row = 0; row < ROWS; row++)
       {
-        for(size_t track = 0; track < CHANNELS; track++)
+        for(size_t track = 0; track < CHANNELS; track++, current++)
         {
           *current = ASYLUM_event{ pos[0], pos[1], pos[2], pos[3] };
-          current++;
           pos += 4;
+
+          if(current->effect >= 16)
+            m.uses[FT_FX_OVER_16] = true;
         }
       }
     }
@@ -191,6 +206,7 @@ public:
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u (0x%02x)", h.num_orders, h.restart_byte);
     format::line("Speed",    "%u/%u", h.initial_speed, h.initial_tempo);
+    format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
     {
@@ -236,7 +252,7 @@ public:
       {
         ASYLUM_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::effect>;
+        using EVENT = format::event<format::note, format::sample, format::effectWide>;
         format::pattern<EVENT> pattern(i, CHANNELS, ROWS);
 
         if(!Config.dump_pattern_rows)
@@ -250,9 +266,9 @@ public:
         {
           for(size_t track = 0; track < CHANNELS; track++, current++)
           {
-            format::note   a{ current->note };
-            format::sample b{ current->instrument };
-            format::effect c{ current->effect, current->param };
+            format::note       a{ current->note };
+            format::sample     b{ current->instrument };
+            format::effectWide c{ current->effect, current->param };
             pattern.insert(EVENT(a, b, c));
           }
         }
