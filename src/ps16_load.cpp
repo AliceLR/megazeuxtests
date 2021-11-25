@@ -48,9 +48,9 @@ static const int MAX_ORDERS   = 256;
 static const int MAX_CHANNELS = 32;
 
 static constexpr char MAGIC[] = "PSM\xfe";
-static constexpr char MAGIC_PORD[] = "PORD";
-static constexpr char MAGIC_PPAN[] = "PPAN";
-static constexpr char MAGIC_PSAH[] = "PSAH";
+//static constexpr char MAGIC_PORD[] = "PORD";
+//static constexpr char MAGIC_PPAN[] = "PPAN";
+//static constexpr char MAGIC_PSAH[] = "PSAH";
 //static constexpr char MAGIC_PSAM[] = "PSAM";
 
 
@@ -270,10 +270,12 @@ public:
       return modutil::SEEK_ERROR;
     }
 
+    /* This actually goes 4 bytes BEFORE the offset!
     // Optional magic
     if(fread(buf, 4, 1, fp))
       if(memcmp(buf, MAGIC_PORD, 4))
         fseek(fp, -4, SEEK_CUR);
+    */
 
     if(fread(m.orders, 1, h.num_orders, fp) != h.num_orders)
     {
@@ -285,10 +287,12 @@ public:
 
     if(!fseek(fp, h.panning_offset, SEEK_SET))
     {
+      /* This actually goes 4 bytes BEFORE the offset!
       // Optional(?) magic
       if(fread(buf, 4, 1, fp))
         if(memcmp(buf, MAGIC_PPAN, 4))
           fseek(fp, -4, SEEK_CUR);
+      */
 
       if(fread(m.panning, 1, h.num_channels, fp) != h.num_channels)
       {
@@ -359,10 +363,12 @@ public:
       return modutil::SEEK_ERROR;
     }
 
+    /* This actually goes 4 bytes BEFORE the offset!
     // Optional(?) magic
     if(fread(buf, 4, 1, fp))
       if(memcmp(buf, MAGIC_PSAH, 4))
         fseek(fp, -4, SEEK_CUR);
+    */
 
     for(size_t i = 0; i < h.num_samples; i++)
     {
