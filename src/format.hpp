@@ -481,7 +481,7 @@ namespace format
     uint8_t effect;
     uint8_t param;
     static constexpr int width() { return 4; }
-    bool can_print() const { return effect > 0 || param > 0; }
+    bool can_print() const { return effect > 0; }
     void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%c%02x", effect, param), effect + '@', param); else spaces(width()); }
   };
 

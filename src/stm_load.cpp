@@ -135,27 +135,18 @@ struct STM_event
 struct STM_pattern
 {
   STM_event *events = nullptr;
-  uint8_t channels = 0;
-  uint8_t rows = 0;
+  uint8_t num_channels = 0;
+  uint8_t num_rows = 0;
 
-  STM_pattern(uint8_t c = 0, uint8_t r = 0): channels(c), rows(r)
-  {
-    if(c && r)
-      events = new STM_event[c * r];
-  }
   ~STM_pattern()
   {
     delete[] events;
   }
-  STM_pattern &operator=(STM_pattern &&p)
+
+  void allocate()
   {
-    events = p.events;
-    channels = p.channels;
-    rows = p.rows;
-    p.events = nullptr;
-    p.channels = 0;
-    p.rows = 0;
-    return *this;
+    if(num_channels && num_rows)
+      events = new STM_event[num_channels * num_rows];
   }
 };
 
@@ -289,7 +280,10 @@ static modutil::error STM_read(FILE *fp)
   {
     STM_instrument &ins = m.instruments[i];
     if(!fread(ins.filename, sizeof(ins.filename), 1, fp))
+    {
+      format::error("read error at instrument %zu", i);
       return modutil::READ_ERROR;
+    }
 
     ins.filename[sizeof(ins.filename) - 1] = '\0';
 
@@ -305,7 +299,10 @@ static modutil::error STM_read(FILE *fp)
     ins.segment_length = fget_u16le(fp);
 
     if(feof(fp))
+    {
+      format::error("read error at instrument %zu", i);
       return modutil::READ_ERROR;
+    }
   }
 
 
@@ -319,7 +316,10 @@ static modutil::error STM_read(FILE *fp)
 
   m.stored_orders = h.num_orders;
   if(!fread(m.orders, h.num_orders, 1, fp))
+  {
+    format::error("read error at order table");
     return modutil::READ_ERROR;
+  }
 
   size_t real_orders = 0;
   size_t patterns_alloc = h.num_patterns;
@@ -360,17 +360,22 @@ static modutil::error STM_read(FILE *fp)
   for(size_t i = 0; i < h.num_patterns; i++)
   {
     STM_pattern &p = m.patterns[i];
-    p = STM_pattern(h.channels, h.pattern_size);
+
+    p.num_channels = h.channels;
+    p.num_rows = h.pattern_size;
+    p.allocate();
 
     STM_event *current = p.events;
-
-    for(size_t row = 0; row < p.rows; row++)
+    for(size_t row = 0; row < p.num_rows; row++)
     {
-      for(size_t ch = 0; ch < p.channels; ch++, current++)
+      for(size_t ch = 0; ch < p.num_channels; ch++, current++)
         *current = STM_event(fp);
     }
     if(feof(fp))
-      return modutil::READ_ERROR;
+    {
+      format::warning("read error at pattern %zu", i);
+      break;
+    }
   }
 
 
@@ -428,18 +433,23 @@ static modutil::error STM_read(FILE *fp)
       STM_pattern &p = m.patterns[i];
 
       using EVENT = format::event<format::note, format::sample, format::volume, format::effectIT>;
-      format::pattern<EVENT> pattern(i, p.channels, p.rows);
+      format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows);
 
       if(!Config.dump_pattern_rows)
       {
         pattern.summary();
         continue;
       }
+      if(!p.events)
+      {
+        pattern.print();
+        continue;
+      }
 
       STM_event *current = p.events;
-      for(unsigned int row = 0; row < p.rows; row++)
+      for(unsigned int row = 0; row < p.num_rows; row++)
       {
-        for(unsigned int track = 0; track < p.channels; track++, current++)
+        for(unsigned int track = 0; track < p.num_channels; track++, current++)
         {
           format::note     a{ current->note, current->note != 0xFF };
           format::sample   b{ current->instrument };
