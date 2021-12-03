@@ -28,6 +28,7 @@
 #include "Config.hpp"
 #include "attribute.hpp"
 #include "common.hpp"
+#include "encode.hpp"
 
 namespace format
 {
@@ -285,6 +286,7 @@ namespace format
     {
       fprintf(stderr, ": ");
     }
+
     static void print()
     {
       fprintf(stderr, ": ");
@@ -301,7 +303,7 @@ namespace format
   };
 
 
-  template<int N, int F=LEFT>
+  template<int N, typename ENCODE = encode::strip, int F=LEFT>
   struct string: public element<N>
   {
     const char *value;
@@ -309,10 +311,29 @@ namespace format
 
     void print() const
     {
+      size_t len = strlen(value);
+      if(len > N)
+        len = N;
+
+      std::vector<char> buf(ENCODE::utf8_count(value, len) + 1);
+
+      int print_bytes = ENCODE::utf8_encode(buf.data(), buf.size(), value, len);
+      if(print_bytes < 0)
+      {
+        print_bytes = 0;
+        len = 0;
+      }
+      buf[print_bytes] = '\0';
+
+      /* Force fprintf to print extra spaces.
+       * Just using N won't work because fprintf limits to bytes, not characters. */
+      if(len < N)
+        print_bytes += N - len;
+
       if(F & RIGHT)
-        fprintf(stderr, "%*.*s ", N, N, value);
+        fprintf(stderr, "%*.*s ", print_bytes, print_bytes, buf.data());
       else
-        fprintf(stderr, "%-*.*s ", N, N, value);
+        fprintf(stderr, "%-*.*s ", print_bytes, print_bytes, buf.data());
     }
   };
 

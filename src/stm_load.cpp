@@ -401,7 +401,7 @@ static modutil::error STM_read(FILE *fp)
 
     namespace table = format::table;
     table::table<
-      table::string<12>,
+      table::string<12, encode::cp437>,
       table::spacer,
       table::number<6>,
       table::number<6>,

@@ -20,6 +20,7 @@ DIMG_OBJ = ${OBJ}/dimgutil
 MODUTIL_EXE  := modutil${BINEXT}
 MODUTIL_OBJS := \
   ${OBJ}/modutil.o \
+  ${OBJ}/encode.o \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
   ${OBJ}/LZW.o \
