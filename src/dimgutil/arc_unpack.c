@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * dimgutil: disk image and archive utility
+ * Copyright (C) 2021 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,14 +15,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "arc_types.h"
 #include "arc_unpack.h"
 
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-//#define ARC_DEBUG
+/*
+#define ARC_DEBUG
+*/
 
 /* ARC method 0x08: read maximum code width from stream, but ignore it. */
 #define ARC_IGNORE_CODE_IN_STREAM 0x7ffe
@@ -33,32 +36,32 @@
 
 struct arc_code
 {
-  uint16_t prev;
-  uint16_t length;
-  uint8_t value;
+  arc_uint16 prev;
+  arc_uint16 length;
+  arc_uint8 value;
 };
 
 struct arc_lookup
 {
-  uint16_t value;
-  uint8_t length;
+  arc_uint16 value;
+  arc_uint8 length;
 };
 
 struct arc_huffman_index
 {
-  int16_t value[2];
+  arc_int16 value[2];
 };
 
 struct arc_unpack
 {
-  // RLE90.
+  /* RLE90. */
   size_t rle_in;
   size_t rle_out;
   int in_rle_code;
   int last_byte;
 
-  // LZW and huffman.
-  uint16_t codes_buffered[8];
+  /* LZW and huffman. */
+  arc_uint16 codes_buffered[8];
   unsigned buffered_pos;
   unsigned buffered_width;
   size_t lzw_bits_in;
@@ -74,12 +77,12 @@ struct arc_unpack
   unsigned continue_code;
   unsigned last_code;
   unsigned kwkwk;
-  uint8_t last_first_value;
+  unsigned last_first_value;
 
   struct arc_code *tree;
   struct arc_lookup *huffman_lookup;
   struct arc_huffman_index *huffman_tree;
-  uint16_t num_huffman;
+  unsigned num_huffman;
 };
 
 static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width, int is_dynamic)
@@ -149,7 +152,7 @@ static uint32_t arc_get_bytes(const uint8_t *pos, int num)
   }
 }
 
-static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_len, unsigned int num_bits)
+static int arc_read_bits(struct arc_unpack *arc, const unsigned char *src, size_t src_len, unsigned int num_bits)
 {
   uint32_t ret;
 
@@ -169,7 +172,7 @@ static int arc_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_
   return ret;
 }
 
-static uint16_t arc_next_code(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+static arc_uint16 arc_next_code(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
 {
   /**
    * Codes are read 8 at a time in the original ARC/ArcFS/Spark software,
@@ -210,7 +213,7 @@ static void arc_unlzw_add(struct arc_unpack *arc)
     e->length = len ? len + 1 : 0;
     e->value = arc->last_first_value;
 
-    // Automatically expand width.
+    /* Automatically expand width. */
     if(arc->next_code >= (1U << arc->current_width) && arc->current_width < arc->max_width)
     {
       arc->current_width++;
@@ -221,10 +224,10 @@ static void arc_unlzw_add(struct arc_unpack *arc)
   }
 }
 
-static uint16_t arc_unlzw_get_length(const struct arc_unpack *arc,
+static int arc_unlzw_get_length(const struct arc_unpack *arc,
  const struct arc_code *e)
 {
-  uint32_t length = 1;
+  unsigned length = 1;
   int code;
 
   if(e->length)
@@ -244,13 +247,14 @@ static uint16_t arc_unlzw_get_length(const struct arc_unpack *arc,
 }
 
 static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
- uint8_t * ARC_RESTRICT dest, size_t dest_len, const uint8_t *src, size_t src_len)
+ unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len)
 {
   uint8_t *pos;
   struct arc_code *e;
-  uint16_t start_code;
-  uint16_t code;
-  uint16_t len;
+  arc_uint16 start_code;
+  arc_uint16 code;
+  int len;
   int set_last_first;
 
   #ifdef ARC_DEBUG
@@ -259,7 +263,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
 
   while(arc->lzw_out < dest_len)
   {
-    // Interrupted while writing out code? Resume output...
+    /* Interrupted while writing out code? Resume output... */
     if(arc->continue_code)
     {
       code = arc->continue_code;
@@ -281,7 +285,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
     if(code == ARC_RESET_CODE && arc->first_code == 257)
     {
       size_t i;
-      // Reset width for dynamic modes 8, 9, and 255.
+      /* Reset width for dynamic modes 8, 9, and 255. */
       #ifdef ARC_DEBUG
       fprintf(stderr, "reset at size = %u codes\n", arc->next_code);
       #endif
@@ -295,14 +299,14 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
       continue;
     }
 
-    // Add next code first to avoid KwKwK problem.
+    /* Add next code first to avoid KwKwK problem. */
     if((unsigned)code == arc->next_code)
     {
       arc_unlzw_add(arc);
       arc->kwkwk = 1;
     }
 
-    // Emit code.
+    /* Emit code. */
     set_last_first = 1;
 
 continue_code:
@@ -326,8 +330,8 @@ continue_code:
 
     if((unsigned)len > dest_len - arc->lzw_out)
     {
-      // Calculate arc->continue_left, skip arc->continue_left,
-      // emit remaining len from end of dest.
+      /* Calculate arc->continue_left, skip arc->continue_left,
+       * emit remaining len from end of dest. */
       int32_t num_emit = dest_len - arc->lzw_out;
 
       arc->continue_left = len - num_emit;
@@ -347,8 +351,8 @@ continue_code:
       *(pos--) = code;
       e = &(arc->tree[e->prev]);
     }
-    // Only set this if this is the tail end of the chain,
-    // i.e., the first section written.
+    /* Only set this if this is the tail end of the chain,
+     * i.e., the first section written. */
     if(set_last_first)
       arc->last_first_value = code;
 
@@ -365,7 +369,8 @@ continue_code:
 }
 
 static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
- uint8_t * ARC_RESTRICT dest, size_t dest_len, const uint8_t *src, size_t src_len)
+ unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len)
 {
   size_t start;
   size_t len;
@@ -461,8 +466,8 @@ static int arc_unrle90_block(struct arc_unpack * ARC_RESTRICT arc,
   return 0;
 }
 
-static int arc_unpack_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len)
+static int arc_unpack_rle90(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len)
 {
   struct arc_unpack arc;
   if(arc_unpack_init(&arc, 0, 0, 0) != 0)
@@ -492,8 +497,8 @@ err:
   return -1;
 }
 
-static int arc_unpack_lzw(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width)
+static int arc_unpack_lzw(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len, int init_width, int max_width)
 {
   struct arc_unpack arc;
   int is_dynamic = (init_width != max_width);
@@ -538,14 +543,14 @@ err:
   return -1;
 }
 
-static int arc_unpack_lzw_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len, int init_width, int max_width)
+static int arc_unpack_lzw_rle90(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len, int init_width, int max_width)
 {
   struct arc_unpack arc;
-  uint8_t buffer[4096];
+  arc_uint8 buffer[4096];
   int is_dynamic = (init_width != max_width);
 
-  // This is only used for Spark method 0xff, which doesn't use RLE.
+  /* This is only used for Spark method 0xff, which doesn't use RLE. */
   if(max_width == ARC_MAX_CODE_IN_STREAM)
     return -1;
   if(max_width == ARC_IGNORE_CODE_IN_STREAM)
@@ -606,7 +611,7 @@ err:
 #define LOOKUP_BITS 10
 #define LOOKUP_MASK ((1 << LOOKUP_BITS) - 1)
 
-static int arc_huffman_init(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+static int arc_huffman_init(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
 {
   size_t table_size = 1 << LOOKUP_BITS;
   size_t iter;
@@ -622,7 +627,7 @@ static int arc_huffman_init(struct arc_unpack *arc, const uint8_t *src, size_t s
   if(arc->lzw_in > src_len)
     return -1;
 
-  // Precompute huffman tree and lookup table.
+  /* Precompute huffman tree and lookup table. */
   arc->huffman_lookup = (struct arc_lookup *)calloc(table_size, sizeof(struct arc_lookup));
   arc->huffman_tree = (struct arc_huffman_index *)malloc(arc->num_huffman * sizeof(struct arc_huffman_index));
 
@@ -631,7 +636,7 @@ static int arc_huffman_init(struct arc_unpack *arc, const uint8_t *src, size_t s
     struct arc_huffman_index *e = &(arc->huffman_tree[i]);
     e->value[0] = src[i * 4 + 2] | (src[i * 4 + 3] << 8);
     e->value[1] = src[i * 4 + 4] | (src[i * 4 + 5] << 8);
-    if(e->value[0] >= arc->num_huffman || e->value[1] >= arc->num_huffman)
+    if(e->value[0] >= (int)arc->num_huffman || e->value[1] >= (int)arc->num_huffman)
       return -1;
   }
 
@@ -661,15 +666,15 @@ static int arc_huffman_init(struct arc_unpack *arc, const uint8_t *src, size_t s
   return 0;
 }
 
-static int arc_huffman_read_bits(struct arc_unpack *arc, const uint8_t *src, size_t src_len)
+static int arc_huffman_read_bits(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
 {
   struct arc_huffman_index *tree = arc->huffman_tree;
   struct arc_lookup *e;
-  uint32_t peek;
+  size_t peek;
   size_t bits_end;
   int index;
 
-  // Optimize short values with precomputed table.
+  /* Optimize short values with precomputed table. */
   peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
 
   e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
@@ -699,14 +704,15 @@ static int arc_huffman_read_bits(struct arc_unpack *arc, const uint8_t *src, siz
 }
 
 static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
- uint8_t * ARC_RESTRICT dest, size_t dest_len, const uint8_t *src, size_t src_len)
+ unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len)
 {
   while(arc->lzw_in < src_len && arc->lzw_out < dest_len)
   {
     int value = arc_huffman_read_bits(arc, src, src_len);
     if(value >= 256)
     {
-      // End of stream code.
+      /* End of stream code. */
       arc->lzw_in = src_len;
       return 0;
     }
@@ -718,11 +724,11 @@ static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
   return 0;
 }
 
-static int arc_unpack_huffman_rle90(uint8_t * ARC_RESTRICT dest, size_t dest_len,
- const uint8_t *src, size_t src_len)
+static int arc_unpack_huffman_rle90(unsigned char * ARC_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len)
 {
   struct arc_unpack arc;
-  uint8_t buffer[4096];
+  arc_uint8 buffer[4096];
 
   if(arc_unpack_init(&arc, 0, 0, 0) != 0)
     return -1;
@@ -772,40 +778,41 @@ err:
 const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
  const unsigned char *src, size_t src_len, int method, int max_width)
 {
-  switch(method)
+  switch(method & 0x7f)
   {
-    case 1: // unpacked (old)
-    case 2: // unpacked
-      break; // Shouldn't be handled here.
+    case 1:     /* unpacked (old) */
+    case 2:     /* unpacked */
+      /* Handle these somewhere that doesn't require an extra buffer. */
+      return "not packed";
 
-    case 3: // packed (RLE)
+    case 3:     /* packed (RLE) */
       if(arc_unpack_rle90(dest, dest_len, src, src_len) < 0)
         return "failed unpack";
       break;
 
-    case 4: // squeezed (RLE, huffman)
+    case 4:     /* squeezed (RLE, huffman) */
       if(arc_unpack_huffman_rle90(dest, dest_len, src, src_len) < 0)
         return "failed unsqueeze";
       break;
 
-    case 8: // crunched (RLE, dynamic LZW 9 to 12)
+    case 8:     /* crunched (RLE, dynamic LZW 9 to 12) */
       if(max_width > 16)
         return "invalid uncrunch width";
-      if(!max_width)
+      if(max_width <= 0)
         max_width = ARC_IGNORE_CODE_IN_STREAM;
       if(arc_unpack_lzw_rle90(dest, dest_len, src, src_len, 9, max_width))
         return "failed uncrunch";
       break;
 
-    case 9: // PK squashed (dynamic LZW 9 to 13)
+    case 9:     /* PK squashed (dynamic LZW 9 to 13) */
       if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, 13))
         return "failed unsquash";
       break;
 
-    case 0xff: // Spark compressed (dynamic LZW 9 to 16)
+    case 0x7f:  /* Spark compressed (dynamic LZW 9 to 16) */
       if(max_width > 16)
         return "invalid uncompress width";
-      if(!max_width)
+      if(max_width <= 0)
         max_width = ARC_MAX_CODE_IN_STREAM;
       if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, max_width))
         return "failed uncompress";

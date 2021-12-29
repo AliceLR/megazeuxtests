@@ -15,19 +15,25 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef DIMGUTIL_ARC_CRC16_H
-#define DIMGUTIL_ARC_CRC16_H
+#ifndef DIMGUTIL_ARC_TYPES_H
+#define DIMGUTIL_ARC_TYPES_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "arc_types.h"
+#include <stddef.h> /* size_t */
 
-arc_uint16 arc_crc16(const unsigned char *src, size_t src_len);
+#include <stdint.h>
+typedef int8_t   arc_int8;
+typedef int16_t  arc_int16;
+typedef int32_t  arc_int32;
+typedef uint8_t  arc_uint8;
+typedef uint16_t arc_uint16;
+typedef uint32_t arc_uint32;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* DIMGUTIL_ARC_CRC16_H */
+#endif /* DIMGUTIL_ARC_TYPES_H */

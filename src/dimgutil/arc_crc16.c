@@ -1,5 +1,6 @@
 /**
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * dimgutil: disk image and archive utility
+ * Copyright (C) 2021 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,11 +15,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "arc_types.h"
 #include "arc_crc16.h"
 
-#include <stdint.h>
-
-static const uint16_t crc16_table[256] =
+static const arc_uint16 crc16_table[256] =
 {
   0x0000, 0xc0c1, 0xc181, 0x0140, 0xc301, 0x03c0, 0x0280, 0xc241,
   0xc601, 0x06c0, 0x0780, 0xc741, 0x0500, 0xc5c1, 0xc481, 0x0440,
@@ -57,9 +57,9 @@ static const uint16_t crc16_table[256] =
 #define CRC16 \
  crc = (crc >> 8) ^ crc16_table[(*(src++) ^ crc) & 0xff];
 
-uint16_t arc_crc16(const uint8_t *src, size_t src_len)
+arc_uint16 arc_crc16(const unsigned char *src, size_t src_len)
 {
-  uint16_t crc = 0;
+  arc_uint16 crc = 0;
 
   while(src_len >= 8)
   {
@@ -90,10 +90,10 @@ uint16_t arc_crc16(const uint8_t *src, size_t src_len)
  */
 int main()
 {
-  uint16_t table[256] = { 0 };
+  arc_uint16 table[256] = { 0 };
 
-  uint16_t poly = 0xa001;
-  uint16_t crc = 0x0001;
+  arc_uint16 poly = 0xa001;
+  arc_uint16 crc = 0x0001;
   for(int i = 128; i >= 1; i >>= 1)
   {
     if(crc & 0x01)
@@ -105,7 +105,7 @@ int main()
       table[i + j] = crc ^ table[j];
   }
 
-  printf("static const uint16_t crc16_table[256] =\n{\n");
+  printf("static const arc_uint16 crc16_table[256] =\n{\n");
 
   for(int i = 0; i < 256; i += 8)
   {
