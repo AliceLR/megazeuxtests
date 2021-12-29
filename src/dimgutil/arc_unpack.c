@@ -780,22 +780,22 @@ const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
 {
   switch(method & 0x7f)
   {
-    case 1:     /* unpacked (old) */
-    case 2:     /* unpacked */
+    case ARC_M_UNPACKED_OLD:
+    case ARC_M_UNPACKED:
       /* Handle these somewhere that doesn't require an extra buffer. */
       return "not packed";
 
-    case 3:     /* packed (RLE) */
+    case ARC_M_PACKED:       /* RLE90 */
       if(arc_unpack_rle90(dest, dest_len, src, src_len) < 0)
         return "failed unpack";
       break;
 
-    case 4:     /* squeezed (RLE, huffman) */
+    case ARC_M_SQUEEZED:     /* RLE90 + Huffman coding */
       if(arc_unpack_huffman_rle90(dest, dest_len, src, src_len) < 0)
         return "failed unsqueeze";
       break;
 
-    case 8:     /* crunched (RLE, dynamic LZW 9 to 12) */
+    case ARC_M_CRUNCHED:     /* RLE90 + LZW 9-12 bit dynamic */
       if(max_width > 16)
         return "invalid uncrunch width";
       if(max_width <= 0)
@@ -804,12 +804,12 @@ const char *arc_unpack(unsigned char * ARC_RESTRICT dest, size_t dest_len,
         return "failed uncrunch";
       break;
 
-    case 9:     /* PK squashed (dynamic LZW 9 to 13) */
+    case ARC_M_SQUASHED:     /* LZW 9-13 bit dynamic */
       if(arc_unpack_lzw(dest, dest_len, src, src_len, 9, 13))
         return "failed unsquash";
       break;
 
-    case 0x7f:  /* Spark compressed (dynamic LZW 9 to 16) */
+    case ARC_M_COMPRESSED:  /* LZW 9-16 bit dynamic */
       if(max_width > 16)
         return "invalid uncompress width";
       if(max_width <= 0)

@@ -30,14 +30,56 @@ extern "C" {
 
 #define ARC_RESTRICT __restrict__
 
+enum arc_method
+{
+  ARC_M_UNPACKED_OLD = 0x01,
+  ARC_M_UNPACKED     = 0x02,
+  ARC_M_PACKED       = 0x03, /* RLE90 */
+  ARC_M_SQUEEZED     = 0x04, /* RLE90 + Huffman coding */
+  ARC_M_CRUNCHED_5   = 0x05, /* LZW 12-bit static (old hash) */
+  ARC_M_CRUNCHED_6   = 0x06, /* RLE90 + LZW 12-bit static (old hash) */
+  ARC_M_CRUNCHED_7   = 0x07, /* RLE90 + LZW 12-bit static (new hash) */
+  ARC_M_CRUNCHED     = 0x08, /* RLE90 + LZW 9-12 bit dynamic */
+  ARC_M_SQUASHED     = 0x09, /* LZW 9-13 bit dynamic (PK extension)*/
+  ARC_M_TRIMMED      = 0x0a, /* RLE90 + LZH with adaptive Huffman coding */
+  ARC_M_COMPRESSED   = 0x7f, /* LZW 9-16 bit dynamic (Spark extension) */
+};
+
+/**
+ * Determine if a given ARC/ArcFS/Spark method is supported.
+ *
+ * Almost all methods found in ArcFS and Spark archives in practice are
+ * supported. The rare methods 5-7 are not supported. Method 10 was added
+ * in later versions of ARC and is not supported here. Other higher method
+ * values are used to encode archive info and other things that can be
+ * safely ignored.
+ *
+ * @param method    compression method to test. All but the lowest seven bits
+ *                  will be masked away from this value.
+ *
+ * @return          0 if a method is supported, otherwise -1.
+ */
+static inline int arc_method_is_supported(int method)
+{
+  switch(method & 0x7f)
+  {
+    case ARC_M_UNPACKED_OLD:
+    case ARC_M_UNPACKED:
+    case ARC_M_PACKED:
+    case ARC_M_SQUEEZED:
+    case ARC_M_CRUNCHED:
+    case ARC_M_SQUASHED:
+    case ARC_M_COMPRESSED:
+      return 0;
+  }
+  return -1;
+}
+
 /**
  * Unpack a buffer containing an ARC/ArcFS/Spark compressed stream
- * into an uncompressed representation of the stream.
- *
- * Supported methods are 3/packed (RLE), 4/squeezed (RLE + Huffman),
- * 8/crunched (RLE + dynamic LZW <=12), 9/squashed (dynamic LZW <=13),
- * FF/compressed (dynamic LZW <=16). The unpacked methods should be handled
- * separately from this function.
+ * into an uncompressed representation of the stream. The unpacked methods
+ * should be handled separately from this function since they don't need
+ * a second output buffer for the uncompressed data.
  *
  * @param dest      destination buffer for the uncompressed stream.
  * @param dest_len  destination buffer size.
