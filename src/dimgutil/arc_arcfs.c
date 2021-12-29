@@ -1,6 +1,6 @@
 /**
  * dimgutil: disk image and archive utility
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2021 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,7 +16,7 @@
  */
 
 /**
- * Simple single-pass stdout unpacker for ArcFS archives.
+ * Simple single-file unpacker for ArcFS archives.
  */
 
 #include <stdio.h>
@@ -66,11 +66,17 @@ struct arcfs_data
 
 struct arcfs_entry
 {
+  /* Unhandled fields:
+   * - Permissions are stored in the low byte of attributes.
+   * - A 40-bit timestamp is usually stored in load_offset/exec_offset.
+   *   The timestamp counts 10ms increments from epoch 1900-01-01.
+   */
+
   /*  0 */ arc_uint8 method;
   /*  1 */ char filename[12];
   /* 12 */ arc_uint32 uncompressed_size;
-  /* 16    arc_uint32 load_offset; */
-  /* 20    arc_uint32 exec_offset; */
+  /* 16    arc_uint32 load_offset; */ /* Low byte -> high byte of the 40-bit timestamp. */
+  /* 20    arc_uint32 exec_offset; */ /* Low portion of the 40-bit timestamp. */
   /* 24    arc_uint32 attributes; */
   /* 28 */ arc_uint32 compressed_size;
   /* 32    arc_uint32 info; */
@@ -172,11 +178,11 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, size_t fi
 {
   struct arcfs_data data;
   struct arcfs_entry e;
-  size_t offset;
-  size_t i;
   unsigned char *in;
   unsigned char *out;
   size_t out_len;
+  size_t offset;
+  size_t i;
 
   if(arcfs_read_header(&data, f) < 0)
     return -1;
@@ -292,9 +298,9 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, size_t fi
 int main(int argc, char *argv[])
 {
   FILE *f;
-  size_t file_length;
   unsigned char *data;
   size_t data_length;
+  size_t file_length;
 
   if(argc < 2)
     return -1;
