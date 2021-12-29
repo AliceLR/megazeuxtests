@@ -5,6 +5,7 @@ CFLAGS   := -std=gnu99   -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${
 CXXFLAGS := -std=gnu++17 -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
 CC       := @${CC}
 CXX      := @${CXX}
+LINKCC   := ${CC}
 LINKCXX  := ${CXX}
 
 ifneq (${MSYSTEM},)
@@ -67,6 +68,12 @@ IFFDUMP_OBJS := \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
 
+UNARCFS_EXE  := unarcfs${BINEXT}
+UNARCFS_OBJS := \
+  ${DIMG_OBJ}/arc_arcfs.o \
+  ${DIMG_OBJ}/arc_crc16.o \
+  ${DIMG_OBJ}/arc_unpack.o \
+
 -include ${MODUTIL_OBJS:.o=.d}
 ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 
@@ -77,10 +84,14 @@ ${DIMGUTIL_OBJS}: | ${OBJ}/dimgutil
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
+-include ${UNARCFS_OBJS:.o=.d}
+${UNARCFS_EXE}: ${UNARCFS_OBJS}
+
 ALL_EXES := \
   ${MODUTIL_EXE}  \
   ${DIMGUTIL_EXE} \
   ${IFFDUMP_EXE} \
+  ${UNARCFS_EXE} \
 
 all: ${ALL_EXES}
 
@@ -107,6 +118,10 @@ ${DIMGUTIL_EXE}:
 ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${IFFDUMP_OBJS} ${LDLIBS}
+
+${UNARCFS_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCC} ${LDFLAGS} -o $@ ${UNARCFS_OBJS} ${LDLIBS}
 
 clean:
 	rm -rf ${OBJ}
