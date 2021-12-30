@@ -30,6 +30,14 @@
 #include "../format.hpp"
 
 
+enum ARC_variant
+{
+  IS_ARC,
+  IS_SPARK,
+  IS_PAK,
+  IS_ARC7,
+};
+
 enum ARC_type
 {
   END_OF_ARCHIVE,
@@ -42,10 +50,14 @@ enum ARC_type
   CRUNCHED_7,
   CRUNCHED,
   SQUASHED,
+  TRIMMED, // Also PAK crushed
+  PAK_DISTILLED,
 
-  ARCHIVE_INFO = 20,
-  FILE_INFO    = 21,
-  OS_INFO      = 22,
+  ARCHIVE_INFO     = 20,
+  FILE_INFO        = 21,
+  OS_INFO          = 22,
+  ARC_6_DIR        = 30,
+  ARC_6_END_OF_DIR = 31,
 
   SPARK_END_OF_ARCHIVE = 0x80,
   SPARK_UNPACKED_OLD   = 0x81,
@@ -101,9 +113,13 @@ struct ARC_entry
       case CRUNCHED_7:
       case CRUNCHED:
       case SQUASHED:
+      case TRIMMED:
+      case PAK_DISTILLED:
       case ARCHIVE_INFO:
       case FILE_INFO:
       case OS_INFO:
+      case ARC_6_DIR:
+      case ARC_6_END_OF_DIR:
       case SPARK_END_OF_ARCHIVE:
       case SPARK_UNPACKED_OLD:
       case SPARK_UNPACKED:
@@ -124,6 +140,16 @@ struct ARC_entry
     if(data[1] >= SPARK_END_OF_ARCHIVE)
       return true;
     return false;
+  }
+
+  ARC_variant variant() const
+  {
+    if(is_spark())
+      return IS_SPARK;
+    /* This will get fixed for ARC7 trimmed elsewhere. */
+    if(data[1] == TRIMMED || data[1] == PAK_DISTILLED)
+      return IS_PAK;
+    return IS_ARC;
   }
 
   const char *filename() const
@@ -179,7 +205,7 @@ struct ARC_entry
 
   size_t get_header_size() const
   {
-    if(data[1] == END_OF_ARCHIVE || data[1] == SPARK_END_OF_ARCHIVE)
+    if(data[1] == END_OF_ARCHIVE || data[1] == SPARK_END_OF_ARCHIVE || data[1] == ARC_6_END_OF_DIR)
       return 2;
     if(data[1] == UNPACKED_OLD)
       return ARC_HEADER_1_SIZE;
@@ -198,7 +224,7 @@ struct ARC_entry
   ARC_entry *next_header(FILE *fp)
   {
     ARC_type t = type();
-    if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE)
+    if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE || t == ARC_6_END_OF_DIR)
       return nullptr;
 
     if(fseek(fp, compressed_size(), SEEK_CUR))
@@ -223,7 +249,7 @@ struct ARC_entry
       return nullptr;
 
     ARC_type t = type();
-    if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE)
+    if(t == ARC_INVALID || t == END_OF_ARCHIVE || t == SPARK_END_OF_ARCHIVE || t == ARC_6_END_OF_DIR)
       return nullptr;
 
     ptrdiff_t header_size = get_header_size();
@@ -233,7 +259,7 @@ struct ARC_entry
       return nullptr;
 
     ARC_entry *ret = reinterpret_cast<ARC_entry *>(data + offset);
-    if(ret->data[0] != 0x1a || ret->type() == END_OF_ARCHIVE)
+    if(ret->data[0] != 0x1a || ret->type() == END_OF_ARCHIVE || ret->type() == ARC_6_END_OF_DIR)
       return nullptr;
 
     if((ptrdiff_t)ret->get_header_size() > left - offset)
@@ -314,6 +340,18 @@ struct ARC_entry
         return false;
     }
   }
+
+  static constexpr const char *variant_str(ARC_variant variant)
+  {
+    switch(variant)
+    {
+      case IS_ARC:        return "ARC";
+      case IS_SPARK:      return "Spark";
+      case IS_PAK:        return "PAK";
+      case IS_ARC7:       return "ARC+";
+    }
+    return "";
+  }
 };
 
 
@@ -325,8 +363,8 @@ class SparkImage: public DiskImage
   size_t num_files;
 
 public:
-  SparkImage(bool is_spark, size_t _num_files, FILE *fp, long file_length):
-   DiskImage::DiskImage(is_spark ? "Spark" : "ARC", "Archive"), data_length(file_length), num_files(_num_files)
+  SparkImage(ARC_variant variant, size_t _num_files, FILE *fp, long file_length):
+   DiskImage::DiskImage(ARC_entry::variant_str(variant), "Archive"), data_length(file_length), num_files(_num_files)
   {
     data = new uint8_t[file_length];
     if(!fread(data, file_length, 1, fp))
@@ -414,7 +452,7 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
     // It might be possible for directories to be compressed, but detection would
     // require partially unpacking them preemptively. Only scan uncompressed nested archives!
     bool is_dir = false;
-    if(h->is_valid() && (h->type() == UNPACKED || h->type() == UNPACKED_OLD))
+    if(h->is_valid() && (h->type() == UNPACKED || h->type() == UNPACKED_OLD || h->type() == ARC_6_DIR))
     {
       if(h->get_buffer(&dir_buf, &dir_length) && ARC_entry::is_valid_arc(dir_buf, dir_length))
       {
@@ -565,7 +603,8 @@ public:
     if(file_length <= 0 || !h.read_header(fp))
       return nullptr;
 
-    bool is_spark = false;
+    ARC_variant variant = IS_ARC;
+    ARC_type first_type = h.type();
     int count = 0;
     do
     {
@@ -573,13 +612,14 @@ public:
       if(!h.is_valid())
         return nullptr;
 
-      if(h.is_spark())
-        is_spark = true;
+      variant = MAX(variant, h.variant());
+      if(variant == IS_PAK && first_type == ARCHIVE_INFO && h.type() == TRIMMED)
+        variant = IS_ARC7;
     }
     while(h.next_header(fp));
     rewind(fp);
 
-    return new SparkImage(is_spark, count, fp, file_length);
+    return new SparkImage(variant, count, fp, file_length);
   }
 };
 
