@@ -68,6 +68,12 @@ IFFDUMP_OBJS := \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
 
+UNARC_EXE    := unarc${BINEXT}
+UNARC_OBJS   := \
+  ${DIMG_OBJ}/arc_arc.o \
+  ${DIMG_OBJ}/arc_crc16.o \
+  ${DIMG_OBJ}/arc_unpack.o \
+
 UNARCFS_EXE  := unarcfs${BINEXT}
 UNARCFS_OBJS := \
   ${DIMG_OBJ}/arc_arcfs.o \
@@ -79,18 +85,24 @@ ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 
 -include ${DIMGUTIL_OBJS:.o=.d}
 ${DIMGUTIL_EXE}: ${DIMGUTIL_OBJS}
-${DIMGUTIL_OBJS}: | ${OBJ}/dimgutil
+${DIMGUTIL_OBJS}: | ${DIMG_OBJ}
 
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
+-include ${UNARC_OBJS:.o=.d}
+${UNARC_EXE}: ${UNARC_OBJS}
+${UNARC_OBJS}: | ${DIMG_OBJ}
+
 -include ${UNARCFS_OBJS:.o=.d}
 ${UNARCFS_EXE}: ${UNARCFS_OBJS}
+${UNARCFS_OBJS}: | ${DIMG_OBJ}
 
 ALL_EXES := \
   ${MODUTIL_EXE}  \
   ${DIMGUTIL_EXE} \
   ${IFFDUMP_EXE} \
+  ${UNARC_EXE} \
   ${UNARCFS_EXE} \
 
 all: ${ALL_EXES}
@@ -118,6 +130,10 @@ ${DIMGUTIL_EXE}:
 ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${IFFDUMP_OBJS} ${LDLIBS}
+
+${UNARC_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCC} ${LDFLAGS} -o $@ ${UNARC_OBJS} ${LDLIBS}
 
 ${UNARCFS_EXE}:
 	$(if ${V},,@echo " LINK    " $@)

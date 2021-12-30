@@ -70,6 +70,9 @@ struct arcfs_entry
    * - Permissions are stored in the low byte of attributes.
    * - A 40-bit timestamp is usually stored in load_offset/exec_offset.
    *   The timestamp counts 10ms increments from epoch 1900-01-01.
+   *   This is supposed to be stored when the top 12 bits of load_offset are 0xFFF.
+   * - Likewise, when the top 12 bits of load_offset are 0xFF, bits 8 through 19
+   *   in load_offset are supposed to be the RISC OS filetype.
    */
 
   /*  0 */ arc_uint8 method;
@@ -174,7 +177,7 @@ static int arcfs_read_entry(struct arcfs_entry *e, FILE *f)
   return 0;
 }
 
-static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, size_t file_len)
+static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned long file_len)
 {
   struct arcfs_data data;
   struct arcfs_entry e;
@@ -249,7 +252,6 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, size_t fi
     {
       out = (unsigned char *)malloc(e.uncompressed_size);
       out_len = e.uncompressed_size;
-
       if(!out)
       {
         free(in);
@@ -273,11 +275,11 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, size_t fi
     /* ArcFS CRC may sometimes just be 0, in which case, ignore it. */
     if(e.crc16)
     {
-      arc_uint16 dest_crc16 = arc_crc16(out, out_len);
-      if(e.crc16 != dest_crc16)
+      arc_uint16 out_crc16 = arc_crc16(out, out_len);
+      if(e.crc16 != out_crc16)
       {
 #ifdef ARCFS_DEBUG
-        debug("crc16 mismatch: expected %u, got %u\n", e.crc16, dest_crc16);
+        debug("crc16 mismatch: expected %u, got %u\n", e.crc16, out_crc16);
 #endif
         free(out);
         return -1;
@@ -300,14 +302,14 @@ int main(int argc, char *argv[])
   FILE *f;
   unsigned char *data;
   size_t data_length;
-  size_t file_length;
+  unsigned long file_length;
 
   if(argc < 2)
     return -1;
 
 #ifdef _WIN32
-    /* Windows forces stdout to be text mode by default, fix it. */
-    _setmode(_fileno(stdout), _O_BINARY);
+  /* Windows forces stdout to be text mode by default, fix it. */
+  _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
   f = fopen(argv[1], "rb");
