@@ -311,16 +311,14 @@ struct ArcFS_entry
     uint64_t total_days = ts / 86400 + EPOCH;
     total_days_to_date(total_days, &year, &month, &day);
 
-    struct tm tm
-    {
-      /* tm_sec  */ seconds,
-      /* tm_min  */ minutes,
-      /* tm_hour */ hours,
-      /* tm_mday */ day,
-      /* tm_mon  */ month - 1,
-      /* tm_year */ year - 1900,
-      0, 0, 0,
-    };
+    struct tm tm{};
+    tm.tm_sec  = seconds;
+    tm.tm_min  = minutes;
+    tm.tm_hour = hours;
+    tm.tm_mday = day;
+    tm.tm_mon  = month - 1;
+    tm.tm_year = year - 1900;
+
     return FileInfo::convert_tm(&tm);
   }
 

@@ -20,7 +20,9 @@
 #include "FileIO.hpp"
 
 #include <fnmatch.h>
+#include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 FILE *FileIO::io_tempfile(char (&dest)[TEMPFILE_SIZE])
@@ -76,18 +78,14 @@ int FileIO::io_get_file_type(const char *path)
 
 static inline bool convert_time(struct timespec &dest, uint64_t file_d, uint32_t file_ns)
 {
-  struct tm tm
-  {
-    /* tm_sec   */ time_seconds(file_d),
-    /* tm_min   */ time_minutes(file_d),
-    /* tm_hour  */ time_hours(file_d),
-    /* tm_mday  */ date_day(file_d),
-    /* tm_mon   */ date_month(file_d) - 1,
-    /* tm_year  */ date_year(file_d) - 1900,
-    0,
-    0,
-    /* tm_isdst */ 0,
-  };
+  struct tm tm{};
+  tm.tm_sec  = FileInfo::time_seconds(file_d);
+  tm.tm_min  = FileInfo::time_minutes(file_d);
+  tm.tm_hour = FileInfo::time_hours(file_d);
+  tm.tm_mday = FileInfo::date_day(file_d);
+  tm.tm_mon  = FileInfo::date_month(file_d) - 1;
+  tm.tm_year = FileInfo::date_year(file_d) - 1900;
+
   dest.tv_sec = mktime(&tm);
   dest.tv_nsec = file_ns;
   return dest.tv_sec >= 0;

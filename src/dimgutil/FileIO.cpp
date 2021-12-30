@@ -15,6 +15,7 @@
  */
 
 #include "FileIO.hpp"
+#include "../common.hpp"
 
 #ifdef _WIN32
 #include "FileIO.Win32.hpp"
