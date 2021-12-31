@@ -165,20 +165,36 @@ static int is_directory(struct arc_entry *e)
   return 1;
 }
 
+static size_t arc_header_length(int method)
+{
+  size_t len = ARC_HEADER_SIZE;
+
+  /* End-of-archive and end-of-directory should be only 2 bytes long.
+   * Spark subdirectories end with end-of-archive, not end-of-directory. */
+  if((method & 0x7f) == ARC_END_OF_ARCHIVE || method == ARC_6_END_OF_DIR)
+    return 2;
+
+  if((method & 0x7f) != ARC_M_UNPACKED_OLD)
+    len -= 4;
+  if(is_spark(method))
+    len += SPARK_HEADER_EXTRA;
+  return len;
+}
+
 static int arc_read_entry(struct arc_entry *e, FILE *f)
 {
   arc_uint8 buf[ARC_HEADER_SIZE + SPARK_HEADER_EXTRA];
+  size_t header_len;
 
   if(fread(buf, 1, 2, f) < 2 || buf[0] != 0x1a)
     return -1;
 
   e->method = buf[1];
-  /* End-of-archive and end-of-directory should be only 2 bytes long.
-   * Spark subdirectories end with end-of-archive, not end-of-directory. */
-  if((e->method & 0x7f) == ARC_END_OF_ARCHIVE || e->method == ARC_6_END_OF_DIR)
+  header_len = arc_header_length(e->method);
+  if(header_len <= 2)
     return 0;
 
-  if(fread(buf + 2, 1, ARC_HEADER_SIZE - 2, f) < ARC_HEADER_SIZE - 2)
+  if(fread(buf + 2, 1, header_len - 2, f) < header_len - 2)
     return -1;
 
   memcpy(e->filename, buf + 2, 12);
@@ -188,21 +204,15 @@ static int arc_read_entry(struct arc_entry *e, FILE *f)
   e->crc16 = arc_mem_u16(buf + 23);
 
   if(e->method == ARC_M_UNPACKED_OLD)
-  {
     e->uncompressed_size = e->compressed_size;
-    if(fseek(f, -4, SEEK_CUR) < 0)
-      return -1;
-  }
   else
     e->uncompressed_size = arc_mem_u32(buf + 25);
 
   if(is_spark(e->method))
   {
     /* Spark stores extra RISC OS attribute information. */
-    if(fread(buf + ARC_HEADER_SIZE, 1, SPARK_HEADER_EXTRA, f) < SPARK_HEADER_EXTRA)
-      return -1;
-
-    e->load_address = arc_mem_u32(buf + 29);
+    size_t offset = header_len - SPARK_HEADER_EXTRA;
+    e->load_address = arc_mem_u32(buf + offset);
   }
   return 0;
 }
