@@ -282,7 +282,10 @@ static int arc_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
       return -1;
 
     if(fread(in, 1, e.compressed_size, f) < e.compressed_size)
+    {
+      free(in);
       return -1;
+    }
 
     if(is_packed(e.method))
     {
