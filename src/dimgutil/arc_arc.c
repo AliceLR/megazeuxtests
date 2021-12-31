@@ -174,7 +174,7 @@ static size_t arc_header_length(int method)
   if((method & 0x7f) == ARC_END_OF_ARCHIVE || method == ARC_6_END_OF_DIR)
     return 2;
 
-  if((method & 0x7f) != ARC_M_UNPACKED_OLD)
+  if((method & 0x7f) == ARC_M_UNPACKED_OLD)
     len -= 4;
   if(is_spark(method))
     len += SPARK_HEADER_EXTRA;
