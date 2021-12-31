@@ -31,7 +31,7 @@
 /* Spark method 0xff: read maximum code width from stream. */
 #define ARC_MAX_CODE_IN_STREAM 0x7fff
 
-#define ARC_NO_CODE 0xffff
+#define ARC_NO_CODE 0xffffffffUL
 #define ARC_RESET_CODE 256
 
 struct arc_code
@@ -61,7 +61,7 @@ struct arc_unpack
   int last_byte;
 
   /* LZW and huffman. */
-  arc_uint16 codes_buffered[8];
+  arc_uint32 codes_buffered[8];
   unsigned buffered_pos;
   unsigned buffered_width;
   size_t lzw_bits_in;
@@ -75,7 +75,7 @@ struct arc_unpack
   unsigned max_width;
   unsigned continue_left;
   unsigned continue_code;
-  unsigned last_code;
+  arc_uint32 last_code;
   unsigned kwkwk;
   unsigned last_first_value;
 
@@ -123,7 +123,7 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
     for(i = 0; i < 256; i++)
     {
       struct arc_code *c = &(arc->tree[i]);
-      c->prev = ARC_NO_CODE;
+      c->prev = (arc_uint16)ARC_NO_CODE;
       c->length = 1;
       c->value = i;
     }
