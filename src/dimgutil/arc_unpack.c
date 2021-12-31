@@ -135,6 +135,8 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
 static void arc_unpack_free(struct arc_unpack *arc)
 {
   free(arc->tree);
+  free(arc->huffman_lookup);
+  free(arc->huffman_tree);
 }
 
 static uint32_t arc_get_bytes(const uint8_t *pos, int num)
