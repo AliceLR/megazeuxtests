@@ -623,6 +623,9 @@ static int arc_huffman_init(struct arc_unpack *arc, const unsigned char *src, si
   size_t i;
   size_t j;
 
+  if(src_len < 2)
+    return -1;
+
   arc->num_huffman = src[0] | (src[1] << 8);
   if(!arc->num_huffman || arc->num_huffman > 256)
     return -1;
