@@ -141,6 +141,8 @@ static uint32_t arc_get_bytes(const uint8_t *pos, int num)
 {
   switch(num)
   {
+    case 0:
+      return 0;
     case 1:
       return pos[0];
     case 2:
@@ -555,6 +557,9 @@ static int arc_unpack_lzw_rle90(unsigned char * ARC_RESTRICT dest, size_t dest_l
     return -1;
   if(max_width == ARC_IGNORE_CODE_IN_STREAM)
   {
+    if(src_len < 2)
+      return -1;
+
     src++;
     src_len--;
     max_width = 12;
