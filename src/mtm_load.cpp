@@ -25,7 +25,7 @@ static int total_mtms = 0;
 
 
 static const int MAX_CHANNELS = 32;
-static const int MAX_TRACKS = 8191;
+//static const int MAX_TRACKS = 8191;
 static const int MAX_ORDERS = 256;
 static const int MAX_SAMPLES = 255;
 

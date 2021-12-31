@@ -31,7 +31,7 @@ static constexpr char MAGIC_ESKT[] = "EskT";
 static constexpr size_t MAX_PATTERNS = 256;
 static constexpr size_t MAX_CHANNELS = 16;
 static constexpr size_t MAX_SAMPLES  = 63;
-static constexpr size_t MAX_ROWS     = 256;
+//static constexpr size_t MAX_ROWS     = 256;
 /* Sane upper bound ;-( */
 static constexpr size_t MAX_ORDERS   = 65536;
 

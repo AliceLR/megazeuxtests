@@ -269,7 +269,7 @@ struct GDM_header
   /*  75 */ uint16_t gdm_version;
   /*  77 */ uint16_t tracker_id;
   /*  79 */ uint16_t tracker_version;
-  /*  81 */ uint8_t panning[32];
+  /*  81 */ uint8_t panning[MAX_CHANNELS];
   /* 113 */ uint8_t global_volume;
   /* 114 */ uint8_t tempo;
   /* 115 */ uint8_t bpm;
@@ -552,7 +552,7 @@ static modutil::error GDM_read(FILE *fp)
   h.tracker_id          = fget_u16le(fp);
   h.tracker_version     = fget_u16le(fp);
 
-  if(!fread(h.panning, 32, 1, fp))
+  if(!fread(h.panning, MAX_CHANNELS, 1, fp))
     return modutil::READ_ERROR;
 
   h.global_volume       = fgetc(fp);
@@ -577,7 +577,7 @@ static modutil::error GDM_read(FILE *fp)
     return modutil::READ_ERROR;
 
   // Get channel count by checking for 255 in the panning table.
-  for(int i = 0; i < 32; i++)
+  for(size_t i = 0; i < MAX_CHANNELS; i++)
   {
     if(h.panning[i] != 255)
     {

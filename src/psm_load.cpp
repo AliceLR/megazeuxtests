@@ -42,9 +42,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   ">4MBChunk",
 };
 
-static const int MAX_SAMPLES  = 256;
+//static const int MAX_SAMPLES  = 256;
 static const int MAX_PATTERNS = 256;
-static const int MAX_ORDERS   = 256;
+//static const int MAX_ORDERS   = 256;
 
 struct PSM_pattern
 {

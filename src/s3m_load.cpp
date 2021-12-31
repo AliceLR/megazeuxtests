@@ -287,7 +287,7 @@ public:
     if(!fread(buffer, 96, 1, fp))
       return modutil::FORMAT_ERROR;
 
-    if(memcmp(buffer + 44, "SCRM", 4))
+    if(memcmp(buffer + 44, S3M_MAGIC, 4))
       return modutil::FORMAT_ERROR;
 
     total_s3ms++;
