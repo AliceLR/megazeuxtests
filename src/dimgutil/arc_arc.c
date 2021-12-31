@@ -334,6 +334,26 @@ static int arc_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
 #include <fcntl.h>
 #endif
 
+#ifdef LIBFUZZER_FRONTEND
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  FILE *fp = fmemopen((void *)data, size, "rb");
+  if(fp)
+  {
+    unsigned char *out;
+    size_t out_len;
+
+    if(arc_read(&out, &out_len, fp, size) == 0)
+      free(out);
+    fclose(fp);
+  }
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main(int argc, char *argv[])
 {
   FILE *f;

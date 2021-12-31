@@ -35,6 +35,17 @@ static constexpr char op_chars[NUM_DISK_OPS] =
   'i', 'l', 'x',
 };
 
+#ifdef LIBFUZZER_FRONTEND
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  // FIXME!! needs quiet mode, configury, and to split some stuff out of main. don't care enough right now :(
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main(int argc, char *argv[])
 {
   if(argc < 3)
@@ -103,7 +114,10 @@ int main(int argc, char *argv[])
     {
       // TODO filter
       // TODO destination directory
-      char *base = (argc > 3) ? argv[3] : nullptr;
+      // FIXME
+      //char *base = (argc > 3) ? argv[3] : nullptr;
+      char *base = nullptr;
+      char *destdir = (argc > 3) ? argv[3] : nullptr;
       FileList list;
 
       disk->PrintSummary();
@@ -114,7 +128,7 @@ int main(int argc, char *argv[])
       for(FileInfo &f : list)
       {
         f.print();
-        if(!disk->Extract(f))
+        if(!disk->Extract(f, destdir))
         {
           fprintf(stderr, "  Error: failed to extract '%s'.\n", f.name());
           break;
@@ -124,6 +138,7 @@ int main(int argc, char *argv[])
       fprintf(stderr, "\n  Total: %zu\n", list.size());
     }
   }
+  format::endline();
 
   return 0;
 }

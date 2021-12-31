@@ -834,6 +834,9 @@ static const IFF<
 
 static void print_envelopes(const char *name, size_t num, DBM_envelope *envs)
 {
+  // FIXME this needs to be a standard format.hpp thing if possible.
+  if(Config.quiet)
+    return;
   format::line();
   O_("%-6s  : Instr. #  Enabled : (...)=Loop  S=Sustain\n", name);
   O_("------  : --------  ------- : -------------------------\n");

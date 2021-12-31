@@ -1,10 +1,51 @@
 .PHONY: all clean
 all:
 
-CFLAGS   := -std=gnu99   -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CFLAGS}
-CXXFLAGS := -std=gnu++17 -O3 -g -Wall -Wextra -pedantic -Wno-unused-parameter ${CXXFLAGS}
-CC       := @${CC}
-CXX      := @${CXX}
+COMMON_FLAGS := -O3 -g
+WARNING_FLAGS := -Wall -Wextra -pedantic -Wno-unused-parameter
+TAG :=
+
+F_SANITIZE = ${SANITIZE}
+ifneq (${FUZZER},)
+SANITIZE  := ${FUZZER}
+F_SANITIZE := fuzzer,${SANITIZE}
+endif
+
+ifneq (${SANITIZE},)
+CC  ?= clang
+CXX ?= clang++
+COMMON_FLAGS := -O3 "-fsanitize=${F_SANITIZE}" -fno-omit-frame-pointer -g
+TAG := _san
+ifeq (${SANITIZE},address)
+TAG := ${TAG}A
+endif
+ifeq (${SANITIZE},memory)
+COMMON_FLAGS += -fsanitize-memory-track-origins=2
+TAG := ${TAG}M
+endif
+ifeq (${SANITIZE},undefined)
+COMMON_FLAGS += -fno-sanitize-recover=all -fno-sanitize=shift-base
+TAG := ${TAG}U
+endif
+endif
+
+COMMON_FLAGS += ${WARNING_FLAGS}
+
+ifneq (${FUZZER},)
+COMMON_FLAGS += -DLIBFUZZER_FRONTEND
+TAG := ${TAG}F
+endif
+
+ifneq (${V},1)
+CC  := @${CC}
+CXX := @${CXX}
+endif
+
+CFLAGS   := -std=gnu99   ${COMMON_FLAGS} ${CFLAGS}
+CXXFLAGS := -std=gnu++17 ${COMMON_FLAGS} ${CXXFLAGS}
+LDFLAGS  := ${COMMON_FLAGS} ${LDFLAGS}
+CC       := ${CC}
+CXX      := ${CXX}
 LINKCC   := ${CC}
 LINKCXX  := ${CXX}
 
@@ -13,8 +54,10 @@ BINEXT := .exe
 LDLIBS += -lshlwapi
 endif
 
+BINEXT := ${TAG}${BINEXT}
+
 SRC  = src
-OBJ  = src/.build
+OBJ  = src/.build${TAG}
 
 DIMG_OBJ = ${OBJ}/dimgutil
 
@@ -140,5 +183,9 @@ ${UNARCFS_EXE}:
 	${LINKCC} ${LDFLAGS} -o $@ ${UNARCFS_OBJS} ${LDLIBS}
 
 clean:
-	rm -rf ${OBJ}
-	rm -f ${ALL_EXES}
+	rm -rf src/.build src/.build_san*/
+	rm -f modutil modutil.exe modutil_san*
+	rm -f dimgutil dimgutil.exe dimgutil_san*
+	rm -f iffdump iffdump.exe iffdump_san*
+	rm -f unarc unarc.exe unarc_san*
+	rm -f unarcfs unarcfs.exe unarcfs_san*

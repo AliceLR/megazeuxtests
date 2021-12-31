@@ -82,15 +82,11 @@ static bool is_loader_filtered(const modutil::loader *loader)
   return false;
 }
 
-static void check_module(const char *filename)
+static void check_module(FILE *fp)
 {
-  FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    setvbuf(fp, NULL, _IOFBF, 8192);
     loaded_mod_magic[0] = '\0';
-
-    format::line("File", "%s", filename);
 
     modutil::error err;
     bool has_format = false;
@@ -147,7 +143,18 @@ static void check_module(const char *filename)
       }
       format::endline();
     }
+  }
+}
 
+static void check_module(const char *filename)
+{
+  FILE *fp = fopen(filename, "rb");
+  if(fp)
+  {
+    format::line("File", "%s", filename);
+
+    setvbuf(fp, NULL, _IOFBF, 8192);
+    check_module(fp);
     fclose(fp);
   }
   else
@@ -156,6 +163,28 @@ static void check_module(const char *filename)
 
 } /* namespace modutil */
 
+
+#ifdef LIBFUZZER_FRONTEND
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  Config.dump_samples = true;
+  Config.dump_patterns = true;
+  Config.dump_pattern_rows = true;
+  Config.dump_descriptions = true;
+  Config.quiet = true;
+
+  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
+  if(fp)
+  {
+    modutil::check_module(fp);
+    fclose(fp);
+  }
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
 
 int main(int argc, char *argv[])
 {

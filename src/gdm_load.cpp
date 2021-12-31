@@ -733,14 +733,18 @@ static modutil::error GDM_read(FILE *fp)
   {
     format::line();
 
-    O_("Panning :");
-    for(unsigned int k = 0; k < m.num_channels; k++)
+    if(!Config.quiet)
     {
-      if(h.panning[k] == 255)
-        continue;
-      fprintf(stderr, " %02x", h.panning[k]);
+      // hack
+      O_("Panning :");
+      for(unsigned int k = 0; k < m.num_channels; k++)
+      {
+        if(h.panning[k] == 255)
+          continue;
+        fprintf(stderr, " %02x", h.panning[k]);
+      }
+      fprintf(stderr, "\n");
     }
-    fprintf(stderr, "\n");
 
     format::orders("Orders", m.orders, h.num_orders);
 

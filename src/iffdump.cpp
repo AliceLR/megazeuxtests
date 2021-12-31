@@ -121,10 +121,12 @@ public:
       }
       hexbuf[j] = '\0';
 
-      O_("%-8s : pos=%zu, len=%zu\n", hexbuf, current_start, len);
+      if(!Config.quiet)
+        O_("%-8s : pos=%zu, len=%zu\n", hexbuf, current_start, len);
     }
     else
-      O_("%-8s : pos=%zu, len=%zu\n", current_id, current_start, len);
+      if(!Config.quiet)
+        O_("%-8s : pos=%zu, len=%zu\n", current_id, current_start, len);
 
     return modutil::SUCCESS;
   }
@@ -143,24 +145,43 @@ static modutil::error IFF_dump(FILE *fp)
   return iff.parse_iff(fp, 0, data);
 }
 
-static void check_iff(const char *filename)
+static inline void check_iff(const char *filename)
 {
   FILE *fp = fopen(filename, "rb");
   if(fp)
   {
-    O_("File     : %s\n", filename);
+    format::line("File", "%s", filename);
 
     modutil::error err = IFF_dump(fp);
     if(err)
-      O_("Error    : %s\n\n", modutil::strerror(err));
+      format::error("%s", modutil::strerror(err));
     else
-      fprintf(stderr, "\n");
+      format::endline();
 
     fclose(fp);
   }
   else
-    O_("Error    : failed to open '%s'.\n", filename);
+    format::error("failed to open '%s'.", filename);
 }
+
+#ifdef LIBFUZZER_FRONTEND
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  // TODO: config variations
+  Config.quiet = true;
+
+  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
+  if(fp)
+  {
+    IFF_dump(fp);
+    fclose(fp);
+  }
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
 
 int main(int argc, char *argv[])
 {

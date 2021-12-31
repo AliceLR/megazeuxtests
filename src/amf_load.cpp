@@ -650,7 +650,7 @@ static modutil::error AMF_read(FILE *fp)
       for(unsigned int i = 1; i <= m.real_num_tracks; i++)
       {
         AMF_track &track = m.tracks[i];
-        if(!track.raw_data)
+        if(!track.raw_data || Config.quiet)
           continue;
 
         O_("Track %02x: ", i);

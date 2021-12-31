@@ -257,7 +257,8 @@ public:
         PSM_pattern &p = m.patterns[i];
 
         // FIXME
-        O_("Pat. %02x : '%s', %u rows\n", i, p.id, p.num_rows);
+        if(!Config.quiet)
+          O_("Pat. %02x : '%s', %u rows\n", i, p.id, p.num_rows);
       }
 
       // FIXME Config.dump_pattern_rows

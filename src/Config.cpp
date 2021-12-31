@@ -24,7 +24,7 @@ ConfigInfo Config;
 
 const char ConfigInfo::COMMON_FLAGS[] =
   "Common flags:\n"
-  "  -q        Suppress text output. Overrides dumping flags.\n"
+  "  -q[=N]    Suppress text output. N=1 enables (optional), N=0 disables (default).\n"
   "  -f=fmt... Filter by format loader extension and/or tag (see supported formats).\n"
   "            'fmt' can be a comma separated list or -f can be specified multiple\n"
   "            times to allow multiple formats.\n"
@@ -128,20 +128,17 @@ static bool parse_highlight(const char *str)
 void ConfigInfo::set_dump_descriptions(int level)
 {
   dump_descriptions = (level >= 1);
-  quiet = quiet && !dump_descriptions;
 }
 
 void ConfigInfo::set_dump_samples(int level)
 {
   dump_samples = (level >= 1);
-  quiet = quiet && !dump_samples;
 }
 
 void ConfigInfo::set_dump_patterns(int level)
 {
   dump_patterns = (level >= 1);
   dump_pattern_rows = (level >= 2);
-  quiet = quiet && !dump_patterns;
 }
 
 bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, void *), void *priv)
@@ -221,12 +218,15 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
           set_dump_samples(value);
           continue;
 
-        /* Suppress text output. */
+        /* Suppress text output.
+         * This does NOT completely disable text printing code,
+         * just prevents it from printing. */
         case 'q':
-          set_dump_descriptions(0);
-          set_dump_patterns(0);
-          set_dump_samples(0);
-          quiet = true;
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          quiet = (value != 0);
           continue;
 
         /* Filter by format. */
