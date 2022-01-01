@@ -22,9 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*
-#define ARC_DEBUG
-*/
+/* #define ARC_DEBUG */
 
 /* ARC method 0x08: read maximum code width from stream, but ignore it. */
 #define ARC_IGNORE_CODE_IN_STREAM 0x7ffe
@@ -67,6 +65,7 @@ struct arc_unpack
   size_t lzw_bits_in;
   size_t lzw_in;
   size_t lzw_out;
+  unsigned lzw_eof;
   unsigned max_code;
   unsigned first_code;
   unsigned next_code;
@@ -97,6 +96,7 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   arc->lzw_bits_in = 0;
   arc->lzw_in = 0;
   arc->lzw_out = 0;
+  arc->lzw_eof = 0;
   arc->max_code = (1 << max_width);
   arc->first_code = is_dynamic ? 257 : 256;
   arc->current_width = init_width;
@@ -156,7 +156,8 @@ static uint32_t arc_get_bytes(const uint8_t *pos, int num)
   }
 }
 
-static int arc_read_bits(struct arc_unpack *arc, const unsigned char *src, size_t src_len, unsigned int num_bits)
+static int arc_read_bits(struct arc_unpack * ARC_RESTRICT arc,
+ const unsigned char *src, size_t src_len, unsigned int num_bits)
 {
   uint32_t ret;
 
@@ -176,7 +177,8 @@ static int arc_read_bits(struct arc_unpack *arc, const unsigned char *src, size_
   return ret;
 }
 
-static arc_uint16 arc_next_code(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
+static arc_uint16 arc_next_code(struct arc_unpack * ARC_RESTRICT arc,
+ const unsigned char *src, size_t src_len)
 {
   /**
    * Codes are read 8 at a time in the original ARC/ArcFS/Spark software,
@@ -277,7 +279,10 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
 
     code = arc_next_code(arc, src, src_len);
     if(code >= arc->max_code)
+    {
+      arc->lzw_eof = 1;
       break;
+    }
 
     #ifdef ARC_DEBUG
     fprintf(stderr, "%04x ", code);
@@ -572,10 +577,10 @@ static int arc_unpack_lzw_rle90(unsigned char * ARC_RESTRICT dest, size_t dest_l
   if(arc_unpack_init(&arc, init_width, max_width, is_dynamic) != 0)
     return -1;
 
-  while(arc.lzw_in < src_len)
+  while(arc.lzw_eof == 0)
   {
     arc.lzw_out = 0;
-    if(arc_unlzw_block(&arc, buffer, sizeof(buffer), src, src_len) || !arc.lzw_out)
+    if(arc_unlzw_block(&arc, buffer, sizeof(buffer), src, src_len))
     {
       #ifdef ARC_DEBUG
       fprintf(stderr, "arc_unlzw_block failed "
@@ -618,7 +623,8 @@ err:
 #define LOOKUP_BITS 10
 #define LOOKUP_MASK ((1 << LOOKUP_BITS) - 1)
 
-static int arc_huffman_init(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
+static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
+ const unsigned char *src, size_t src_len)
 {
   size_t table_size = 1 << LOOKUP_BITS;
   size_t iter;
@@ -676,7 +682,8 @@ static int arc_huffman_init(struct arc_unpack *arc, const unsigned char *src, si
   return 0;
 }
 
-static int arc_huffman_read_bits(struct arc_unpack *arc, const unsigned char *src, size_t src_len)
+static int arc_huffman_read_bits(struct arc_unpack * ARC_RESTRICT arc,
+ const unsigned char *src, size_t src_len)
 {
   struct arc_huffman_index *tree = arc->huffman_tree;
   struct arc_lookup *e;
@@ -684,15 +691,18 @@ static int arc_huffman_read_bits(struct arc_unpack *arc, const unsigned char *sr
   size_t bits_end;
   int index;
 
-  /* Optimize short values with precomputed table. */
-  peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
-
-  e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
-  if(e->length)
+  if(arc->lzw_in < src_len)
   {
-    arc->lzw_bits_in += e->length;
-    arc->lzw_in = arc->lzw_bits_in >> 3;
-    return e->value;
+    /* Optimize short values with precomputed table. */
+    peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
+
+    e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
+    if(e->length)
+    {
+      arc->lzw_bits_in += e->length;
+      arc->lzw_in = arc->lzw_bits_in >> 3;
+      return e->value;
+    }
   }
 
   bits_end = (src_len << 3);
@@ -717,13 +727,14 @@ static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
  unsigned char * ARC_RESTRICT dest, size_t dest_len,
  const unsigned char *src, size_t src_len)
 {
-  while(arc->lzw_in < src_len && arc->lzw_out < dest_len)
+  while(arc->lzw_out < dest_len)
   {
     int value = arc_huffman_read_bits(arc, src, src_len);
     if(value >= 256)
     {
       /* End of stream code. */
       arc->lzw_in = src_len;
+      arc->lzw_eof = 1;
       return 0;
     }
     if(value < 0)
@@ -746,10 +757,10 @@ static int arc_unpack_huffman_rle90(unsigned char * ARC_RESTRICT dest, size_t de
   if(arc_huffman_init(&arc, src, src_len) != 0)
     goto err;
 
-  while(arc.lzw_in < src_len)
+  while(arc.lzw_eof == 0)
   {
     arc.lzw_out = 0;
-    if(arc_unhuffman_block(&arc, buffer, sizeof(buffer), src, src_len) || !arc.lzw_out)
+    if(arc_unhuffman_block(&arc, buffer, sizeof(buffer), src, src_len))
     {
       #ifdef ARC_DEBUG
       fprintf(stderr, "arc_unhuffman_block failed "
