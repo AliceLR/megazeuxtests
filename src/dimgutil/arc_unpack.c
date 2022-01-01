@@ -156,7 +156,7 @@ static uint32_t arc_get_bytes(const uint8_t *pos, int num)
   }
 }
 
-static int arc_read_bits(struct arc_unpack * ARC_RESTRICT arc,
+static arc_int32 arc_read_bits(struct arc_unpack * ARC_RESTRICT arc,
  const unsigned char *src, size_t src_len, unsigned int num_bits)
 {
   uint32_t ret;
@@ -177,7 +177,7 @@ static int arc_read_bits(struct arc_unpack * ARC_RESTRICT arc,
   return ret;
 }
 
-static arc_uint16 arc_next_code(struct arc_unpack * ARC_RESTRICT arc,
+static arc_uint32 arc_next_code(struct arc_unpack * ARC_RESTRICT arc,
  const unsigned char *src, size_t src_len)
 {
   /**
@@ -192,7 +192,7 @@ static arc_uint16 arc_next_code(struct arc_unpack * ARC_RESTRICT arc,
     size_t i;
     for(i = 0; i < 8; i++)
     {
-      int value = arc_read_bits(arc, src, src_len, arc->current_width);
+      arc_int32 value = arc_read_bits(arc, src, src_len, arc->current_width);
       if(value < 0)
         break;
 
@@ -259,7 +259,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
   uint8_t *pos;
   struct arc_code *e;
   arc_uint16 start_code;
-  arc_uint16 code;
+  arc_uint32 code;
   int len;
   int set_last_first;
 
