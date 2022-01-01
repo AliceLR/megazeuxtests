@@ -115,6 +115,8 @@ static int arc_unpack_init(struct arc_unpack *arc, int init_width, int max_width
   if(max_width)
   {
     size_t i;
+    if(max_width < 9 || max_width > 16)
+      return -1;
 
     arc->tree = (struct arc_code *)calloc(1 << max_width, sizeof(struct arc_code));
     if(!arc->tree)
