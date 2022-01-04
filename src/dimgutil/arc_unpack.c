@@ -624,6 +624,43 @@ err:
  */
 #define LOOKUP_BITS 11
 #define LOOKUP_MASK ((1 << LOOKUP_BITS) - 1)
+#define HUFFMAN_TREE_MAX 256
+
+static int arc_huffman_check_tree(const struct arc_huffman_index *tree)
+{
+  /* Make sure the tree isn't garbage... */
+  const struct arc_huffman_index *e;
+  arc_uint8 visited[HUFFMAN_TREE_MAX];
+  arc_uint8 stack[HUFFMAN_TREE_MAX];
+  int stack_pos = 1;
+  size_t i;
+
+  memset(visited, 0, sizeof(visited));
+  stack[0] = 0;
+  while(stack_pos > 0)
+  {
+    i = stack[--stack_pos];
+    e = &(tree[i]);
+    visited[i] = 1;
+
+    if(e->value[0] >= 0)
+    {
+      if(visited[e->value[0]])
+        return -1;
+
+      stack[stack_pos++] = e->value[0];
+    }
+
+    if(e->value[1] >= 0)
+    {
+      if(visited[e->value[1]])
+        return -1;
+
+      stack[stack_pos++] = e->value[1];
+    }
+  }
+  return 0;
+}
 
 static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
  const unsigned char *src, size_t src_len)
@@ -637,7 +674,7 @@ static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
     return -1;
 
   arc->num_huffman = src[0] | (src[1] << 8);
-  if(!arc->num_huffman || arc->num_huffman > 256)
+  if(!arc->num_huffman || arc->num_huffman > HUFFMAN_TREE_MAX)
     return -1;
 
   arc->lzw_in = 2UL + 4UL * arc->num_huffman;
@@ -657,6 +694,8 @@ static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
     if(e->value[0] >= (int)arc->num_huffman || e->value[1] >= (int)arc->num_huffman)
       return -1;
   }
+  if(arc_huffman_check_tree(arc->huffman_tree) < 0)
+    return -1;
 
   for(i = 0; i < table_size; i++)
   {
