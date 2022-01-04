@@ -622,7 +622,7 @@ err:
  * Huffman decoding based on this blog post by Phaeron.
  * https://www.virtualdub.org/blog2/entry_345.html
  */
-#define LOOKUP_BITS 10
+#define LOOKUP_BITS 11
 #define LOOKUP_MASK ((1 << LOOKUP_BITS) - 1)
 
 static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
@@ -672,7 +672,10 @@ static int arc_huffman_init(struct arc_unpack * ARC_RESTRICT arc,
       value >>= 1;
     }
     if(index >= 0)
+    {
+      arc->huffman_lookup[i].value = index;
       continue;
+    }
 
     iter = 1 << bits;
     for(j = i; j < table_size; j += iter)
@@ -693,36 +696,38 @@ static int arc_huffman_read_bits(struct arc_unpack * ARC_RESTRICT arc,
   size_t bits_end;
   int index;
 
-  if(arc->lzw_in < src_len)
-  {
-    /* Optimize short values with precomputed table. */
-    peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
+  if(arc->lzw_in >= src_len)
+    return -1;
 
-    e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
-    if(e->length)
-    {
-      arc->lzw_bits_in += e->length;
-      arc->lzw_in = arc->lzw_bits_in >> 3;
-      return e->value;
-    }
+  /* Optimize short values with precomputed table. */
+  peek = arc_get_bytes(src + arc->lzw_in, src_len - arc->lzw_in) >> (arc->lzw_bits_in & 7);
+
+  e = &(arc->huffman_lookup[peek & LOOKUP_MASK]);
+  if(e->length)
+  {
+    arc->lzw_bits_in += e->length;
+    arc->lzw_in = arc->lzw_bits_in >> 3;
+    return e->value;
   }
 
+  /* The table also allows skipping the first few bits of long codes. */
   bits_end = (src_len << 3);
-  index = 0;
+  arc->lzw_bits_in += LOOKUP_BITS;
+  index = e->value;
 
   while(index >= 0 && arc->lzw_bits_in < bits_end)
   {
-    int bit = src[arc->lzw_bits_in >> 3] >> (arc->lzw_bits_in & 7);
+    /* Force unsigned here to avoid potential sign extensions. */
+    unsigned bit = (unsigned)src[arc->lzw_bits_in >> 3] >> (arc->lzw_bits_in & 7);
     arc->lzw_bits_in++;
 
     index = tree[index].value[bit & 1];
   }
-  if(index < 0)
-  {
-    arc->lzw_in = arc->lzw_bits_in >> 3;
-    return ~index;
-  }
-  return -1;
+
+  arc->lzw_in = arc->lzw_bits_in >> 3;
+  /* This translates truncated code indices to negative
+   * values (i.e. failure), no check required. */
+  return ~index;
 }
 
 static int arc_unhuffman_block(struct arc_unpack * ARC_RESTRICT arc,
