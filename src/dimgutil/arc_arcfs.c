@@ -103,17 +103,17 @@ static int arcfs_read_header(struct arcfs_data *data, FILE *f)
 
   if(fread(buffer, 1, ARCFS_HEADER_SIZE, f) < ARCFS_HEADER_SIZE)
   {
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("short read in header\n");
-#endif
+    #endif
     return -1;
   }
 
   if(arcfs_check_magic(buffer) < 0)
   {
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("bad header magic: %8.8s\n", (char *)buffer);
-#endif
+    #endif
     return -1;
   }
 
@@ -125,28 +125,28 @@ static int arcfs_read_header(struct arcfs_data *data, FILE *f)
 
   if(data->entries_length % ARCFS_ENTRY_SIZE != 0)
   {
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("bad entries length: %zu\n", (size_t)data->entries_length);
-#endif
+    #endif
     return -1;
   }
 
   if(data->data_offset < ARCFS_HEADER_SIZE ||
      data->data_offset - ARCFS_HEADER_SIZE < data->entries_length)
   {
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("bad data offset: %zu\n", (size_t)data->data_offset);
-#endif
+    #endif
     return -1;
   }
 
   /* These seem to be the highest versions that exist. */
   if(data->min_read_version > 260 || data->min_write_version > 260 || data->format_version > 0x0a)
   {
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("bad versions: %zu %zu %zu\n", (size_t)data->min_read_version,
      (size_t)data->min_write_version, (size_t)data->format_version);
-#endif
+    #endif
     return -1;
   }
 
@@ -198,15 +198,15 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
   {
     if(arcfs_read_entry(&e, f) < 0)
     {
-#ifdef ARCFS_DEBUG
+      #ifdef ARCFS_DEBUG
       debug("error reading entry %zu\n", (size_t)data.entries_length / ARCFS_ENTRY_SIZE);
-#endif
+      #endif
       return -1;
     }
 
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("checking file: %s\n", e.filename);
-#endif
+    #endif
 
     /* Ignore directories, end of directory markers, deleted files. */
     if(e.is_directory || e.method == ARCFS_END_OF_DIR || e.method == ARCFS_DELETED)
@@ -232,9 +232,9 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
       continue;
 
     /* Read file. */
-#ifdef ARCFS_DEBUG
+    #ifdef ARCFS_DEBUG
     debug("unpacking file: %s\n", e.filename);
-#endif
+    #endif
 
     if(fseek(f, offset, SEEK_SET) < 0)
       return -1;
@@ -262,9 +262,9 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
       err = arc_unpack(out, out_len, in, e.compressed_size, e.method, e.compression_bits);
       if(err != NULL)
       {
-#ifdef ARCFS_DEBUG
+        #ifdef ARCFS_DEBUG
         debug("error unpacking: %s\n", err);
-#endif
+        #endif
         free(in);
         free(out);
         return -1;
@@ -283,9 +283,9 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
       arc_uint16 out_crc16 = arc_crc16(out, out_len);
       if(e.crc16 != out_crc16)
       {
-#ifdef ARCFS_DEBUG
+        #ifdef ARCFS_DEBUG
         debug("crc16 mismatch: expected %u, got %u\n", e.crc16, out_crc16);
-#endif
+        #endif
         free(out);
         return -1;
       }
