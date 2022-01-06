@@ -183,6 +183,7 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
   struct arcfs_entry e;
   unsigned char *in;
   unsigned char *out;
+  const char *err;
   size_t out_len;
   size_t offset;
   size_t i;
@@ -258,8 +259,12 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
         return -1;
       }
 
-      if(arc_unpack(out, out_len, in, e.compressed_size, e.method, e.compression_bits) != NULL)
+      err = arc_unpack(out, out_len, in, e.compressed_size, e.method, e.compression_bits);
+      if(err != NULL)
       {
+#ifdef ARCFS_DEBUG
+        debug("error unpacking: %s\n", err);
+#endif
         free(in);
         free(out);
         return -1;
