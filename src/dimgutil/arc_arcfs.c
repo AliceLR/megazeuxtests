@@ -211,7 +211,7 @@ static int arcfs_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned 
     if(e.is_directory || e.method == ARCFS_END_OF_DIR || e.method == ARCFS_DELETED)
       continue;
 
-    if(e.method == ARC_M_UNPACKED && e.compressed_size != e.uncompressed_size)
+    if(e.method == ARC_M_UNPACKED)
       e.compressed_size = e.uncompressed_size;
 
     /* Ignore junk offset/size. */

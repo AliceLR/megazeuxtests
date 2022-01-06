@@ -203,7 +203,7 @@ static int arc_read_entry(struct arc_entry *e, FILE *f)
   e->compressed_size = arc_mem_u32(buf + 15);
   e->crc16 = arc_mem_u16(buf + 23);
 
-  if(e->method == ARC_M_UNPACKED_OLD)
+  if(!is_packed(e->method))
     e->uncompressed_size = e->compressed_size;
   else
     e->uncompressed_size = arc_mem_u32(buf + 25);
@@ -263,9 +263,6 @@ static int arc_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
       level++;
       continue;
     }
-
-    if(e.method == ARC_M_UNPACKED)
-      e.uncompressed_size = e.compressed_size;
 
     /* Skip unknown types, junk compressed sizes, and unsupported uncompressed sizes. */
     if(arc_method_is_supported(e.method) < 0 ||
