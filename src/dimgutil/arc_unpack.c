@@ -141,7 +141,7 @@ static void arc_unpack_free(struct arc_unpack *arc)
   free(arc->huffman_tree);
 }
 
-static uint32_t arc_get_bytes(const uint8_t *pos, int num)
+static arc_uint32 arc_get_bytes(const unsigned char *pos, int num)
 {
   switch(num)
   {
@@ -161,7 +161,7 @@ static uint32_t arc_get_bytes(const uint8_t *pos, int num)
 static arc_int32 arc_read_bits(struct arc_unpack * ARC_RESTRICT arc,
  const unsigned char *src, size_t src_len, unsigned int num_bits)
 {
-  uint32_t ret;
+  arc_uint32 ret;
 
   if(arc->lzw_bits_in + num_bits > (src_len << 3))
   {
@@ -213,7 +213,7 @@ static void arc_unlzw_add(struct arc_unpack *arc)
 {
   if(arc->last_code != ARC_NO_CODE && arc->next_code < arc->max_code)
   {
-    uint16_t len = arc->tree[arc->last_code].length;
+    arc_uint32 len = arc->tree[arc->last_code].length;
     struct arc_code *e;
 
     e = &(arc->tree[arc->next_code++]);
@@ -258,7 +258,7 @@ static int arc_unlzw_block(struct arc_unpack * ARC_RESTRICT arc,
  unsigned char * ARC_RESTRICT dest, size_t dest_len,
  const unsigned char *src, size_t src_len)
 {
-  uint8_t *pos;
+  unsigned char *pos;
   struct arc_code *e;
   arc_uint16 start_code;
   arc_uint32 code;
@@ -343,7 +343,7 @@ continue_code:
     {
       /* Calculate arc->continue_left, skip arc->continue_left,
        * emit remaining len from end of dest. */
-      int32_t num_emit = dest_len - arc->lzw_out;
+      arc_int32 num_emit = dest_len - arc->lzw_out;
 
       arc->continue_left = len - num_emit;
       arc->continue_code = code;
