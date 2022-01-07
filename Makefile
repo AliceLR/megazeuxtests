@@ -101,8 +101,10 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/ArcFS.o \
   ${DIMG_OBJ}/FAT.o \
   ${DIMG_OBJ}/SparkFS.o \
+  ${DIMG_OBJ}/crc32.o \
   ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
+  ${DIMG_OBJ}/lzx_unpack.o \
   ${OBJ}/Config.o \
 
 IFFDUMP_EXE  := iffdump${BINEXT}
@@ -123,6 +125,12 @@ UNARCFS_OBJS := \
   ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
 
+UNLZX_EXE    := unlzx${BINEXT}
+UNLZX_OBJS   := \
+  ${DIMG_OBJ}/lzx_lzx.o \
+  ${DIMG_OBJ}/lzx_unpack.o \
+  ${DIMG_OBJ}/crc32.o \
+
 -include ${MODUTIL_OBJS:.o=.d}
 ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 
@@ -141,12 +149,17 @@ ${UNARC_OBJS}: | ${DIMG_OBJ}
 ${UNARCFS_EXE}: ${UNARCFS_OBJS}
 ${UNARCFS_OBJS}: | ${DIMG_OBJ}
 
+-include ${UNLZX_OBJS:.o=.d}
+${UNLZX_EXE}: ${UNLZX_OBJS}
+${UNLZX_OBJS}: | ${DIMG_OBJ}
+
 ALL_EXES := \
   ${MODUTIL_EXE}  \
   ${DIMGUTIL_EXE} \
   ${IFFDUMP_EXE} \
   ${UNARC_EXE} \
   ${UNARCFS_EXE} \
+  ${UNLZX_EXE} \
 
 all: ${ALL_EXES}
 
@@ -182,6 +195,10 @@ ${UNARCFS_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCC} ${LDFLAGS} -o $@ ${UNARCFS_OBJS} ${LDLIBS}
 
+${UNLZX_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCC} ${LDFLAGS} -o $@ ${UNLZX_OBJS} ${LDLIBS}
+
 clean:
 	rm -rf src/.build src/.build_san*/
 	rm -f modutil modutil.exe modutil_san*
@@ -189,3 +206,4 @@ clean:
 	rm -f iffdump iffdump.exe iffdump_san*
 	rm -f unarc unarc.exe unarc_san*
 	rm -f unarcfs unarcfs.exe unarcfs_san*
+	rm -f unlzx unlzx.exe unlzx_san*
