@@ -17,40 +17,42 @@
 
 /**
  * Unpacker for Amiga LZX compressed streams.
- * Based primarily on the LZX compression documentation from MSDN:
+ * Based primarily on the LZX compression documentation from MSDN, with
+ * further reference and corrections based on temisu's Ancient decompressor:
  *
  *   https://docs.microsoft.com/en-us/previous-versions/bb417343(v=msdn.10)?redirectedfrom=MSDN#microsoft-lzx-data-compression-format
+ *   https://github.com/temisu/ancient/blob/master/src/LZXDecompressor.cpp
  *
  * The following changes are required from the MSDN documentation for this
  * to work correctly:
  *
  *   * CAB LZX changed the block type values:
- *     1 is uncompressed in classic LZX, but is verbatim in CAB LZX.
+ *     1 is verbatim but reuses the previous tree in classic LZX.
  *     2 is verbatim in classic LZX, but is aligned offsets in CAB LZX.
  *     3 is aligned offsets in classic LZX, but is uncompressed in CAB LZX.
  *
  *   * The bitstream description is wrong for classic LZX. Amiga LZX reads
- *     big endian 16-bit codes into a little endian bitstream, but the MSDN
- *     documentation claims the opposite. This might have been a deliberate
- *     change since the MDSN version makes more sense for Huffman codes.
+ *     big endian 16-bit codes into a little endian bitstream, but CAB LZX
+ *     appears to have been updated to do the opposite.
  *
- *   * Amiga LZX seems to use a fixed window size.
+ *   * Amiga LZX uses a fixed 64k window and 512 distance+length codes. It
+ *     does not have a separate lengths tree. The distance slot is determined
+ *     by (symbol - 256) & 0x1f and the length slot is determined by
+ *     (symbol - 256) >> 5. Both use the same set of slots, which are the same
+ *     as the first 32 CAB LZX position slots.
  *
  *   * The documentation states block lengths are a 24-bit field but fails to
- *     clarify that they're read in three 8-bit chunks big endian style.
+ *     clarify that they're read in three 8-bit chunks big endian style. This
+ *     is corrected in the LZX DELTA specification.
  *
- *   * The documentation kind of forgot that uncompressed blocks have a length.
- *     It is three 8-bit fields following the block type, like verbatim.
+ *   * The aligned offset tree header documentation is wrong, even for CAB:
+ *     in CAB LZX, the aligned offset tree is after the block length, but in
+ *     Amiga LZX, it's BEFORE the block length.
  *
- *   * The aligned offset tree header documentation is totally wrong, even for
- *     CAB LZX: in CAB LZX, the aligned offset tree is after the length and
- *     before the main/lengths trees. In classic LZX, it's BEFORE the length.
- *     The documentation also forgot the lengths tree.
- *
- *   * FIXME even more things probably!!!!!
- *
- * The correct documentation for these features is in the MSDN LZX DELTA
- * specification (except where classic LZX differences are noted).
+ *   * The code tree width delta algorithm is incorrectly documented as
+ *     (prev_len[x] + code) % 17 instead of (prev_len[x] - code + 17) % 17.
+ *     This is corrected in the LZX DELTA specification. The Amiga LZX delta
+ *     RLE codes also have separate behavior for the two main tree blocks.
  */
 
 #include "lzx_unpack.h"
@@ -63,26 +65,39 @@
 #define LZX_LOOKUP_BITS  11
 #define LZX_LOOKUP_MASK  ((1 << LZX_CODES_LOOKUP_BITS) - 1)
 
-#define LZX_MAX_CODES    (LZX_NUM_CHARS + 8 * 50)
+#define LZX_NUM_CHARS    256
+#define LZX_MAX_CODES    (LZX_NUM_CHARS + 512)
 #define LZX_MAX_ALIGNED  8
 #define LZX_MAX_PRETREE  20
 
 #define LZX_MAX_BINS     17
 #define LZX_CODE_BINS    17
-#define LZX_LENGTH_BINS  17
 #define LZX_ALIGNED_BINS 8
 #define LZX_PRETREE_BINS 16
-
-/* MSDN constants. */
-#define LZX_MIN_MATCH    2
-#define LZX_MAX_MATCH    257
-#define LZX_NUM_CHARS    256
-#define LZX_MAX_LENGTHS  249
 
 #ifdef LZX_DEBUG
 #include <stdio.h>
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
+#define error(...) fprintf(stderr, "" __VA_ARGS__), fflush(stderr), -1
 #endif
+
+/* Position slot base positions table from MSDN documentation. */
+static const unsigned lzx_slot_base[32] =
+{
+     0,    1,    2,     3,     4,     6,     8,    12,
+    16,   24,   32,    48,    64,    96,   128,   192,
+   256,  384,  512,   768,  1024,  1536,  2048,  3072,
+  4096, 6144, 8192, 12288, 16384, 24576, 32768, 49152
+};
+
+/* Position slot footer bits table from MSDN documentation. */
+static const unsigned lzx_slot_bits[32] =
+{
+   0,  0,  0,  0,  1,  1,  2,  2,
+   3,  3,  4,  4,  5,  5,  6,  6,
+   7,  7,  8,  8,  9,  9, 10, 10,
+  11, 11, 12, 12, 13, 13, 14, 14
+};
 
 static const lzx_uint8 lzx_reverse8[] =
 {
@@ -109,16 +124,21 @@ static lzx_uint16 lzx_reverse16(lzx_uint16 v)
   return (lzx_reverse8[v & 0xff] << 8) | lzx_reverse8[v >> 8];
 }
 
+static lzx_uint16 lzx_mem_u16be(const unsigned char *buf)
+{
+  return (buf[0] << 8) | buf[1];
+}
+
 typedef size_t bitcount;
 
 /* In CAB LZX verbatim is 1, aligned offsets is 2, and uncompressed is 3.
- * In Amiga LZX uncompressed is 1, verbatim is 2, and aligned offsets is 3.
- * How helpful! */
+ * In Amiga LZX 1 is verbatim without a stored tree, 2 is verbatim with a
+ * stored tree, and 3 is aligned offsets. */
 enum lzx_block_type
 {
-  LZX_B_UNCOMPRESSED = 1,
-  LZX_B_VERBATIM     = 2,
-  LZX_B_ALIGNED      = 3,
+  LZX_B_VERBATIM_SAME = 1,
+  LZX_B_VERBATIM      = 2,
+  LZX_B_ALIGNED       = 3,
 };
 
 struct lzx_lookup
@@ -139,6 +159,7 @@ struct lzx_tree
   struct lzx_lookup *lookup;
   unsigned num_values;
   unsigned num_bins;
+  unsigned min_bin;
   struct lzx_bin bins[LZX_MAX_BINS];
 };
 
@@ -147,81 +168,46 @@ struct lzx_data
   bitcount bits_in;
   size_t in;
   size_t out;
-  lzx_uint32 prev_offsets[3];
-  unsigned block_type;
-  size_t window_bits;
-  size_t num_codes;
 
   struct lzx_tree codes;
-  struct lzx_tree lengths;
   struct lzx_tree aligned;
   struct lzx_tree pretree;
 
   lzx_uint16 code_values[LZX_MAX_CODES];
-  lzx_uint16 length_values[LZX_MAX_LENGTHS];
   lzx_uint16 aligned_values[LZX_MAX_ALIGNED];
   lzx_uint16 pretree_values[LZX_MAX_PRETREE];
 
-  /* LZX stores delta widths for codes and lengths between blocks. */
+  /* LZX stores delta widths for codes between blocks. */
   lzx_uint8 code_widths[LZX_MAX_CODES];
-  lzx_uint8 length_widths[LZX_MAX_LENGTHS];
 };
 
-static struct lzx_data *lzx_unpack_init(int windowbits)
+static struct lzx_data *lzx_unpack_init()
 {
   struct lzx_data *lzx;
 
-  if(windowbits < 15 || windowbits > 21)
+  lzx = calloc(1, sizeof(struct lzx_data));
+  if(!lzx)
     return NULL;
 
-  lzx = calloc(1, sizeof(struct lzx_data));
-
-  lzx->prev_offsets[0] = 1;
-  lzx->prev_offsets[1] = 1;
-  lzx->prev_offsets[2] = 1;
-  lzx->window_bits = windowbits;
-  lzx->num_codes = LZX_NUM_CHARS + 8 * (lzx->window_bits << 1);
-
   lzx->codes.values   = lzx->code_values;
-  lzx->lengths.values = lzx->length_values;
   lzx->aligned.values = lzx->aligned_values;
   lzx->pretree.values = lzx->pretree_values;
-  return lzx;
-}
-
-static int lzx_unpack_init_lookups(struct lzx_data *lzx)
-{
-  if(lzx->codes.lookup)
-    return 0;
 
 /* TODO after everything else is tested.
   lzx->codes.lookup = (struct lzx_lookup *)malloc((1 << LZX_LOOKUP_BITS) * sizeof(struct lzx_lookup));
   if(!lzx->codes.lookup)
-    return -1;
-  lzx->lengths.lookup = (struct lzx_lookup *)malloc((1 << LZX_LOOKUP_BITS) * sizeof(struct lzx_lookup));
-  if(!lzx->lengths.lookup)
-    return -1;
+  {
+    free(lzx);
+    return NULL;
+  }
 */
-  return 0;
+  return lzx;
 }
 
 static void lzx_unpack_free(struct lzx_data *lzx)
 {
   free(lzx->codes.lookup);
-  free(lzx->lengths.lookup);
   free(lzx);
-}
-
-static int lzx_align(struct lzx_data * LZX_RESTRICT lzx, size_t src_len)
-{
-  /* Align to 2-byte boundary. */
-  if(lzx->bits_in & 0x0F)
-  {
-    lzx->bits_in += 0x10 - (lzx->bits_in & 0x0F);
-    if((lzx->bits_in >> 3) >= src_len)
-      return -1;
-  }
-  return 0;
 }
 
 /* Amiga LZX uses a little endian (right shift) bitstream
@@ -234,8 +220,8 @@ static lzx_uint32 lzx_get_bytes(const unsigned char *pos, unsigned num)
     case 0:
     case 1:  return 0;
     case 2:
-    case 3:  return (pos[0] << 8UL) | pos[1];
-    default: return (pos[0] << 8UL) | pos[1] | (pos[2] << 24UL) | (pos[3] << 16UL);
+    case 3:  return lzx_mem_u16be(pos);
+    default: return lzx_mem_u16be(pos) | (lzx_mem_u16be(pos + 2) << 16UL);
   }
 }
 
@@ -244,8 +230,9 @@ static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
 {
   static const lzx_uint16 BIT_MASKS[17] =
   {
-    0, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff,
-    0x3ff, 0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff
+        0,
+      0x1,   0x3,   0x7,   0xf,   0x1f,   0x3f,   0x7f,   0xff,
+    0x1ff, 0x3ff, 0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff
   };
 
   lzx_uint32 bits;
@@ -288,10 +275,11 @@ static lzx_int32 lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
  const struct lzx_tree *tree, const unsigned char *src, size_t src_len)
 {
   lzx_uint32 peek;
-  unsigned pos = 1;
+  unsigned pos = tree->min_bin;
 
   peek = lzx_peek_bits(lzx, src, src_len, 16);
   peek = lzx_reverse16(peek);
+
   if(tree->lookup)
   {
     struct lzx_lookup e = tree->lookup[peek >> (16 - LZX_LOOKUP_BITS)];
@@ -303,7 +291,7 @@ static lzx_int32 lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
       lzx->bits_in += e.length;
       return e.value;
     }
-    pos += LZX_LOOKUP_BITS;
+    pos = LZX_LOOKUP_BITS + 1;
   }
 
   for(; pos < tree->num_bins; pos++)
@@ -323,17 +311,18 @@ static lzx_int32 lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
   return -1;
 }
 
-static void lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
+static int lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
  const lzx_uint8 *counts, const lzx_uint8 *widths, unsigned max_codes,
  unsigned max_bins)
 {
-  lzx_uint8 offsets[LZX_CODE_BINS];
+  unsigned offsets[LZX_CODE_BINS];
   unsigned pos = 0;
   unsigned first = 0;
   unsigned i;
 
-  tree->num_values = max_codes - counts[0];
+  tree->num_values = 0;
   tree->num_bins = 0;
+  tree->min_bin = 0;
 
   for(i = 1; i < max_bins; i++)
   {
@@ -341,20 +330,47 @@ static void lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
     pos += counts[i];
 
     if(counts[i])
+    {
+      if(!tree->min_bin)
+        tree->min_bin = i;
       tree->num_bins = i + 1;
+      tree->num_values = pos;
+    }
 
-    tree->bins[i].offset = first;
+    tree->bins[i].offset = first - offsets[i];
     tree->bins[i].last = pos;
-
     first = (first + counts[i]) << 1;
+
+    #ifdef LZX_DEBUG
+    if(tree->min_bin)
+      debug("bin %u: %04x %u\n", i, tree->bins[i].offset, tree->bins[i].last);
+    #endif
   }
+
+  /* The "first" value after all of the bins are generated should be the
+   * theoretical maximum number of codes that can be stored in the tree.
+   * If these aren't the same, the Huffman tree is under/over-specified.
+   * (These values are actually both twice the maximum number of codes.) */
+  #ifdef LZX_DEBUG
+  debug("Huffman tree: sum=%u expected=%u\n", first, 1 << max_bins);
+  #endif
+  if(first != 1U << max_bins)
+    return -1;
 
   for(i = 0; i < max_codes; i++)
   {
-    unsigned width = widths[i];
-    unsigned offset = offsets[width]++;
-    tree->values[offset] = i;
+    if(widths[i] > 0)
+    {
+      unsigned offset = offsets[widths[i]]++;
+      tree->values[offset] = i;
+    }
   }
+  // FIXME remove
+  if(max_codes <= 20)
+    for(i = 0; i < tree->num_values; i++)
+      debug("code %u: %u\n", i, tree->values[i]);
+
+  return 0;
 }
 
 static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
@@ -367,6 +383,7 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
   unsigned i;
   unsigned fill;
 
+  // FIXME remove
   if(!tree->lookup)
     return;
 
@@ -403,13 +420,13 @@ static int lzx_read_aligned(struct lzx_data * LZX_RESTRICT lzx,
   {
     lzx_int32 w = lzx_get_bits(lzx, src, src_len, 3);
     if(w < 0)
-      return -1;
+      return error("aligned tree read failed at %d\n", i);
+
+    debug("aligned %d = %d\n", i, w);
     widths[i] = w;
     counts[w]++;
   }
-
-  lzx_prepare_huffman(tree, counts, widths, LZX_MAX_ALIGNED, LZX_ALIGNED_BINS);
-  return 0;
+  return lzx_prepare_huffman(tree, counts, widths, LZX_MAX_ALIGNED, LZX_ALIGNED_BINS);
 }
 
 static int lzx_read_pretree(struct lzx_data * LZX_RESTRICT lzx,
@@ -426,38 +443,49 @@ static int lzx_read_pretree(struct lzx_data * LZX_RESTRICT lzx,
   {
     lzx_int32 w = lzx_get_bits(lzx, src, src_len, 4);
     if(w < 0)
-      return -1;
+      return error("pretree read failed at %d\n", i);
+
+    debug("pretree %d = %d\n", i, w);
     widths[i] = w;
     counts[w]++;
   }
-
-  lzx_prepare_huffman(tree, counts, widths, LZX_MAX_PRETREE, LZX_PRETREE_BINS);
-  return 0;
+  return lzx_prepare_huffman(tree, counts, widths, LZX_MAX_PRETREE, LZX_PRETREE_BINS);
 }
 
 static int lzx_read_delta(struct lzx_data *lzx,
  lzx_uint8 * LZX_RESTRICT counts, lzx_uint8 * LZX_RESTRICT widths,
  int i, int max, const unsigned char *src, size_t src_len)
 {
+  /* In Amiga LZX (but not CAB LZX) the RLE bit reads and repeat count
+   * values vary depending on which section of the tree is being read. */
+  int is_dist = (i >= LZX_NUM_CHARS);
+
+  unsigned int sum = 0; // FIXME
   while(i < max)
   {
     lzx_int32 w = lzx_get_huffman(lzx, &(lzx->pretree), src, src_len);
+    lzx_int32 bits;
     lzx_int32 num;
     if(w < 0 || w >= 20)
-      return -1;
+      return error("delta read failed at %d\n", i);
 
     switch(w)
     {
       default:
-        widths[i] = (widths[i] + w) % 17;
+        widths[i] = (widths[i] + 17 - w) % 17;
         counts[widths[i]]++;
+        sum += widths[i] ? (1 << (16 - widths[i])) : 0;
+        debug("width %u = %u (sum: %u)\n", i, widths[i], sum);
         i++;
         break;
 
       case 17:
-        num = lzx_get_bits(lzx, src, src_len, 4) + 4;
-        if(num < 4 || num > max - i)
-          return -1;
+        bits = lzx_get_bits(lzx, src, src_len, 4);
+        num = bits + 4 - is_dist;
+        if(bits < 0 || num > max - i)
+          return error("bad delta RLE 17 at %d\n", i);
+
+        debug("widths %u-%u = 0\n", i, i + num - 1);
 
         memset(widths + i, 0, num);
         counts[0] += num;
@@ -467,7 +495,9 @@ static int lzx_read_delta(struct lzx_data *lzx,
       case 18:
         num = lzx_get_bits(lzx, src, src_len, 5) + 20;
         if(num < 20 || num > max - i)
-          return -1;
+          return error("bad delta RLE 18 at %d\n", i);
+
+        debug("widths %u-%u = 0\n", i, i + num - 1);
 
         memset(widths + i, 0, num);
         counts[0] += num;
@@ -475,41 +505,24 @@ static int lzx_read_delta(struct lzx_data *lzx,
         break;
 
       case 19:
-        num = lzx_get_bits(lzx, src, src_len, 1) + 4;
-        if(num < 4 || num > max - i)
-          return -1;
+        bits = lzx_get_bits(lzx, src, src_len, 1);
+        num = bits + 4 - is_dist;
+        if(bits < 0 || num > max - i)
+          return error("bad delta RLE 19 count at %d\n", i);
 
         w = lzx_get_huffman(lzx, &(lzx->pretree), src, src_len);
-        if(w < 0)
-          return -1;
+        if(w < 0 || w > 16)
+          return error("bad delta RLE 19 code at %d\n", i);
 
-        w = (widths[i] + w) % 17;
+        w = (widths[i] + 17 - w) % 17;
         memset(widths + i, w, num);
         counts[w] += num;
+        sum += w ? (num << (16 - w)) : 0;
+        debug("widths %u-%u = %u (sum: %u)\n", i, i + num - 1, w, sum);
         i += num;
         break;
     }
   }
-  return 0;
-}
-
-static int lzx_read_lengths(struct lzx_data * LZX_RESTRICT lzx,
- const unsigned char *src, size_t src_len)
-{
-  struct lzx_tree *tree = &(lzx->lengths);
-  lzx_uint8 *widths = lzx->length_widths;
-  lzx_uint8 counts[LZX_LENGTH_BINS];
-
-  memset(counts, 0, sizeof(counts));
-
-  /* Read pretree and lengths. */
-  if(lzx_read_pretree(lzx, src, src_len) < 0)
-    return -1;
-  if(lzx_read_delta(lzx, counts, widths, 0, LZX_MAX_LENGTHS, src, src_len) < 0)
-    return -1;
-
-  lzx_prepare_huffman(tree, counts, lzx->length_widths, LZX_MAX_LENGTHS, LZX_LENGTH_BINS);
-  lzx_prepare_lookup(tree, counts);
   return 0;
 }
 
@@ -523,66 +536,75 @@ static int lzx_read_codes(struct lzx_data * LZX_RESTRICT lzx,
   memset(counts, 0, sizeof(counts));
 
   /* Read pretree and first 256 codes. */
+  debug("codes 1\n");
   if(lzx_read_pretree(lzx, src, src_len) < 0)
-    return -1;
-  if(lzx_read_delta(lzx, counts, widths, 0, 256, src, src_len) < 0)
-    return -1;
+    return error("failed to read codes pretree 1\n");
+  if(lzx_read_delta(lzx, counts, widths, 0, LZX_NUM_CHARS, src, src_len) < 0)
+    return error("failed to read codes 1\n");
 
-  /* Read pretree and offset codes. */
+  /* Read pretree and distance codes. */
+  debug("codes 2\n");
   if(lzx_read_pretree(lzx, src, src_len) < 0)
-    return -1;
-  if(lzx_read_delta(lzx, counts, widths, 256, lzx->num_codes, src, src_len) < 0)
-    return -1;
+    return error("failed to read codes pretree 2\n");
+  if(lzx_read_delta(lzx, counts, widths, LZX_NUM_CHARS, LZX_MAX_CODES, src, src_len) < 0)
+    return error("failed to read codes 2\n");
 
-  lzx_prepare_huffman(tree, counts, widths, LZX_MAX_CODES, LZX_CODE_BINS);
+  if(lzx_prepare_huffman(tree, counts, widths, LZX_MAX_CODES, LZX_CODE_BINS) < 0)
+    return -1;
   lzx_prepare_lookup(tree, counts);
   return 0;
 }
 
 /*
- * Sliding dictionary support.
- *
- * LZX uses some unique hacks on top of its otherwise typical LZ77 sliding
- * dictionary. FIXME document them here.
+ * LZX unpacking.
  */
 
-static lzx_uint32 lzx_translate_offset(struct lzx_data *lzx, lzx_uint32 offset_in)
+static void lzx_copy_dictionary(struct lzx_data * LZX_RESTRICT lzx,
+ unsigned char * LZX_RESTRICT dest, ptrdiff_t distance, size_t length)
 {
-  if(offset_in >= 3)
+  ptrdiff_t offset = (ptrdiff_t)lzx->out - distance;
+
+  if(offset < 0)
   {
-    lzx->prev_offsets[2] = lzx->prev_offsets[1];
-    lzx->prev_offsets[1] = lzx->prev_offsets[0];
-    lzx->prev_offsets[0] = offset_in - 2;
-    return lzx->prev_offsets[0];
+    size_t count = -offset;
+    if(count > length)
+      count = length;
+
+    if(count > 0)
+    {
+      memset(dest + lzx->out, 0, count);
+      lzx->out += count;
+      length -= count;
+      offset = 0;
+    }
   }
 
-  if(offset_in >= 1)
+  if(length > 0)
   {
-    lzx_uint32 tmp = lzx->prev_offsets[offset_in];
-    lzx->prev_offsets[offset_in] = lzx->prev_offsets[0];
-    lzx->prev_offsets[0] = tmp;
-    return tmp;
-  }
+    if((size_t)offset + length > lzx->out)
+    {
+      unsigned char *pos = dest + offset;
+      unsigned char *end = pos + length;
+      dest += lzx->out;
+      while(pos < end)
+        *(dest++) = *(pos++);
+    }
+    else
+      memcpy(dest + lzx->out, dest + offset, length);
 
-  return lzx->prev_offsets[0];
+    lzx->out += length;
+  }
 }
 
-
-
-
-
-
-
-
-
 static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int windowbits)
+ const unsigned char *src, size_t src_len)
 {
   struct lzx_data *lzx;
   lzx_int32 bytes_out;
-  lzx_int32 bytes_in;
+  /* NOTE: CAB LZX stores three previous distances. */
+  size_t prev_distance = 1;
 
-  lzx = lzx_unpack_init(windowbits);
+  lzx = lzx_unpack_init();
   if(!lzx)
     return -1;
 
@@ -611,61 +633,70 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
 
     switch(block_type)
     {
+      /* NOTE: CAB LZX has an uncompressed block type and gets rid of
+       * the verbatim with same tree block type. */
       default:
         goto err;
 
-      case LZX_B_VERBATIM:
-        if(lzx_unpack_init_lookups(lzx) < 0)
-          goto err;
-        if(lzx_read_codes(lzx, src, src_len) < 0)
-          goto err;
-        if(lzx_read_lengths(lzx, src, src_len) < 0)
-          goto err;
-
-        #ifdef LZX_DEBUG
-        debug("verbatim block not implemented :(\n");
-        #endif
-
-        // FIXME! read codes
-        goto err;
-
       case LZX_B_ALIGNED:
-        if(lzx_unpack_init_lookups(lzx) < 0)
-          goto err;
         /* NOTE: in CAB LZX, the aligned offsets tree goes here. */
+        /* fall-through */
+
+      case LZX_B_VERBATIM:
         if(lzx_read_codes(lzx, src, src_len) < 0)
           goto err;
-        if(lzx_read_lengths(lzx, src, src_len) < 0)
+        /* NOTE: CAB LZX reads a dedicated lengths tree here. */
+        break;
+
+      case LZX_B_VERBATIM_SAME:
+        /* Should never be the first block type. */
+        if(!lzx->codes.num_values)
           goto err;
+        break;
+    }
 
-        #ifdef LZX_DEBUG
-        debug("aligned offset block not implemented :(\n");
-        #endif
+    #ifdef LZX_DEBUG
+    debug("decompression not implemented :(\n");
+    #endif
+    goto err;
 
-        // FIXME! read codes
+    while(bytes_out)
+    {
+      int slot, bits;
+      lzx_int32 distance, length;
+
+      int code = lzx_get_huffman(lzx, &(lzx->codes), src, src_len);
+      if(code < 0)
         goto err;
 
-      case LZX_B_UNCOMPRESSED:
-        /* Align to 16-bit boundary. */
-        if(lzx_align(lzx, src_len) < 0)
-          goto err;
+      if(code < LZX_NUM_CHARS)
+      {
+        dest[lzx->out++] = code;
+        bytes_out--;
+        continue;
+      }
 
-        bytes_in = 12 + bytes_out;
-        lzx->in = lzx->bits_in >> 3;
+      // FIXME probably wrong for aligned offsets
 
-        if(lzx->in >= src_len || (size_t)bytes_in > src_len - lzx->in ||
-           lzx->out >= dest_len || (size_t)bytes_out > dest_len - lzx->out)
-          goto err;
+      slot     = (code - LZX_NUM_CHARS) & 0x1f;
+      distance = lzx_slot_base[slot];
+      bits     = lzx_slot_bits[slot];
+      if(bits)
+        distance += lzx_get_bits(lzx, src, src_len, bits);
+      if(!distance)
+        distance = prev_distance;
+      prev_distance = distance;
 
-        lzx->prev_offsets[0] = lzx_mem_u32(src + lzx->in + 0);
-        lzx->prev_offsets[1] = lzx_mem_u32(src + lzx->in + 4);
-        lzx->prev_offsets[2] = lzx_mem_u32(src + lzx->in + 8);
+      slot   = (code - LZX_NUM_CHARS) >> 5;
+      length = lzx_slot_base[slot];
+      bits   = lzx_slot_bits[slot];
+      if(bits)
+        length += lzx_get_bits(lzx, src, src_len, bits);
 
-        memcpy(dest + lzx->out, src + lzx->in + 12, bytes_out);
+      if(length <= 0 || (size_t)length > dest_len - lzx->out)
+        goto err;
 
-        lzx->bits_in += ((bitcount)bytes_in << 3);
-        lzx->out += bytes_out;
-        break;
+      lzx_copy_dictionary(lzx, dest, distance, length);
     }
   }
 
@@ -678,12 +709,12 @@ err:
 }
 
 const char *lzx_unpack(unsigned char * LZX_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int method, int windowbits)
+ const unsigned char *src, size_t src_len, int method)
 {
   switch(method)
   {
     case LZX_M_PACKED:
-      if(lzx_unpack_normal(dest, dest_len, src, src_len, windowbits) < 0)
+      if(lzx_unpack_normal(dest, dest_len, src, src_len) < 0)
         return "unpack failed";
       return NULL;
   }

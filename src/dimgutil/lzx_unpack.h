@@ -16,7 +16,7 @@
  */
 
 /**
- * Unpacker for LZX compressed streams.
+ * Unpacker for Amiga LZX compressed streams.
  */
 
 #ifndef DIMGUTIL_LZX_UNPACK_H
@@ -41,18 +41,6 @@ enum lzx_method
   LZX_M_UNPACKED = 0,
   LZX_M_PACKED   = 2,
 };
-
-/*
-static inline lzx_uint16 lzx_mem_u16(const unsigned char *buf)
-{
-  return (buf[1] << 8) | buf[0];
-}
-*/
-
-static inline lzx_uint32 lzx_mem_u32(const unsigned char *buf)
-{
-  return (buf[3] << 24UL) | (buf[2] << 16UL) | (buf[1] << 8UL) | buf[0];
-}
 
 /**
  * Determine if a given LZX method is supported.
@@ -82,14 +70,13 @@ static inline int lzx_method_is_supported(int method)
  * @param dest_len    destination buffer size.
  * @param src         buffer containing the compressed stream.
  * @param src_len     size of the compressed stream.
- * @param method      LZX compression method (should be 2).
- * @param windowbits  LZX sliding window bits.
+ * @param method      LZX compression method (should be LZX_M_PACKED).
  *
  * @return          `NULL` on success, otherwise a static const string
  *                  containing a short error message.
  */
 const char *lzx_unpack(unsigned char * LZX_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int method, int windowbits);
+ const unsigned char *src, size_t src_len, int method);
 
 #ifdef __cplusplus
 }

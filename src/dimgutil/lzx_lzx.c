@@ -42,10 +42,14 @@
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
 
-/* Bizarre non-inverting CRC-32 where the initial state IS inverted. */
 static lzx_uint32 lzx_crc32(lzx_uint32 crc, unsigned char *buf, size_t len)
 {
   return dimgutil_crc32(crc, buf, len);
+}
+
+static inline lzx_uint32 lzx_mem_u32(const unsigned char *buf)
+{
+  return (buf[3] << 24UL) | (buf[2] << 16UL) | (buf[1] << 8UL) | buf[0];
 }
 
 struct lzx_header
@@ -58,7 +62,7 @@ struct lzx_header
 
 struct lzx_entry
 {
-  /*  0    lzx_uint16 type; */         /* is the first byte the window bits? */
+  /*  0    lzx_uint16 type; */
   /*  2 */ lzx_uint32 uncompressed_size;
   /*  6 */ lzx_uint32 compressed_size;
   /* 10    lzx_uint8  machine_type; */ /* unlzx.c */
@@ -229,7 +233,7 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
         return -1;
       }
 
-      err = lzx_unpack(out, out_len, in, e.compressed_size, e.method, 15); /* FIXME windowbits? */
+      err = lzx_unpack(out, out_len, in, e.compressed_size, e.method);
       free(in);
 
       if(err != NULL)
