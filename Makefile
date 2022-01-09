@@ -100,6 +100,7 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/ADFS.o \
   ${DIMG_OBJ}/ArcFS.o \
   ${DIMG_OBJ}/FAT.o \
+  ${DIMG_OBJ}/LZX.o \
   ${DIMG_OBJ}/SparkFS.o \
   ${DIMG_OBJ}/crc32.o \
   ${DIMG_OBJ}/arc_crc16.o \

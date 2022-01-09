@@ -23,7 +23,7 @@
 #include "../common.hpp"
 
 FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size, size_t _packed, uint16_t _method):
- size(_size), packed(_packed ? _packed : _size), flags(0), method(_method)
+ size(_size), packed(_packed != NO_PACKING ? _packed : _size), flags(0), method(_method)
 {
   set_type(_type);
   set_path_alloc(base, name);

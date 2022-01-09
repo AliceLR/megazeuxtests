@@ -289,6 +289,7 @@ static inline size_t path_clean_slashes(char *path)
       path[len++] = *(current++);
   }
   path[len] = '\0';
+  // Don't remove trailing slashes.
   return len;
 }
 

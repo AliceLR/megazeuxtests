@@ -51,6 +51,8 @@ public:
     FILTER_SIZE    = (FILTER_SIZE_EQ | FILTER_SIZE_LT | FILTER_SIZE_GT),
   };
 
+  static constexpr size_t NO_PACKING = SIZE_MAX;
+
   size_t size;
   size_t packed;
 
@@ -89,7 +91,7 @@ protected:
 public:
   FileInfo(): size(0), priv(0), flags(0) { path.ptr = nullptr; filetime(0); }
 
-  FileInfo(const char *base, const char *name, int type, size_t file_size = 0, size_t file_packed = 0, uint16_t method = 0);
+  FileInfo(const char *base, const char *name, int type, size_t file_size = 0, size_t file_packed = NO_PACKING, uint16_t method = 0);
   FileInfo(const FileInfo &src);
   FileInfo(FileInfo &&src);
   ~FileInfo();
