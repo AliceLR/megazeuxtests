@@ -53,6 +53,9 @@
  *     (prev_len[x] + code) % 17 instead of (prev_len[x] - code + 17) % 17.
  *     This is corrected in the LZX DELTA specification. The Amiga LZX delta
  *     RLE codes also have separate behavior for the two main tree blocks.
+ *
+ *   * In CAB LZX the aligned offsets tree is only used for >3 bit distances,
+ *     but Amiga LZX also uses it for 3 bit distances.
  */
 
 #include "lzx_unpack.h"
@@ -679,15 +682,24 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
         continue;
       }
 
-      // FIXME probably wrong for aligned offsets
-
       slot     = (code - LZX_NUM_CHARS) & 0x1f;
       distance = lzx_slot_base[slot];
       bits     = lzx_slot_bits[slot];
       if(bits)
-        distance += lzx_get_bits(lzx, src, src_len, bits);
+      {
+        if(block_type == LZX_B_ALIGNED && bits >= 3)
+        {
+          distance += lzx_get_bits(lzx, src, src_len, bits - 3) << 3;
+          distance += lzx_get_huffman(lzx, &(lzx->aligned), src, src_len);
+        }
+        else
+          distance += lzx_get_bits(lzx, src, src_len, bits);
+      }
+      else
+
       if(!distance)
         distance = prev_distance;
+
       prev_distance = distance;
 
       slot   = (code - LZX_NUM_CHARS) >> 5;
