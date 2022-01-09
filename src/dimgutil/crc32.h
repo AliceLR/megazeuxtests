@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdlib.h>
 
 uint32_t dimgutil_crc32_no_inv(uint32_t crc, const unsigned char *src, size_t src_len);
 uint32_t dimgutil_crc32(uint32_t crc, const unsigned char *src, size_t src_len);
