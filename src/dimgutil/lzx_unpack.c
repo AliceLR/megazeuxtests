@@ -75,10 +75,12 @@
 #define LZX_ALIGNED_BINS 8
 #define LZX_PRETREE_BINS 16
 
+/* This is 2 in CAB LZX, but using 2 in Amiga LZX results in short reads. */
+#define LZX_MIN_MATCH    3
+
 #ifdef LZX_DEBUG
 #include <stdio.h>
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
-#define error(...) fprintf(stderr, "" __VA_ARGS__), fflush(stderr), -1
 #endif
 
 /* Position slot base positions table from MSDN documentation. */
@@ -271,7 +273,7 @@ static lzx_int32 lzx_get_bits(struct lzx_data * LZX_RESTRICT lzx,
  * And if the bitstream thing above wasn't bad enough, the codes are reversed.
  */
 
-static lzx_int32 lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
+static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
  const struct lzx_tree *tree, const unsigned char *src, size_t src_len)
 {
   lzx_uint32 peek;
@@ -416,13 +418,15 @@ static int lzx_read_aligned(struct lzx_data * LZX_RESTRICT lzx,
 
   memset(counts, 0, sizeof(counts));
 
+  #ifdef LZX_DEBUG
+  debug("aligned offsets\n");
+  #endif
   for(i = 0; i < LZX_MAX_ALIGNED; i++)
   {
     lzx_int32 w = lzx_get_bits(lzx, src, src_len, 3);
     if(w < 0)
-      return error("aligned tree read failed at %d\n", i);
+      return -1;
 
-    debug("aligned %d = %d\n", i, w);
     widths[i] = w;
     counts[w]++;
   }
@@ -439,13 +443,15 @@ static int lzx_read_pretree(struct lzx_data * LZX_RESTRICT lzx,
 
   memset(counts, 0, sizeof(counts));
 
+  #ifdef LZX_DEBUG
+  debug("pretree\n");
+  #endif
   for(i = 0; i < LZX_MAX_PRETREE; i++)
   {
     lzx_int32 w = lzx_get_bits(lzx, src, src_len, 4);
     if(w < 0)
-      return error("pretree read failed at %d\n", i);
+      return -1;
 
-    debug("pretree %d = %d\n", i, w);
     widths[i] = w;
     counts[w]++;
   }
@@ -457,68 +463,65 @@ static int lzx_read_delta(struct lzx_data *lzx,
  int i, int max, const unsigned char *src, size_t src_len)
 {
   /* In Amiga LZX (but not CAB LZX) the RLE bit reads and repeat count
-   * values vary depending on which section of the tree is being read. */
-  int is_dist = (i >= LZX_NUM_CHARS);
+   * values vary depending on which section of the tree is being read.
+   * The changes for this were found by experimenting with LZX files and
+   * then confirming against other Amiga LZX decompressors. */
+  int is_dists = (i >= LZX_NUM_CHARS);
+  #ifdef LZX_DEBUG
+  debug("code deltas %d through %d\n", i, max);
+  #endif
 
-  unsigned int sum = 0; // FIXME
   while(i < max)
   {
     lzx_int32 w = lzx_get_huffman(lzx, &(lzx->pretree), src, src_len);
     lzx_int32 bits;
     lzx_int32 num;
     if(w < 0 || w >= 20)
-      return error("delta read failed at %d\n", i);
+      return -1;
 
     switch(w)
     {
       default:
         widths[i] = (widths[i] + 17 - w) % 17;
         counts[widths[i]]++;
-        sum += widths[i] ? (1 << (16 - widths[i])) : 0;
-        debug("width %u = %u (sum: %u)\n", i, widths[i], sum);
         i++;
         break;
 
-      case 17:
+      case 17: /* Short run of 0. */
         bits = lzx_get_bits(lzx, src, src_len, 4);
-        num = bits + 4 - is_dist;
+        num = bits + 4 - is_dists;
         if(bits < 0 || num > max - i)
-          return error("bad delta RLE 17 at %d\n", i);
-
-        debug("widths %u-%u = 0\n", i, i + num - 1);
+          return -1;
 
         memset(widths + i, 0, num);
         counts[0] += num;
         i += num;
         break;
 
-      case 18:
-        num = lzx_get_bits(lzx, src, src_len, 5) + 20;
-        if(num < 20 || num > max - i)
-          return error("bad delta RLE 18 at %d\n", i);
-
-        debug("widths %u-%u = 0\n", i, i + num - 1);
+      case 18: /* Long run of 0. */
+        bits = lzx_get_bits(lzx, src, src_len, 5 + is_dists);
+        num = bits + 20 - is_dists;
+        if(bits < 0 || num > max - i)
+          return -1;
 
         memset(widths + i, 0, num);
         counts[0] += num;
         i += num;
         break;
 
-      case 19:
+      case 19: /* Short run of same value. */
         bits = lzx_get_bits(lzx, src, src_len, 1);
-        num = bits + 4 - is_dist;
+        num = bits + 4 - is_dists;
         if(bits < 0 || num > max - i)
-          return error("bad delta RLE 19 count at %d\n", i);
+          return -1;
 
         w = lzx_get_huffman(lzx, &(lzx->pretree), src, src_len);
         if(w < 0 || w > 16)
-          return error("bad delta RLE 19 code at %d\n", i);
+          return -1;
 
         w = (widths[i] + 17 - w) % 17;
         memset(widths + i, w, num);
         counts[w] += num;
-        sum += w ? (num << (16 - w)) : 0;
-        debug("widths %u-%u = %u (sum: %u)\n", i, i + num - 1, w, sum);
         i += num;
         break;
     }
@@ -536,18 +539,16 @@ static int lzx_read_codes(struct lzx_data * LZX_RESTRICT lzx,
   memset(counts, 0, sizeof(counts));
 
   /* Read pretree and first 256 codes. */
-  debug("codes 1\n");
   if(lzx_read_pretree(lzx, src, src_len) < 0)
-    return error("failed to read codes pretree 1\n");
+    return -1;
   if(lzx_read_delta(lzx, counts, widths, 0, LZX_NUM_CHARS, src, src_len) < 0)
-    return error("failed to read codes 1\n");
+    return -1;
 
   /* Read pretree and distance codes. */
-  debug("codes 2\n");
   if(lzx_read_pretree(lzx, src, src_len) < 0)
-    return error("failed to read codes pretree 2\n");
+    return -1;
   if(lzx_read_delta(lzx, counts, widths, LZX_NUM_CHARS, LZX_MAX_CODES, src, src_len) < 0)
-    return error("failed to read codes 2\n");
+    return -1;
 
   if(lzx_prepare_huffman(tree, counts, widths, LZX_MAX_CODES, LZX_CODE_BINS) < 0)
     return -1;
@@ -613,6 +614,9 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
   while(lzx->out < dest_len)
   {
     unsigned block_type = lzx_get_bits(lzx, src, src_len, 3);
+    #ifdef LZX_DEBUG
+    debug("\nblock type:%u\n", block_type);
+    #endif
 
     /* For some reason that I'm SURE made sense, the
      * aligned offsets tree goes here in Amiga LZX. */
@@ -623,12 +627,11 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
     bytes_out = lzx_get_bits(lzx, src, src_len, 8) << 16;
     bytes_out |= lzx_get_bits(lzx, src, src_len, 8) << 8;
     bytes_out |= lzx_get_bits(lzx, src, src_len, 8);
-    if(bytes_out < 0)
+    if(bytes_out < 0 || (size_t)bytes_out > dest_len - lzx->out)
       goto err;
 
     #ifdef LZX_DEBUG
-    debug("block type:%u uncompr.size:%zu (%06zx)\n", block_type,
-     (size_t)bytes_out, (size_t)bytes_out);
+    debug("uncompr.size:%zu (%06zx)\n", (size_t)bytes_out, (size_t)bytes_out);
     #endif
 
     switch(block_type)
@@ -655,11 +658,6 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
         break;
     }
 
-    #ifdef LZX_DEBUG
-    debug("decompression not implemented :(\n");
-    #endif
-    goto err;
-
     while(bytes_out)
     {
       int slot, bits;
@@ -667,7 +665,12 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
 
       int code = lzx_get_huffman(lzx, &(lzx->codes), src, src_len);
       if(code < 0)
+      {
+        #ifdef LZX_DEBUG
+        debug("failed to read code (in:%zu out:%zu)\n", lzx->bits_in >> 3, lzx->out);
+        #endif
         goto err;
+      }
 
       if(code < LZX_NUM_CHARS)
       {
@@ -688,15 +691,21 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
       prev_distance = distance;
 
       slot   = (code - LZX_NUM_CHARS) >> 5;
-      length = lzx_slot_base[slot];
+      length = lzx_slot_base[slot] + LZX_MIN_MATCH;
       bits   = lzx_slot_bits[slot];
       if(bits)
         length += lzx_get_bits(lzx, src, src_len, bits);
 
-      if(length <= 0 || (size_t)length > dest_len - lzx->out)
+      if(length > bytes_out)
+      {
+        #ifdef LZX_DEBUG
+        debug("invalid length %d (in:%zu out:%zu)\n", length, lzx->bits_in >> 3, lzx->out);
+        #endif
         goto err;
+      }
 
       lzx_copy_dictionary(lzx, dest, distance, length);
+      bytes_out -= length;
     }
   }
 

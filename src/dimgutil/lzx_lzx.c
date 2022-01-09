@@ -319,7 +319,11 @@ int main(int argc, char *argv[])
   if(lzx_read(&data, &data_length, f, file_length) < 0)
     return -1;
 
-  fwrite(data, data_length, 1, stdout);
+  #ifdef LZX_DEBUG
+  debug("file decompressed successfully.\n");
+  #endif
+
+  //fwrite(data, data_length, 1, stdout);
   free(data);
   return 0;
 }
