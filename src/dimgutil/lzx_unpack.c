@@ -238,7 +238,11 @@ static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
       0x1,   0x3,   0x7,   0xf,   0x1f,   0x3f,   0x7f,   0xff,
     0x1ff, 0x3ff, 0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff
   };
-  assert(num <= 16); /* Values >16 should never reach here... */
+  #ifdef LZX_DEBUG
+  /* It is currently impossible for >16 to reach here but
+   * this assert might be useful for debug. */
+  assert(num <= 16);
+  #endif
 
   if(lzx->buffer_left < num)
   {

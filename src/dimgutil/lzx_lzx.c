@@ -28,7 +28,7 @@
  * All usage of unlzx.c is directly stated and is probably non-copyrightable.
  */
 
-#define LZX_DEBUG
+/* #define LZX_DEBUG */
 
 /* Arbitrary output maximum file length. */
 #define LZX_OUTPUT_MAX (1 << 29)
@@ -83,8 +83,18 @@ struct lzx_entry
 
 /* Date packing (quoted directly from unlzx.c):
  *
- *   UBYTE packed[4]; bit 0 is MSB, 31 is LSB
- *   bit # 0-4=Day 5-8=Month 9-14=Year 15-19=Hour 20-25=Minute 26-31=Second
+ *  "UBYTE packed[4]; bit 0 is MSB, 31 is LSB
+ *   bit # 0-4=Day 5-8=Month 9-14=Year 15-19=Hour 20-25=Minute 26-31=Second"
+ *
+ * Year interpretation is non-intuitive due to bugs in the original LZX, but
+ * Classic Workbench bundles Dr.Titus' fixed LZX, which interprets years as:
+ *
+ *   001000b to 011101b -> 1978 to 1999  Original range
+ *   111010b to 111111b -> 2000 to 2005  Original-compatible Y2K bug range
+ *   011110b to 111001b -> 2006 to 2033  Dr.Titus extension
+ *   000000b to 000111b -> 2034 to 2041  Dr.Titus extension (reserved values)
+ *
+ * The buggy original range is probably caused by ([2 digit year] - 70) & 63.
  */
 };
 
