@@ -63,7 +63,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LZX_DEBUG
+/* #define LZX_DEBUG */
 
 #define LZX_LOOKUP_BITS  11
 #define LZX_LOOKUP_MASK  ((1 << LZX_CODES_LOOKUP_BITS) - 1)
@@ -134,8 +134,6 @@ static lzx_uint16 lzx_mem_u16be(const unsigned char *buf)
   return (buf[0] << 8) | buf[1];
 }
 
-typedef size_t bitcount;
-
 /* In CAB LZX verbatim is 1, aligned offsets is 2, and uncompressed is 3.
  * In Amiga LZX 1 is verbatim without a stored tree, 2 is verbatim with a
  * stored tree, and 3 is aligned offsets. */
@@ -170,9 +168,12 @@ struct lzx_tree
 
 struct lzx_data
 {
-  bitcount bits_in;
   size_t in;
   size_t out;
+
+  /* The unusual bit packing scheme makes a bit buffer faster than direct reads... */
+  size_t buffer;
+  size_t buffer_left;
 
   struct lzx_tree codes;
   struct lzx_tree aligned;
@@ -188,9 +189,7 @@ struct lzx_data
 
 static struct lzx_data *lzx_unpack_init()
 {
-  struct lzx_data *lzx;
-
-  lzx = calloc(1, sizeof(struct lzx_data));
+  struct lzx_data *lzx = (struct lzx_data *)calloc(1, sizeof(struct lzx_data));
   if(!lzx)
     return NULL;
 
@@ -218,18 +217,18 @@ static void lzx_unpack_free(struct lzx_data *lzx)
 /* Amiga LZX uses a little endian (right shift) bitstream
  * but rather than appending bytes, it appends 16-bit big endian words.
  */
-static lzx_uint32 lzx_get_bytes(const unsigned char *pos, unsigned num)
+static void lzx_word_in(struct lzx_data * LZX_RESTRICT lzx,
+ const unsigned char *src, size_t src_len)
 {
-  switch(num)
+  if(src_len - lzx->in >= 2)
   {
-    case 0:
-    case 1:  return 0;
-    case 2:
-    case 3:  return lzx_mem_u16be(pos);
-    default: return lzx_mem_u16be(pos) | (lzx_mem_u16be(pos + 2) << 16UL);
+    lzx->buffer |= (size_t)lzx_mem_u16be(src + lzx->in) << lzx->buffer_left;
+    lzx->buffer_left += 16;
+    lzx->in += 2;
   }
 }
 
+/* Not guaranteed to return the requested number of bits! */
 static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
  const unsigned char *src, size_t src_len, unsigned num)
 {
@@ -239,28 +238,43 @@ static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
       0x1,   0x3,   0x7,   0xf,   0x1f,   0x3f,   0x7f,   0xff,
     0x1ff, 0x3ff, 0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff
   };
+  assert(num <= 16); /* Values >16 should never reach here... */
 
-  lzx_uint32 bits;
-  size_t in;
-
-  assert(num <= 16); /* Should never happen. */
-
-  in   = (lzx->bits_in >> 3) & ~1;
-  bits = lzx_get_bytes(src + in, src_len - in) >> (lzx->bits_in & 15);
-  bits &= BIT_MASKS[num];
-  return bits;
+  if(lzx->buffer_left < num)
+  {
+    /* Minor optimization for 64-bit systems:
+     * buffer_left < 16, so 3 words can be read into the buffer. */
+    if(sizeof(size_t) >= 8)
+    {
+      lzx_word_in(lzx, src, src_len);
+      lzx_word_in(lzx, src, src_len);
+    }
+    lzx_word_in(lzx, src, src_len);
+  }
+  return lzx->buffer & BIT_MASKS[num];
 }
 
+/* Bounds check and discard bits from lzx_peek_bits. */
+static int lzx_skip_bits(struct lzx_data * LZX_RESTRICT lzx,
+ unsigned num)
+{
+  if(lzx->buffer_left < num)
+    return -1;
+
+  lzx->buffer >>= num;
+  lzx->buffer_left -= num;
+  return 0;
+}
+
+/* Read and remove bits from the bitstream (effectively peek + skip). */
 static lzx_int32 lzx_get_bits(struct lzx_data * LZX_RESTRICT lzx,
  const unsigned char *src, size_t src_len, unsigned num)
 {
-  lzx_uint32 bits;
-  if(lzx->bits_in + num > (bitcount)src_len << 3)
+  lzx_uint32 peek = lzx_peek_bits(lzx, src, src_len, num);
+  if(lzx_skip_bits(lzx, num) < 0)
     return -1;
 
-  bits = lzx_peek_bits(lzx, src, src_len, num);
-  lzx->bits_in += num;
-  return bits;
+  return peek;
 }
 
 /*
@@ -290,10 +304,9 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
     struct lzx_lookup e = tree->lookup[peek >> (16 - LZX_LOOKUP_BITS)];
     if(e.length)
     {
-      if((lzx->bits_in >> 3) > src_len)
+      if(lzx_skip_bits(lzx, e.length) < 0)
         return -1;
 
-      lzx->bits_in += e.length;
       return e.value;
     }
     pos = LZX_LOOKUP_BITS + 1;
@@ -306,10 +319,9 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
 
     if(code < tree->bins[pos].last)
     {
-      if((lzx->bits_in >> 3) > src_len)
+      if(lzx_skip_bits(lzx, pos) < 0)
         return -1;
 
-      lzx->bits_in += pos;
       return tree->values[code];
     }
   }
@@ -370,11 +382,11 @@ static int lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
       tree->values[offset] = i;
     }
   }
-  // FIXME remove
+  #ifdef LZX_DEBUG
   if(max_codes <= 20)
     for(i = 0; i < tree->num_values; i++)
       debug("code %u: %u\n", i, tree->values[i]);
-
+  #endif
   return 0;
 }
 
@@ -670,7 +682,7 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
       if(code < 0)
       {
         #ifdef LZX_DEBUG
-        debug("failed to read code (in:%zu out:%zu)\n", lzx->bits_in >> 3, lzx->out);
+        debug("failed to read code (in:%zu out:%zu)\n", lzx->in, lzx->out);
         #endif
         goto err;
       }
@@ -711,7 +723,7 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
       if(length > bytes_out)
       {
         #ifdef LZX_DEBUG
-        debug("invalid length %d (in:%zu out:%zu)\n", length, lzx->bits_in >> 3, lzx->out);
+        debug("invalid length %d (in:%zu out:%zu)\n", length, lzx->in, lzx->out);
         #endif
         goto err;
       }
