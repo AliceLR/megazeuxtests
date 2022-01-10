@@ -396,6 +396,7 @@ bool ArcFSImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_
       // Base is file.
       FileInfo tmp("", base, h->get_filetype(), h->uncompressed_size(), h->compressed_size(), h->data[0]);
       tmp.priv = h;
+      tmp.crc16(h->crc16());
       tmp.filetime(h->get_fileinfo_date(), h->get_fileinfo_ns());
       if(tmp.filter(filter, filter_flags))
         list.push_back(std::move(tmp));
@@ -425,6 +426,7 @@ void ArcFSImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
 
     FileInfo tmp(base, h->filename(), h->get_filetype(), h->uncompressed_size(), h->compressed_size(), h->data[0]);
     tmp.priv = h;
+    tmp.crc16(h->crc16());
     tmp.filetime(h->get_fileinfo_date(), h->get_fileinfo_ns());
 
     if(tmp.filter(filter, filter_flags))

@@ -486,6 +486,7 @@ bool LZXImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_fl
       // LZX doesn't store subdirectories, so base is a file.
       FileInfo tmp("", base, FileInfo::IS_REG, h->uncompressed_size(), h->compressed_size(), (h->flags() << 8) | h->method());
       tmp.priv = h;
+      tmp.crc32(h->crc());
       tmp.filetime(h->get_fileinfo_date(), 0);
       if(tmp.filter(filter, filter_flags))
         list.push_back(std::move(tmp));
@@ -510,6 +511,7 @@ bool LZXImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_fl
 
     FileInfo tmp("", filename, FileInfo::IS_REG, h->uncompressed_size(), h->compressed_size(), (h->flags() << 8) | h->method());
     tmp.priv = h;
+    tmp.crc32(h->crc());
     tmp.filetime(h->get_fileinfo_date(), 0);
 
     if(tmp.filter(filter, filter_flags))

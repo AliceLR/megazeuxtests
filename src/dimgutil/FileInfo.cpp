@@ -22,6 +22,14 @@
 
 #include "../common.hpp"
 
+static constexpr int CHECKSUM_WIDTHS[] =
+{
+  0,
+  4,
+  8,
+  8,
+};
+
 FileInfo::FileInfo(const char *base, const char *name, int _type, size_t _size, size_t _packed, uint16_t _method):
  size(_size), packed(_packed != NO_PACKING ? _packed : _size), flags(0), method(_method)
 {
@@ -50,11 +58,13 @@ FileInfo &FileInfo::operator=(const FileInfo &src)
   if(flags & HAS_NAME_ALLOC)
     delete[] path.ptr;
 
-  size  = src.size;
-  packed= src.packed;
-  priv  = src.priv;
-  flags = src.flags;
-  method= src.method;
+  size     = src.size;
+  packed   = src.packed;
+  priv     = src.priv;
+  flags    = src.flags;
+  method   = src.method;
+  crc      = src.crc;
+  crc_type = src.crc_type;
   access(src.access_d, src.access_ns);
   create(src.create_d, src.create_ns);
   modify(src.modify_d, src.modify_ns);
@@ -77,11 +87,13 @@ FileInfo &FileInfo::operator=(FileInfo &&src)
   if(flags & HAS_NAME_ALLOC)
     delete[] path.ptr;
 
-  size  = src.size;
-  packed= src.packed;
-  priv  = src.priv;
-  flags = src.flags;
-  method= src.method;
+  size     = src.size;
+  packed   = src.packed;
+  priv     = src.priv;
+  flags    = src.flags;
+  method   = src.method;
+  crc      = src.crc;
+  crc_type = src.crc_type;
   access(src.access_d, src.access_ns);
   create(src.create_d, src.create_ns);
   modify(src.modify_d, src.modify_ns);
@@ -212,18 +224,22 @@ void FileInfo::print() const
   else
     snprintf(size_str, sizeof(size_str), "%15zu", size);
 
-  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  :  %10zu  : %4Xh  : %s\n",
+  char crc_str[16]{};
+  if(crc_type != NO_CHECKSUM)
+    snprintf(crc_str, sizeof(crc_str), "%0*x", CHECKSUM_WIDTHS[crc_type], crc);
+
+  fprintf(stderr, "%6u-%02u-%02u %02u:%02u:%02u  :  %-15.15s  :  %10zu  : %8s : %4Xh  : %s\n",
     date_year(modify_d), date_month(modify_d), date_day(modify_d),
     time_hours(modify_d), time_minutes(modify_d), time_seconds(modify_d),
-    size_str, packed, method, name()
+    size_str, packed, crc_str, method, name()
   );
 }
 
 void FileInfo::print_header()
 {
   static constexpr const char LINES[] = "--------------------";
-  fprintf(stderr, "  %-19.19s     %-15.15s    %-11.11s    %-6.6s   %-8.8s\n",
-   "Modified", "Type/size", "Stored size", "Method", "Filename");
-  fprintf(stderr, "  %-19.19s  :  %-15.15s  : %-11.11s  : %-6.6s : %-8.8s\n",
-   LINES, LINES, LINES, LINES, LINES);
+  fprintf(stderr, "  %-19.19s     %-15.15s    %-11.11s    %-8.8s   %-6.6s   %-8.8s\n",
+   "Modified", "Type/size", "Stored size", "CRC", "Method", "Filename");
+  fprintf(stderr, "  %-19.19s  :  %-15.15s  : %-11.11s  : %-8.8s : %-6.6s : %-8.8s\n",
+   LINES, LINES, LINES, LINES, LINES, LINES);
 }

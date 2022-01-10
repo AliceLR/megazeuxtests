@@ -51,6 +51,14 @@ public:
     FILTER_SIZE    = (FILTER_SIZE_EQ | FILTER_SIZE_LT | FILTER_SIZE_GT),
   };
 
+  enum checksum_type
+  {
+    NO_CHECKSUM,
+    CRC16,   /* ARC/ArcFS, LHA */
+    CRC32,   /* ZIP, gzip, LZX, etc. */
+    CRC32_B, /* bzip2 */
+  };
+
   static constexpr size_t NO_PACKING = SIZE_MAX;
 
   size_t size;
@@ -78,6 +86,8 @@ public:
 protected:
   uint16_t flags;
   uint16_t method;
+  uint32_t crc;
+  checksum_type crc_type = NO_CHECKSUM;
 
   /* Full path name relative to archive/filesystem root. */
   union
@@ -106,6 +116,9 @@ public:
 
   void set_type(int type) { flags = (flags & ~TYPEMASK) | (type & TYPEMASK); }
   int  get_type() const { return (flags & TYPEMASK); }
+
+  void crc16(uint16_t _crc) { crc = _crc; crc_type = CRC16; }
+  void crc32(uint32_t _crc) { crc = _crc; crc_type = CRC32; }
 
   /* Set all timestamps to one value (usually modified). */
   void filetime(uint64_t _date, uint32_t nsec = 0)
