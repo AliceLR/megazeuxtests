@@ -220,10 +220,14 @@ struct LZX_entry
    */
   bool can_decompress() const
   {
-    if(extract_version() > 0x0a || is_merged())
+    if(extract_version() > 0x0a)
       return false;
 
     if(_method() == LZX_INVALID)
+      return false;
+
+    /* Merged + uncompressed is nonsense... */
+    if(method() == LZX_UNPACKED && is_merged())
       return false;
 
     uint8_t tmp[ENTRY_SIZE + 255 + 255];
@@ -350,10 +354,59 @@ struct LZX_entry
   }
 };
 
+struct LZXMergeEntry
+{
+  LZX_entry *entry;
+  size_t offset;
+};
+
+class LZXMerge
+{
+public:
+  LZX_entry *first = nullptr;
+  LZX_entry *last = nullptr;
+  uint8_t *buffer = nullptr;
+  size_t total_uncompressed = 0;
+
+  std::vector<LZXMergeEntry> positions;
+
+  ~LZXMerge()
+  {
+    free(buffer);
+  }
+
+  void add(LZX_entry *e)
+  {
+    if(!first)
+      first = e;
+    last = e;
+
+    positions.push_back({ e, total_uncompressed });
+    total_uncompressed += e->uncompressed_size();
+  }
+
+  bool has_entry(const LZX_entry *e) const
+  {
+    return first && last && e >= first && e <= last;
+  }
+
+  size_t init_buffer()
+  {
+    if(!buffer)
+    {
+      buffer = (uint8_t *)malloc(total_uncompressed);
+      if(!buffer)
+        return 0;
+    }
+    return total_uncompressed;
+  }
+};
+
 class LZXImage: public DiskImage
 {
   LZX_header header;
   LZX_entry *entry_start = nullptr;
+  std::vector<LZXMerge> merged;
   uint8_t *data = nullptr;
   uint8_t *data_end;
   size_t data_length;
@@ -370,6 +423,26 @@ public:
     }
     data_end = data + data_length;
     entry_start = LZX_entry::first_entry(data, data_end);
+
+    /* Construct merge table for decompression later. */
+    LZXMerge *current = nullptr;
+    for(LZX_entry *h = entry_start; h; h = h->next_entry(data_end))
+    {
+      if(h->is_merged())
+      {
+        if(!current)
+        {
+          merged.push_back({});
+          current = &merged.back();
+        }
+        current->add(h);
+        /* A merge ends when a compressed size is encountered. */
+        if(h->compressed_size())
+          current = nullptr;
+      }
+      else
+        current = nullptr;
+    }
   }
   virtual ~LZXImage()
   {
@@ -380,7 +453,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
-  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const override;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
   LZX_entry *get_entry(const char *path) const;
 };
@@ -445,7 +518,7 @@ bool LZXImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_fl
   return true;
 }
 
-bool LZXImage::Extract(const FileInfo &file, const char *destdir) const
+bool LZXImage::Extract(const FileInfo &file, const char *destdir)
 {
   LZX_entry *h = reinterpret_cast<LZX_entry *>(file.priv);
 
@@ -486,6 +559,63 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir) const
     return false;
 
   std::unique_ptr<uint8_t> _free_me(nullptr);
+
+  if(h->is_merged())
+  {
+    /* Find relevant merge record. */
+    LZXMerge *merge = nullptr;
+    size_t merge_offset;
+    for(LZXMerge &m : merged)
+    {
+      if(m.has_entry(h))
+      {
+        /* Get exact entry in merge. */
+        for(const LZXMergeEntry &me : m.positions)
+        {
+          if(me.entry == h)
+          {
+            merge = &m;
+            merge_offset = me.offset;
+            break;
+          }
+        }
+        if(merge)
+          break;
+      }
+    }
+    if(!merge || merge->last->compressed_size() == 0)
+    {
+      format::warning("skipping broken merged file");
+      return true;
+    }
+
+    /* Depack the merged record. */
+    if(!merge->buffer)
+    {
+      if(!merge->init_buffer())
+      {
+        format::warning("failed to allocate buffer for merge file");
+        return true;
+      }
+
+      LZX_entry *last = merge->last;
+      input = last->data_pointer();
+      input_size = last->compressed_size();
+      method = last->method();
+
+      const char *err = lzx_unpack(merge->buffer, merge->total_uncompressed, input, input_size, method);
+      if(err)
+      {
+        format::error("%s (%Xh)", err, static_cast<unsigned>(method));
+        return true;
+      }
+    }
+
+    output = merge->buffer + merge_offset;
+    output_size = h->uncompressed_size();
+  }
+  else
+
   if(method != LZX_UNPACKED)
   {
     output_size = h->uncompressed_size();

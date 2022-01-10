@@ -379,7 +379,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
-  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const override;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive, ARC_entry *h, uint8_t *start, size_t length) const;
@@ -490,7 +490,7 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
   }
 }
 
-bool SparkImage::Extract(const FileInfo &file, const char *destdir) const
+bool SparkImage::Extract(const FileInfo &file, const char *destdir)
 {
   ARC_entry *h = reinterpret_cast<ARC_entry *>(file.priv);
 

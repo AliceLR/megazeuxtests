@@ -358,7 +358,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
-  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) const override;
+  virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive, ArcFS_entry *h) const;
@@ -450,7 +450,7 @@ void ArcFSImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
   }
 }
 
-bool ArcFSImage::Extract(const FileInfo &file, const char *destdir) const
+bool ArcFSImage::Extract(const FileInfo &file, const char *destdir)
 {
   ArcFS_entry *h = reinterpret_cast<ArcFS_entry *>(file.priv);
 
