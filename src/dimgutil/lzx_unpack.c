@@ -65,8 +65,8 @@
 
 /* #define LZX_DEBUG */
 
-#define LZX_LOOKUP_BITS  11
-#define LZX_LOOKUP_MASK  ((1 << LZX_CODES_LOOKUP_BITS) - 1)
+#define LZX_LOOKUP_BITS  12
+#define LZX_LOOKUP_MASK  ((1 << LZX_LOOKUP_BITS) - 1)
 
 #define LZX_NUM_CHARS    256
 #define LZX_MAX_CODES    (LZX_NUM_CHARS + 512)
@@ -197,14 +197,12 @@ static struct lzx_data *lzx_unpack_init()
   lzx->aligned.values = lzx->aligned_values;
   lzx->pretree.values = lzx->pretree_values;
 
-/* TODO after everything else is tested.
-  lzx->codes.lookup = (struct lzx_lookup *)malloc((1 << LZX_LOOKUP_BITS) * sizeof(struct lzx_lookup));
+  lzx->codes.lookup = (struct lzx_lookup *)calloc((1 << LZX_LOOKUP_BITS), sizeof(struct lzx_lookup));
   if(!lzx->codes.lookup)
   {
     free(lzx);
     return NULL;
   }
-*/
   return lzx;
 }
 
@@ -301,11 +299,11 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
   unsigned pos = tree->min_bin;
 
   peek = lzx_peek_bits(lzx, src, src_len, 16);
-  peek = lzx_reverse16(peek);
-
   if(tree->lookup)
   {
-    struct lzx_lookup e = tree->lookup[peek >> (16 - LZX_LOOKUP_BITS)];
+    /* MSB lookup:
+    struct lzx_lookup e = tree->lookup[peek >> (16 - LZX_LOOKUP_BITS)]; */
+    struct lzx_lookup e = tree->lookup[peek & LZX_LOOKUP_MASK];
     if(e.length)
     {
       if(lzx_skip_bits(lzx, e.length) < 0)
@@ -315,6 +313,10 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
     }
     pos = LZX_LOOKUP_BITS + 1;
   }
+
+  /* For MSB lookup, this needs to be done before using the lookup table,
+   * which is most of the reason the MSB lookup is slower. */
+  peek = lzx_reverse16(peek);
 
   for(; pos < tree->num_bins; pos++)
   {
@@ -403,12 +405,9 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
   unsigned j = 0;
   unsigned i;
   unsigned fill;
+  unsigned iter;
 
-  // FIXME remove
-  if(!tree->lookup)
-    return;
-
-  for(i = 0; i < tree->num_values; i++)
+  for(i = 0, j = 0; i < tree->num_values; i++, j++)
   {
     while(j >= counts[bin])
     {
@@ -417,13 +416,24 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
       if(bin >= tree->num_bins || bin > LZX_LOOKUP_BITS)
         return;
     }
-    j++;
 
     e.value = tree->values[i];
     e.length = bin;
+    /* MSB lookup:
     fill = 1 << (LZX_LOOKUP_BITS - bin);
     while(fill--)
       *(dest++) = e;
+    */
+    /* Since LZX didn't have the foresight to use an MSB order stream,
+     * codes need to be reversed here to get a table matching the stream.
+     * This is more complex than the MSB lookup, but can result in a ~15%
+     * execution time reduction due to far fewer lzx_reverse16 calls.
+     */
+    fill = i + tree->bins[bin].offset;
+    fill = lzx_reverse16(fill) >> (16 - bin);
+    iter = 1 << bin;
+    for(; fill < (1 << LZX_LOOKUP_BITS); fill += iter)
+      dest[fill] = e;
   }
 }
 
