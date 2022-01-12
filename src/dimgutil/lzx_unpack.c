@@ -27,7 +27,7 @@
  * to work correctly:
  *
  *   * CAB LZX changed the block type values:
- *     1 is verbatim but reuses the previous tree in classic LZX.
+ *     1 is verbatim in CAB LZX, but may or may not be used in Amiga LZX.
  *     2 is verbatim in classic LZX, but is aligned offsets in CAB LZX.
  *     3 is aligned offsets in classic LZX, but is uncompressed in CAB LZX.
  *
@@ -401,11 +401,16 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
 {
   struct lzx_lookup *dest = tree->lookup;
   struct lzx_lookup e;
-  unsigned bin = 1;
+  unsigned bin = tree->min_bin;
   unsigned j = 0;
   unsigned i;
   unsigned fill;
   unsigned iter;
+
+  if(!tree->lookup)
+    return;
+
+  memset(dest, 0, (1 << LZX_LOOKUP_BITS) * sizeof(struct lzx_lookup));
 
   for(i = 0, j = 0; i < tree->num_values; i++, j++)
   {
