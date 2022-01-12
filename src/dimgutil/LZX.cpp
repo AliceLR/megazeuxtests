@@ -407,6 +407,7 @@ class LZXImage: public DiskImage
   LZX_header header;
   LZX_entry *entry_start = nullptr;
   std::vector<LZXMerge> merged;
+  std::unique_ptr<uint8_t[]> held_buffer;
   uint8_t *data = nullptr;
   uint8_t *data_end;
   size_t data_length;
@@ -453,8 +454,10 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+  virtual bool Test(const FileInfo &file) override;
   virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
+  bool unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint32_t *dest_crc);
   LZX_entry *get_entry(const char *path) const;
 };
 
@@ -520,7 +523,7 @@ bool LZXImage::Search(FileList &list, const FileInfo &filter, uint32_t filter_fl
   return true;
 }
 
-bool LZXImage::Extract(const FileInfo &file, const char *destdir)
+bool LZXImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint32_t *dest_crc)
 {
   LZX_entry *h = reinterpret_cast<LZX_entry *>(file.priv);
 
@@ -528,39 +531,15 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
   if(!h->can_decompress())
   {
     format::warning("decompressing file is unsupported");
-    return true;
+    return false;
   }
 
-  /* In LZX all entries are files, so make sure the parent exists. */
-  char pathname[1024];
-  const char *pos = strrchr(file.name(), DIR_SEPARATOR);
-  if(pos)
-  {
-    size_t len = pos - file.name();
-    memcpy(pathname, file.name(), len);
-    pathname[len] = '\0';
-
-    if(!FileIO::create_directory(pathname, destdir))
-    {
-      format::error("failed mkdir");
-      return false;
-    }
-  }
-
-  /* Extract file. */
   const uint8_t *input = h->data_pointer();
   size_t input_size = h->compressed_size();
   unsigned int method = h->method();
 
   uint8_t *output;
   size_t output_size;
-
-  FileIO output_file;
-  FILE *fp = output_file.get_file();
-  if(!fp)
-    return false;
-
-  std::unique_ptr<uint8_t> _free_me(nullptr);
 
   if(h->is_merged())
   {
@@ -588,7 +567,7 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
     if(!merge || merge->last->compressed_size() == 0)
     {
       format::warning("skipping broken merged file");
-      return true;
+      return false;
     }
 
     /* Depack the merged record. */
@@ -597,7 +576,7 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
       if(!merge->init_buffer())
       {
         format::warning("failed to allocate buffer for merge file");
-        return true;
+        return false;
       }
 
       LZX_entry *last = merge->last;
@@ -609,7 +588,7 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
       if(err)
       {
         format::error("%s (%Xh)", err, static_cast<unsigned>(method));
-        return true;
+        return false;
       }
     }
 
@@ -622,13 +601,13 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
   {
     output_size = h->uncompressed_size();
     output = new uint8_t[output_size];
-    _free_me.reset(output);
+    held_buffer.reset(output);
 
     const char *err = lzx_unpack(output, output_size, input, input_size, method);
     if(err)
     {
       format::error("%s (%Xh)", err, static_cast<unsigned>(method));
-      return true;
+      return false;
     }
   }
   else
@@ -637,9 +616,57 @@ bool LZXImage::Extract(const FileInfo &file, const char *destdir)
     output_size = input_size;
   }
 
-  uint32_t crc = dimgutil_crc32(0, output, output_size);
-  if(crc != h->crc())
-    format::warning("CRC-32 mismatch: expected 0x%08x, got 0x%08x", h->crc(), crc);
+  *dest_crc = dimgutil_crc32(0, output, output_size);
+  if(*dest_crc != h->crc())
+    format::warning("CRC-32 mismatch: expected 0x%08x, got 0x%08x", h->crc(), *dest_crc);
+
+  *dest = output;
+  *dest_len = output_size;
+  return true;
+}
+
+bool LZXImage::Test(const FileInfo &file)
+{
+  LZX_entry *h = reinterpret_cast<LZX_entry *>(file.priv);
+  uint8_t *output;
+  size_t output_size;
+  uint32_t output_crc;
+
+  if(unpack_file(file, &output, &output_size, &output_crc))
+    return output_crc == h->crc();
+
+  return false;
+}
+
+bool LZXImage::Extract(const FileInfo &file, const char *destdir)
+{
+  uint8_t *output;
+  size_t output_size;
+  uint32_t output_crc;
+
+  if(!unpack_file(file, &output, &output_size, &output_crc))
+    return false;
+
+  /* In LZX all entries are files, so make sure the parent exists. */
+  char pathname[1024];
+  const char *pos = strrchr(file.name(), DIR_SEPARATOR);
+  if(pos)
+  {
+    size_t len = pos - file.name();
+    memcpy(pathname, file.name(), len);
+    pathname[len] = '\0';
+
+    if(!FileIO::create_directory(pathname, destdir))
+    {
+      format::error("failed mkdir");
+      return false;
+    }
+  }
+
+  FileIO output_file;
+  FILE *fp = output_file.get_file();
+  if(!fp)
+    return false;
 
   if(fwrite(output, 1, output_size, fp) != output_size)
     return false;

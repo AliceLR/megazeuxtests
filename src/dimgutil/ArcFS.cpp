@@ -333,6 +333,7 @@ class ArcFSImage: public DiskImage
   ArcFS_header header;
   ArcFS_entry *entry_start;
   ArcFS_entry *entry_end;
+  std::unique_ptr<uint8_t[]> held_buffer;
   uint8_t *data = nullptr;
   size_t data_length;
 
@@ -358,10 +359,12 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+  virtual bool Test(const FileInfo &file) override;
   virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive, ArcFS_entry *h) const;
+  bool unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint16_t *dest_crc);
   ArcFS_entry *get_entry(const char *path) const;
 };
 
@@ -452,9 +455,87 @@ void ArcFSImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
   }
 }
 
-bool ArcFSImage::Extract(const FileInfo &file, const char *destdir)
+bool ArcFSImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint16_t *dest_crc)
 {
   ArcFS_entry *h = reinterpret_cast<ArcFS_entry *>(file.priv);
+
+  /* Can't unpack directories. */
+  if(~file.get_type() & FileInfo::IS_REG)
+    return false;
+
+  // Verify data pointer is OK...
+  if(h->data_offset() >= data_length || header.data_offset() >= data_length)
+    return false;
+
+  if(h->data_offset() > data_length - header.data_offset())
+    return false;
+
+  uint8_t *input = data + h->data_offset() + header.data_offset();
+  size_t input_size = h->compressed_size();
+
+  uint8_t *output;
+  size_t output_size;
+
+  ArcFS_type type = h->type();
+
+  if(type != UNPACKED)
+  {
+    output_size = h->uncompressed_size();
+    output = new uint8_t[output_size];
+    held_buffer.reset(output);
+
+    const char *err = arc_unpack(output, output_size, input, input_size, type, h->compression_bits());
+    if(err)
+    {
+      format::error("%s (%u)", err, type);
+      return false;
+    }
+  }
+  else
+  {
+    output = input;
+    output_size = input_size;
+  }
+
+  // Seems like some ArcFS archives have the CRC-16s as all 0s. Just ignore those...
+  if(h->crc16())
+  {
+    *dest_crc = arc_crc16(output, output_size);
+    if(*dest_crc != h->crc16())
+      format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), *dest_crc);
+  }
+  else
+    *dest_crc = 0;
+
+  *dest = output;
+  *dest_len = output_size;
+  return true;
+}
+
+bool ArcFSImage::Test(const FileInfo &file)
+{
+  ArcFS_entry *h = reinterpret_cast<ArcFS_entry *>(file.priv);
+  uint8_t *output;
+  size_t output_size;
+  uint16_t output_crc;
+
+  if(file.get_type() & FileInfo::IS_DIRECTORY)
+  {
+    // todo probably technically possible to verify these if there's a CRC?
+    return true;
+  }
+
+  if(unpack_file(file, &output, &output_size, &output_crc))
+    return output_crc == h->crc16();
+
+  return false;
+}
+
+bool ArcFSImage::Extract(const FileInfo &file, const char *destdir)
+{
+  uint8_t *output;
+  size_t output_size;
+  uint16_t output_crc;
 
   if(file.get_type() & FileInfo::IS_DIRECTORY)
   {
@@ -463,66 +544,26 @@ bool ArcFSImage::Extract(const FileInfo &file, const char *destdir)
       format::error("failed mkdir");
       return false;
     }
+    return true;
   }
   else
 
   if(file.get_type() & FileInfo::IS_REG)
   {
-    // Verify data pointer is OK...
-    if(h->data_offset() >= data_length || header.data_offset() >= data_length)
+    if(!unpack_file(file, &output, &output_size, &output_crc))
       return false;
-
-    if(h->data_offset() > data_length - header.data_offset())
-      return false;
-
-    uint8_t *input = data + h->data_offset() + header.data_offset();
-    size_t input_size = h->compressed_size();
-
-    uint8_t *output;
-    size_t output_size;
 
     FileIO output_file;
     FILE *fp = output_file.get_file();
     if(!fp)
       return false;
 
-    ArcFS_type type = h->type();
-
-    std::unique_ptr<uint8_t> _free_me(nullptr);
-    if(type != UNPACKED)
-    {
-      output_size = h->uncompressed_size();
-      output = new uint8_t[output_size];
-      _free_me.reset(output);
-
-      const char *err = arc_unpack(output, output_size, input, input_size, type, h->compression_bits());
-      if(err)
-      {
-        format::error("%s (%u)", err, type);
-        return false;
-      }
-    }
-    else
-    {
-      output = input;
-      output_size = input_size;
-    }
-
-    // Seems like some ArcFS archives have the CRC-16s as all 0s. Just ignore those...
-    if(h->crc16())
-    {
-      uint16_t crc16 = arc_crc16(output, output_size);
-      if(crc16 != h->crc16())
-        format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), crc16);
-    }
-
     if(fwrite(output, 1, output_size, fp) != output_size)
       return false;
 
     return output_file.commit(file, destdir);
   }
-
-  return true;
+  return false;
 }
 
 ArcFS_entry *ArcFSImage::get_entry(const char *path) const

@@ -358,6 +358,7 @@ struct ARC_entry
 
 class SparkImage: public DiskImage
 {
+  std::unique_ptr<uint8_t[]> held_buffer;
   uint8_t *data = nullptr;
   size_t data_length;
   size_t num_files;
@@ -379,10 +380,12 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive = false) const override;
+  virtual bool Test(const FileInfo &file) override;
   virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
   void search_r(FileList &list, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive, ARC_entry *h, uint8_t *start, size_t length) const;
+  bool unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint16_t *dest_crc);
 
   ARC_entry *get_entry(const char *path, uint8_t **start, size_t *length) const;
 };
@@ -492,9 +495,78 @@ void SparkImage::search_r(FileList &list, const FileInfo &filter, uint32_t filte
   }
 }
 
-bool SparkImage::Extract(const FileInfo &file, const char *destdir)
+bool SparkImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_len, uint16_t *dest_crc)
 {
   ARC_entry *h = reinterpret_cast<ARC_entry *>(file.priv);
+
+  uint8_t *input;
+  size_t input_size;
+  if(!h->get_buffer(&input, &input_size))
+    return false;
+
+  uint8_t *output;
+  size_t output_size;
+
+  ARC_type type = h->type();
+
+  if(type != UNPACKED_OLD && type != UNPACKED)
+  {
+    output_size = h->uncompressed_size();
+    output = new uint8_t[output_size];
+    held_buffer.reset(output);
+
+    const char *err = arc_unpack(output, output_size, input, input_size, type, 0);
+    if(err)
+    {
+      format::error("%s (%u)", err, type);
+      return false;
+    }
+  }
+  else
+  {
+    output = input;
+    output_size = input_size;
+  }
+
+  *dest_crc = arc_crc16(output, output_size);
+  if(*dest_crc != h->crc16())
+    format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), *dest_crc);
+
+  *dest = output;
+  *dest_len = output_size;
+  return true;
+}
+
+bool SparkImage::Test(const FileInfo &file)
+{
+  ARC_entry *h = reinterpret_cast<ARC_entry *>(file.priv);
+  uint8_t *output;
+  size_t output_size;
+  uint16_t output_crc;
+
+  if(file.get_type() & FileInfo::IS_DIRECTORY)
+  {
+    // maybe possible to CRC these?
+    return true;
+  }
+  else
+
+  if(file.get_type() & FileInfo::IS_REG)
+  {
+    if(unpack_file(file, &output, &output_size, &output_crc))
+      return output_crc == h->crc16();
+
+    return false;
+  }
+  // Info type et al.
+  return true;
+}
+
+bool SparkImage::Extract(const FileInfo &file, const char *destdir)
+{
+  uint8_t *output;
+  size_t output_size;
+  uint16_t output_crc;
 
   if(file.get_type() & FileInfo::IS_DIRECTORY)
   {
@@ -508,51 +580,19 @@ bool SparkImage::Extract(const FileInfo &file, const char *destdir)
 
   if(file.get_type() & FileInfo::IS_REG)
   {
+    if(!unpack_file(file, &output, &output_size, &output_crc))
+      return false;
+
     FileIO output_file;
     FILE *fp = output_file.get_file();
     if(!fp)
       return false;
-
-    uint8_t *input;
-    size_t input_size;
-    if(!h->get_buffer(&input, &input_size))
-      return false;
-
-    uint8_t *output;
-    size_t output_size;
-
-    ARC_type type = h->type();
-
-    std::unique_ptr<uint8_t> _free_me(nullptr);
-    if(type != UNPACKED_OLD && type != UNPACKED)
-    {
-      output_size = h->uncompressed_size();
-      output = new uint8_t[output_size];
-      _free_me.reset(output);
-
-      const char *err = arc_unpack(output, output_size, input, input_size, type, 0);
-      if(err)
-      {
-        format::error("%s (%u)", err, type);
-        return false;
-      }
-    }
-    else
-    {
-      output = input;
-      output_size = input_size;
-    }
-
-    uint16_t crc16 = arc_crc16(output, output_size);
-    if(crc16 != h->crc16())
-      format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), crc16);
 
     if(fwrite(output, 1, output_size, fp) != output_size)
       return false;
 
     return output_file.commit(file, destdir);
   }
-
   return true;
 }
 

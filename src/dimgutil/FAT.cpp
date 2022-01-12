@@ -313,6 +313,7 @@ public:
   virtual bool PrintSummary() const override;
   virtual bool Search(FileList &dest, const FileInfo &filter, uint32_t filter_flags,
    const char *base, bool recursive) const override;
+  virtual bool Test(const FileInfo &file) override;
   virtual bool Extract(const FileInfo &file, const char *destdir = nullptr) override;
 
 
@@ -655,6 +656,12 @@ void FAT_image::search_r(FileList &dest, const FileInfo &filter, uint32_t filter
       search_r(dest, filter, filter_flags, path, e->cluster(), recursive); // TODO: cluster32
     }
   }
+}
+
+bool FAT_image::Test(const FileInfo &file)
+{
+  // FIXME
+  return true;
 }
 
 bool FAT_image::Extract(const FileInfo &file, const char *destdir)
