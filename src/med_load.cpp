@@ -42,6 +42,9 @@ static int num_mmdc;
 static const int MAX_BLOCKS      = 256;
 static const int MAX_INSTRUMENTS = 63;
 
+/* MMDC is effectively MMD0 but with packed pattern data. */
+static const int MMDC_VERSION    = -1;
+
 
 enum MED_features
 {
@@ -612,32 +615,89 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     if(b.num_rows > 256)
       m.uses[FT_OVER_256_ROWS] = true;
 
+    if(b.num_tracks > 256 || b.num_rows > 9999)
+    {
+      format::warning("skipping nonsense block %zu\n", i);
+      continue;
+    }
+
     MMD0note *pat = new MMD0note[b.num_tracks * b.num_rows];
     m.pattern_data[i] = pat;
 
     MMD0note *current = pat;
+    if(mmd_version != MMDC_VERSION)
+    {
+      for(size_t j = 0; j < b.num_rows; j++)
+      {
+        for(size_t k = 0; k < b.num_tracks; k++, current++)
+        {
+          int a = fgetc(fp);
+          int b = fgetc(fp);
+          int c = fgetc(fp);
 
+          if(mmd_version >= 1)
+          {
+            /* MMD1 through MMD3 */
+            int d = fgetc(fp);
+            current->mmd1(a, b, c, d);
+          }
+          else
+          {
+            /* MMD0 */
+            current->mmd0(a, b, c);
+          }
+        }
+      }
+    }
+    else
+    {
+      size_t tmp_size = (size_t)b.num_rows * b.num_tracks * 3;
+      uint8_t *tmp = new uint8_t[tmp_size]{};
+      uint8_t *pos = tmp;
+      uint8_t *end = tmp + tmp_size;
+
+      while(pos < end)
+      {
+        int pack = fgetc(fp);
+        if(pack < 0)
+          break;
+
+        if(pack & 0x80)
+        {
+          /* Zero bytes. */
+          pos += 256 - pack;
+          continue;
+        }
+
+        /* No packing. */
+        pack++;
+        if(pack > end - pos)
+          pack = end - pos;
+
+        if(fread(pos, 1, pack, fp) < (size_t)pack)
+          break;
+
+        pos += pack;
+      }
+      pos = tmp;
+      for(size_t j = 0; j < b.num_rows; j++)
+      {
+        for(size_t k = 0; k < b.num_tracks; k++, current++)
+        {
+          current->mmd0(pos[0], pos[1], pos[2]);
+          pos += 3;
+        }
+      }
+      delete[] tmp;
+    }
+
+    /* Feature detection (common to all formats). */
+    current = pat;
     bool is_bpm_mode = (s.flags2 & F2_BPM);
     for(size_t j = 0; j < b.num_rows; j++)
     {
-      for(size_t k = 0; k < b.num_tracks; k++)
+      for(size_t k = 0; k < b.num_tracks; k++, current++)
       {
-        int a = fgetc(fp);
-        int b = fgetc(fp);
-        int c = fgetc(fp);
-
-        if(mmd_version >= 1)
-        {
-          /* MMD1 through MMD3 */
-          int d = fgetc(fp);
-          current->mmd1(a, b, c, d);
-        }
-        else
-        {
-          /* MMD0 */
-          current->mmd0(a, b, c);
-        }
-
         /**
          * C-1=1, C#1=2... + 7 octaves.
          * Some songs actually rely on these high octaves playing very
@@ -804,8 +864,6 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
               m.uses[FT_CMD_1F_RETRIGGER] = true;
             break;
         }
-
-        current++;
       }
     }
 
@@ -1178,7 +1236,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       format::pattern<EVENT> pattern(i, b.num_tracks, b.num_rows);
       pattern.labels("Blk.", "Block");
 
-      if(!Config.dump_pattern_rows)
+      if(!Config.dump_pattern_rows || !m.pattern_data[i])
       {
         pattern.summary();
         continue;
@@ -1252,7 +1310,7 @@ static modutil::error read_mmd3(FILE *fp)
 static modutil::error read_mmdc(FILE *fp)
 {
   num_mmdc++;
-  return read_mmd(fp, 1);
+  return read_mmd(fp, MMDC_VERSION);
 }
 
 struct MED_handler
