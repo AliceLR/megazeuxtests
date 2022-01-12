@@ -27,6 +27,7 @@ static const char MAGIC_MMD0[] = "MMD0";
 static const char MAGIC_MMD1[] = "MMD1";
 static const char MAGIC_MMD2[] = "MMD2";
 static const char MAGIC_MMD3[] = "MMD3";
+static const char MAGIC_MMDC[] = "MMDC";
 
 static int num_med;
 static int num_med2;
@@ -36,6 +37,7 @@ static int num_mmd0;
 static int num_mmd1;
 static int num_mmd2;
 static int num_mmd3;
+static int num_mmdc;
 
 static const int MAX_BLOCKS      = 256;
 static const int MAX_INSTRUMENTS = 63;
@@ -1247,6 +1249,12 @@ static modutil::error read_mmd3(FILE *fp)
   return read_mmd(fp, 3);
 }
 
+static modutil::error read_mmdc(FILE *fp)
+{
+  num_mmdc++;
+  return read_mmd(fp, 1);
+}
+
 struct MED_handler
 {
   const char *magic;
@@ -1262,6 +1270,7 @@ static const MED_handler HANDLERS[] =
   { MAGIC_MMD1, read_mmd1 },
   { MAGIC_MMD2, read_mmd2 },
   { MAGIC_MMD3, read_mmd3 },
+  { MAGIC_MMDC, read_mmdc },
 };
 
 class MED_loader : modutil::loader
@@ -1309,6 +1318,8 @@ public:
       format::reportline("Total MMD2s", "%d", num_mmd2);
     if(num_mmd3)
       format::reportline("Total MMD3s", "%d", num_mmd3);
+    if(num_mmdc)
+      format::reportline("Total MMDCs", "%d", num_mmdc);
   }
 };
 
