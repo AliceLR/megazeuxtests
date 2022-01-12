@@ -159,7 +159,7 @@ size_t encode::cp437::utf8_count(const char *in, size_t in_len)
     count += utf8_codepoint_length(codepoint);
   }
   return count;
-};
+}
 
 ssize_t encode::cp437::utf8_encode(char *out, size_t out_len, const char *in, size_t in_len)
 {
@@ -179,4 +179,4 @@ ssize_t encode::cp437::utf8_encode(char *out, size_t out_len, const char *in, si
     count += len;
   }
   return count;
-};
+}

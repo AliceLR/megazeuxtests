@@ -18,6 +18,7 @@
 #define MZXTESTS_ENCODE_HPP
 
 #include <stdlib.h>
+#include <sys/types.h>
 
 namespace encode
 {
@@ -35,6 +36,6 @@ public:
   static ssize_t utf8_encode(char *out, size_t out_len, const char *in, size_t in_len);
 };
 
-};
+}
 
 #endif /* MZXTESTS_ENCODE_HPP */

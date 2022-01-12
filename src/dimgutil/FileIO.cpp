@@ -60,6 +60,35 @@ static bool _io_mkdir_recursive(char (&buffer)[1024])
 #pragma GCC diagnostic pop
 #endif
 
+static bool _io_copy_file(const char *in, const char *out)
+{
+  FILE *a = fopen(in, "rb");
+  FILE *b = fopen(out, "wb");
+  bool success = false;
+  if(a && b)
+  {
+    uint8_t buffer[8192];
+    size_t len;
+    bool short_write = false;
+    while((len = fread(buffer, 1, sizeof(buffer), a)))
+    {
+      if(fwrite(buffer, 1, len, b) != len)
+      {
+        short_write = true;
+        break;
+      }
+    }
+    if(!short_write && !ferror(a) && !ferror(b))
+      success = true;
+  }
+  if(a)
+    fclose(a);
+  if(b)
+    fclose(b);
+
+  return success;
+}
+
 FileIO::~FileIO()
 {
   if(state > INIT && state < SUCCESS)
@@ -174,9 +203,17 @@ bool FileIO::commit(const FileInfo &dest, const char *destdir)
   // 5. Rename tempfile to the target.
   if(!io_rename(this->path, buffer))
   {
-    // oopsie woopsie!
-    state = FileIO::INIT;
-    return false;
+    // Fedora doesn't allow rename(2) on owned files in /tmp, but seems
+    // fine with unlink(2). Presumably this made sense to someone...?
+    bool success = _io_copy_file(this->path, buffer);
+    io_unlink(this->path);
+
+    if(!success)
+    {
+      // oopsie woopsie!
+      state = FileIO::INIT;
+      return false;
+    }
   }
 
   state = SUCCESS;
