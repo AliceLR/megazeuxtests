@@ -340,7 +340,7 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
 }
 
 static int lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
- const lzx_uint8 *counts, const lzx_uint8 *widths, unsigned max_codes,
+ const lzx_uint16 *counts, const lzx_uint8 *widths, unsigned max_codes,
  unsigned max_bins)
 {
   unsigned offsets[LZX_CODE_BINS];
@@ -402,7 +402,7 @@ static int lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
 }
 
 static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
- const lzx_uint8 *counts)
+ const lzx_uint16 *counts)
 {
   struct lzx_lookup *dest = tree->lookup;
   struct lzx_lookup e;
@@ -452,7 +452,7 @@ static int lzx_read_aligned(struct lzx_data * LZX_RESTRICT lzx,
 {
   struct lzx_tree *tree = &(lzx->aligned);
   lzx_uint8 widths[LZX_MAX_ALIGNED];
-  lzx_uint8 counts[LZX_ALIGNED_BINS];
+  lzx_uint16 counts[LZX_ALIGNED_BINS];
   unsigned i;
 
   memset(counts, 0, sizeof(counts));
@@ -477,7 +477,7 @@ static int lzx_read_pretree(struct lzx_data * LZX_RESTRICT lzx,
 {
   struct lzx_tree *tree = &(lzx->pretree);
   lzx_uint8 widths[LZX_MAX_PRETREE];
-  lzx_uint8 counts[LZX_PRETREE_BINS];
+  lzx_uint16 counts[LZX_PRETREE_BINS];
   unsigned i;
 
   memset(counts, 0, sizeof(counts));
@@ -498,7 +498,7 @@ static int lzx_read_pretree(struct lzx_data * LZX_RESTRICT lzx,
 }
 
 static int lzx_read_delta(struct lzx_data *lzx,
- lzx_uint8 * LZX_RESTRICT counts, lzx_uint8 * LZX_RESTRICT widths,
+ lzx_uint16 * LZX_RESTRICT counts, lzx_uint8 * LZX_RESTRICT widths,
  int i, int max, const unsigned char *src, size_t src_len)
 {
   /* In Amiga LZX (but not CAB LZX) the RLE bit reads and repeat count
@@ -573,7 +573,7 @@ static int lzx_read_codes(struct lzx_data * LZX_RESTRICT lzx,
 {
   struct lzx_tree *tree = &(lzx->codes);
   lzx_uint8 *widths = lzx->code_widths;
-  lzx_uint8 counts[LZX_CODE_BINS];
+  lzx_uint16 counts[LZX_CODE_BINS];
 
   memset(counts, 0, sizeof(counts));
 

@@ -391,7 +391,7 @@ struct LZX_entry
 struct LZXMergeEntry
 {
   LZX_entry *entry;
-  size_t offset;
+  uint64_t offset;
 };
 
 class LZXMerge
@@ -400,7 +400,7 @@ public:
   LZX_entry *first = nullptr;
   LZX_entry *last = nullptr;
   uint8_t *buffer = nullptr;
-  size_t total_uncompressed = 0;
+  uint64_t total_uncompressed = 0;
 
   std::vector<LZXMergeEntry> positions;
 
@@ -426,6 +426,9 @@ public:
 
   size_t init_buffer()
   {
+    if(total_uncompressed > SIZE_MAX)
+      return 0;
+
     if(!buffer)
     {
       buffer = (uint8_t *)malloc(total_uncompressed);
