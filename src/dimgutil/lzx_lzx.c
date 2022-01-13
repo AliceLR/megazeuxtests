@@ -55,14 +55,29 @@ static inline lzx_uint32 lzx_mem_u32(const unsigned char *buf)
 struct lzx_header
 {
   /*  0 */ char      magic[3];         /* "LZX" */
-  /*  3    lzx_uint8 flags; */         /* unlzx.c */
-  /*  4    lzx_uint8 unknown[6]; */
+  /*  3    lzx_uint8 unknown0; */      /* Claimed to be flags by unlzx.c */
+  /*  4    lzx_uint8 lzx_version; */   /* 0x0 for <=1.20R, 0xc for >=1.21 */
+  /*  5    lzx_uint8 unknown1; */
+  /*  6    lzx_uint8 format_version;*/ /* 0xa */
+  /*  7    lzx_uint8 flags; */
+  /*  8    lzx_uint8 unknown2[2]; */
   /* 10 */
+
+  /* Most of the above info is guessed due to lack of documentation.
+   *
+   * The non-zero header bytes seem to be tied to the version used.
+   * Byte 6 is always 0x0a, and is maybe intended to be the format version.
+   * Byte 4 is always 0x0c for versions >=1.21 and may be intended to be the
+   * LZX archiver version (0xc -> 1.2, similar to 0xa -> 1.0 for the format).
+   * Byte 7 is used for flags. 1=damage protection, 2=locked. 4=unknown
+   * is always set for versions >=1.21. None of these flags are documented.
+   */
 };
 
 struct lzx_entry
 {
-  /*  0    lzx_uint16 type; */
+  /*  0    lzx_uint8  attributes; */
+  /*  1    lzx_uint8  unknown0; */
   /*  2 */ lzx_uint32 uncompressed_size;
   /*  6 */ lzx_uint32 compressed_size;
   /* 10    lzx_uint8  machine_type; */ /* unlzx.c */

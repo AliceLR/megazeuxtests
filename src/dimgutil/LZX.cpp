@@ -17,7 +17,7 @@
 
 /**
  * Unpacker for Amiga LZX archives.
- * This format is the direct predecessor to Microsoft CAB files.
+ * This format is the direct predecessor to Microsoft CAB LZX.
  */
 
 #include <stdint.h>
@@ -70,10 +70,31 @@ public:
 
 struct LZX_header
 {
-  /*  0    char     magic[3];   */  // LZX
-  /*  3    uint8_t  flags;      */  // Claimed by unlzx.c
-  /*  4    uint8_t  unknown[6]; */
+  /*  0    char     magic[3]; */        // LZX
+  /*  3    uint8_t  unknown0; */        // Claimed to be flags by unlzx.c
+  /*  4    uint8_t  lzx_version; */     // 0x0 for <=1.20R, 0xc for >=1.21
+  /*  5    uint8_t  unknown1; */
+  /*  6    uint8_t  format_version; */  // 0xa
+  /*  7    uint8_t  flags; */
+  /*  8    uint16_t unknown2; */
   /* 10 */
+
+  /* Most of the above info is guessed due to lack of documentation.
+   *
+   * The non-zero header bytes seem to be tied to the version used.
+   * Byte 6 is always 0x0a, and is maybe intended to be the format version.
+   * Byte 4 is always 0x0c for versions >=1.21 and may be intended to be the
+   * LZX archiver version (0xc -> 1.2, similar to 0xa -> 1.0 for the format).
+   * Byte 7 is used for flags. 1=damage protection, 2=locked. 4=unknown
+   * is always set for versions >=1.21. None of these flags are documented.
+   */
+
+  enum flags
+  {
+    DAMAGE_PROTECTED = 0x1,
+    LOCKED = 0x2,
+    UNKNOWN = 0x4, /* Always set for versions >=1.21 */
+  };
 
   static constexpr size_t HEADER_SIZE = 10;
   uint8_t data[HEADER_SIZE];
@@ -89,7 +110,8 @@ struct LZX_header
 
 struct LZX_entry
 {
-  /*  0    uint16_t type; */              // ?
+  /*  0    uint8_t  attributes; */
+  /*  1    uint8_t  unknown0; */
   /*  2    uint32_t uncompressed_size; */
   /*  6    uint32_t compressed_size; */
   /* 10    uint8_t  machine_type; */      // unlzx.c
@@ -104,6 +126,18 @@ struct LZX_entry
   /* 26    uint32_t header_crc; */        // unlzx.c
   /* 30    uint8_t  filename_length; */
   /* 31 */
+
+  enum attributes
+  {
+    READ     = (1 << 0),
+    WRITE    = (1 << 1),
+    DELETE   = (1 << 2),
+    EXEC     = (1 << 3),
+    ARCHIVED = (1 << 4),
+    HELD     = (1 << 5),
+    SCRIPT   = (1 << 6),
+    PURE     = (1 << 7),
+  };
 
   static constexpr int ENTRY_SIZE = 31;
   uint8_t data[ENTRY_SIZE];
