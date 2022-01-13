@@ -618,10 +618,10 @@ bool LZXImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_le
       input_size = last->compressed_size();
       method = last->method();
 
-      const char *err = lzx_unpack(merge->buffer, merge->total_uncompressed, input, input_size, method);
+      int err = lzx_unpack(merge->buffer, merge->total_uncompressed, input, input_size, method);
       if(err)
       {
-        format::error("%s (%Xh)", err, static_cast<unsigned>(method));
+        format::error("unpack failed (%Xh)", static_cast<unsigned>(method));
         return false;
       }
     }
@@ -637,10 +637,10 @@ bool LZXImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_le
     output = new uint8_t[output_size];
     held_buffer.reset(output);
 
-    const char *err = lzx_unpack(output, output_size, input, input_size, method);
+    int err = lzx_unpack(output, output_size, input, input_size, method);
     if(err)
     {
-      format::error("%s (%Xh)", err, static_cast<unsigned>(method));
+      format::error("unpack failed (%Xh)", static_cast<unsigned>(method));
       return false;
     }
   }

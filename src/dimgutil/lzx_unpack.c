@@ -26,10 +26,14 @@
  * The following changes are required from the MSDN documentation for this
  * to work correctly:
  *
+ *   * CAB LZX adds a x86 bytecode preprocessing header not relevant here.
+ *
  *   * CAB LZX changed the block type values:
  *     1 is verbatim in CAB LZX, but may or may not be used in Amiga LZX.
  *     2 is verbatim in classic LZX, but is aligned offsets in CAB LZX.
  *     3 is aligned offsets in classic LZX, but is uncompressed in CAB LZX.
+ *     Type 1 is supported by some Amiga LZX depackers but I haven't seen it.
+ *     In these depackers it's treated as verbatim with no stored tree.
  *
  *   * The bitstream description is wrong for classic LZX. Amiga LZX reads
  *     big endian 16-bit codes into a little endian bitstream, but CAB LZX
@@ -39,7 +43,8 @@
  *     does not have a separate lengths tree. The distance slot is determined
  *     by (symbol - 256) & 0x1f and the length slot is determined by
  *     (symbol - 256) >> 5. Both use the same set of slots, which are the same
- *     as the first 32 CAB LZX position slots.
+ *     as the first 32 CAB LZX position slots. Amiga LZX only has one stored
+ *     previous distance rather than CAB LZX's three.
  *
  *   * The documentation states block lengths are a 24-bit field but fails to
  *     clarify that they're read in three 8-bit chunks big endian style. This
@@ -60,6 +65,7 @@
 
 #include "lzx_unpack.h"
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -78,11 +84,10 @@
 #define LZX_ALIGNED_BINS 8
 #define LZX_PRETREE_BINS 16
 
-/* This is 2 in CAB LZX, but using 2 in Amiga LZX results in short reads. */
+/* This is 2 in CAB LZX, but Amiga LZX seems to rely on 3 instead. */
 #define LZX_MIN_MATCH    3
 
 #ifdef LZX_DEBUG
-#include <stdio.h>
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
 
@@ -134,14 +139,11 @@ static lzx_uint16 lzx_mem_u16be(const unsigned char *buf)
   return (buf[0] << 8) | buf[1];
 }
 
-/* In CAB LZX verbatim is 1, aligned offsets is 2, and uncompressed is 3.
- * In Amiga LZX 1 is verbatim without a stored tree, 2 is verbatim with a
- * stored tree, and 3 is aligned offsets. */
 enum lzx_block_type
 {
-  LZX_B_VERBATIM_SAME = 1,
-  LZX_B_VERBATIM      = 2,
-  LZX_B_ALIGNED       = 3,
+  LZX_B_VERBATIM_NO_TREE = 1,
+  LZX_B_VERBATIM         = 2,
+  LZX_B_ALIGNED          = 3,
 };
 
 struct lzx_lookup
@@ -170,8 +172,8 @@ struct lzx_data
 {
   size_t in;
   size_t out;
+  unsigned eof;
 
-  /* The unusual bit packing scheme makes a bit buffer faster than direct reads... */
   size_t buffer;
   size_t buffer_left;
 
@@ -244,7 +246,7 @@ static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
 
   if(lzx->buffer_left < num)
   {
-    /* Minor optimization for 64-bit systems:
+    /* Minor optimization for 64-bit builds:
      * buffer_left < 16, so 3 words can be read into the buffer. */
     if(sizeof(size_t) >= 8)
     {
@@ -261,7 +263,10 @@ static int lzx_skip_bits(struct lzx_data * LZX_RESTRICT lzx,
  unsigned num)
 {
   if(lzx->buffer_left < num)
+  {
+    lzx->eof = 1;
     return -1;
+  }
 
   lzx->buffer >>= num;
   lzx->buffer_left -= num;
@@ -598,52 +603,45 @@ static void lzx_copy_dictionary(struct lzx_data * LZX_RESTRICT lzx,
  unsigned char * LZX_RESTRICT dest, ptrdiff_t distance, size_t length)
 {
   ptrdiff_t offset = (ptrdiff_t)lzx->out - distance;
+  unsigned char *pos;
+  unsigned char *end;
 
+  /* LZX can emit these for starting runs of 0. */
   if(offset < 0)
   {
     size_t count = -offset;
     if(count > length)
       count = length;
 
-    if(count > 0)
-    {
-      memset(dest + lzx->out, 0, count);
-      lzx->out += count;
-      length -= count;
-      offset = 0;
-    }
+    memset(dest + lzx->out, 0, count);
+    lzx->out += count;
+    length -= count;
+    offset = 0;
   }
 
-  if(length > 0)
-  {
-    if((size_t)offset + length > lzx->out)
-    {
-      unsigned char *pos = dest + offset;
-      unsigned char *end = pos + length;
-      dest += lzx->out;
-      while(pos < end)
-        *(dest++) = *(pos++);
-    }
-    else
-      memcpy(dest + lzx->out, dest + offset, length);
+  pos = dest + offset;
+  end = pos + length;
+  dest += lzx->out;
+  lzx->out += length;
 
-    lzx->out += length;
-  }
+  while(pos < end)
+    *(dest++) = *(pos++);
 }
 
-static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len)
+int lzx_unpack(unsigned char * LZX_RESTRICT dest, size_t dest_len,
+ const unsigned char *src, size_t src_len, int method)
 {
   struct lzx_data *lzx;
-  lzx_int32 bytes_out;
-  /* NOTE: CAB LZX stores three previous distances. */
+  size_t bytes_out;
   size_t prev_distance = 1;
+
+  /* Only one supported compression method. */
+  if(method != LZX_M_PACKED)
+    return -1;
 
   lzx = lzx_unpack_init();
   if(!lzx)
     return -1;
-
-  /* NOTE: CAB LZX extension header for x86 machine code goes here. */
 
   while(lzx->out < dest_len)
   {
@@ -652,8 +650,9 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
     debug("\nblock type:%u\n", block_type);
     #endif
 
-    /* For some reason that I'm SURE made sense, the
-     * aligned offsets tree goes here in Amiga LZX. */
+    if(block_type < LZX_B_VERBATIM_NO_TREE || block_type > LZX_B_ALIGNED)
+      goto err;
+
     if(block_type == LZX_B_ALIGNED)
       if(lzx_read_aligned(lzx, src, src_len) < 0)
         goto err;
@@ -661,41 +660,23 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
     bytes_out = lzx_get_bits(lzx, src, src_len, 8) << 16;
     bytes_out |= lzx_get_bits(lzx, src, src_len, 8) << 8;
     bytes_out |= lzx_get_bits(lzx, src, src_len, 8);
-    if(bytes_out < 0 || (size_t)bytes_out > dest_len - lzx->out)
+    if(lzx->eof || bytes_out > dest_len - lzx->out)
       goto err;
 
     #ifdef LZX_DEBUG
-    debug("uncompr.size:%zu (%06zx)\n", (size_t)bytes_out, (size_t)bytes_out);
+    debug("uncompr.size:%zu (%06zx)\n", bytes_out, bytes_out);
     #endif
 
-    switch(block_type)
+    if(block_type == LZX_B_VERBATIM || block_type == LZX_B_ALIGNED)
     {
-      /* NOTE: CAB LZX has an uncompressed block type and gets rid of
-       * the verbatim with same tree block type. */
-      default:
+      if(lzx_read_codes(lzx, src, src_len) < 0)
         goto err;
-
-      case LZX_B_ALIGNED:
-        /* NOTE: in CAB LZX, the aligned offsets tree goes here. */
-        /* fall-through */
-
-      case LZX_B_VERBATIM:
-        if(lzx_read_codes(lzx, src, src_len) < 0)
-          goto err;
-        /* NOTE: CAB LZX reads a dedicated lengths tree here. */
-        break;
-
-      case LZX_B_VERBATIM_SAME:
-        /* Should never be the first block type. */
-        if(!lzx->codes.num_values)
-          goto err;
-        break;
     }
 
     while(bytes_out)
     {
       int slot, bits;
-      lzx_int32 distance, length;
+      unsigned distance, length;
 
       int code = lzx_get_huffman(lzx, &(lzx->codes), src, src_len);
       if(code < 0)
@@ -708,6 +689,9 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
 
       if(code < LZX_NUM_CHARS)
       {
+        #ifdef LZX_DEBUG
+        debug("b: %02x\n", code);
+        #endif
         dest[lzx->out++] = code;
         bytes_out--;
         continue;
@@ -739,7 +723,7 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
       if(bits)
         length += lzx_get_bits(lzx, src, src_len, bits);
 
-      if(length > bytes_out)
+      if(lzx->eof || length > bytes_out)
       {
         #ifdef LZX_DEBUG
         debug("invalid length %d (in:%zu out:%zu)\n", length, lzx->in, lzx->out);
@@ -747,6 +731,9 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
         goto err;
       }
 
+      #ifdef LZX_DEBUG
+      debug("d: pos=%zu dist=%u length %u\n", lzx->out, distance, length);
+      #endif
       lzx_copy_dictionary(lzx, dest, distance, length);
       bytes_out -= length;
     }
@@ -758,17 +745,4 @@ static int lzx_unpack_normal(unsigned char * LZX_RESTRICT dest, size_t dest_len,
 err:
   lzx_unpack_free(lzx);
   return -1;
-}
-
-const char *lzx_unpack(unsigned char * LZX_RESTRICT dest, size_t dest_len,
- const unsigned char *src, size_t src_len, int method)
-{
-  switch(method)
-  {
-    case LZX_M_PACKED:
-      if(lzx_unpack_normal(dest, dest_len, src, src_len) < 0)
-        return "unpack failed";
-      return NULL;
-  }
-  return "unsupported method";
 }

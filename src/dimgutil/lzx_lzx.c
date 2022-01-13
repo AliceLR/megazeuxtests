@@ -178,9 +178,9 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
   struct lzx_entry e;
   unsigned char *out;
   unsigned char *in;
-  const char *err;
   size_t out_len;
   lzx_uint32 out_crc32;
+  int err;
 
   if(lzx_read_header(&lzx, f) < 0)
     return -1;
@@ -261,10 +261,10 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
       err = lzx_unpack(out, out_len, in, e.compressed_size, e.method);
       free(in);
 
-      if(err != NULL)
+      if(err)
       {
         #ifdef LZX_DEBUG
-        debug("unpack failed: %s\n", err);
+        debug("unpack failed\n");
         #endif
         free(out);
         return -1;
