@@ -36,7 +36,6 @@ enum LZX_method
 {
   LZX_UNPACKED = LZX_M_UNPACKED,
   LZX_PACKED   = LZX_M_PACKED,
-  LZX_EOF      = 32,
   LZX_INVALID  = -1
 };
 
@@ -173,7 +172,6 @@ struct LZX_entry
     {
       case LZX_UNPACKED:
       case LZX_PACKED:
-      case LZX_EOF:
         return static_cast<LZX_method>(data[11]);
     }
     return LZX_INVALID;

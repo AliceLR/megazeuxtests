@@ -35,7 +35,6 @@
 
 #define LZX_HEADER_SIZE 10
 #define LZX_ENTRY_SIZE  31
-#define LZX_EOF         32 /* unlzx.c */
 #define LZX_FLAG_MERGED 1
 
 #ifdef LZX_DEBUG
@@ -52,7 +51,14 @@ static inline lzx_uint32 lzx_mem_u32(const unsigned char *buf)
   return (buf[3] << 24UL) | (buf[2] << 16UL) | (buf[1] << 8UL) | buf[0];
 }
 
-struct lzx_header
+enum lzx_merge_state
+{
+  NO_MERGE,
+  IN_MERGE,
+  FINAL_MERGE_ENTRY,
+};
+
+struct lzx_data
 {
   /*  0 */ char      magic[3];         /* "LZX" */
   /*  3    lzx_uint8 unknown0; */      /* Claimed to be flags by unlzx.c */
@@ -72,6 +78,16 @@ struct lzx_header
    * Byte 7 is used for flags. 1=damage protection, 2=locked. 4=unknown
    * is always set for versions >=1.21. None of these flags are documented.
    */
+
+  /* Data for the current merge record to allow reading in one pass.
+   * A merged record starts with an entry with a 0 compressed size and the
+   * merged flag set, and ends when a compressed size is encountered. */
+  enum lzx_merge_state merge_state;
+  int merge_invalid;
+  size_t merge_total_size;
+  size_t selected_offset;
+  size_t selected_size;
+  lzx_uint32 selected_crc32;
 };
 
 struct lzx_entry
@@ -113,7 +129,7 @@ struct lzx_entry
  */
 };
 
-static int lzx_read_header(struct lzx_header *lzx, FILE *f)
+static int lzx_read_header(struct lzx_data *lzx, FILE *f)
 {
   unsigned char buf[LZX_HEADER_SIZE];
 
@@ -123,6 +139,8 @@ static int lzx_read_header(struct lzx_header *lzx, FILE *f)
   if(memcmp(buf, "LZX", 3))
     return -1;
 
+  memset(lzx, 0, sizeof(struct lzx_data));
+  lzx->selected_offset = SIZE_MAX;
   return 0;
 }
 
@@ -131,8 +149,9 @@ static int lzx_read_entry(struct lzx_entry *e, FILE *f)
   unsigned char buf[256];
   lzx_uint32 crc;
 
-  /* TODO: haven't seen a file that uses LZX_EOF.
-   * Does it use a full header when present? */
+  /* unlzx.c claims there's a method 32 for EOF, but nothing like this
+   * has shown up. Most LZX archives just end after the last file. */
+
   if(fread(buf, 1, LZX_ENTRY_SIZE, f) < LZX_ENTRY_SIZE)
     return -1;
 
@@ -172,9 +191,107 @@ static int lzx_read_entry(struct lzx_entry *e, FILE *f)
   return 0;
 }
 
+static void lzx_reset_merge(struct lzx_data *lzx)
+{
+  lzx->merge_state = NO_MERGE;
+  lzx->merge_invalid = 0;
+  lzx->merge_total_size = 0;
+  lzx->selected_offset = SIZE_MAX;
+}
+
+static void lzx_select_file(struct lzx_data *lzx, const struct lzx_entry *e)
+{
+  if(lzx->selected_offset == SIZE_MAX)
+  {
+    /* For multiple file output, use a queue here instead... */
+    lzx->selected_offset = lzx->merge_total_size;
+    lzx->selected_size = e->uncompressed_size;
+    lzx->selected_crc32 = e->crc32;
+    #ifdef LZX_DEBUG
+    debug("selecting file '%s'\n", e->filename);
+    debug("  offset: %zu size: %zu crc: %08zx\n",
+     lzx->selected_offset, lzx->selected_size, (size_t)lzx->selected_crc32);
+    #endif
+  }
+}
+
+static int lzx_check_entry(struct lzx_data *lzx, const struct lzx_entry *e, size_t file_len)
+{
+  int selectable = 1;
+
+  #ifdef LZX_DEBUG
+  debug("checking file '%s'\n", e->filename);
+  #endif
+
+  /* Filter unsupported or junk files. */
+  if(e->header_crc32 != e->computed_header_crc32 ||
+     e->compressed_size >= file_len ||
+     e->uncompressed_size > LZX_OUTPUT_MAX ||
+     e->extract_version > 0x0a ||
+     lzx_method_is_supported(e->method) < 0)
+  {
+    #ifdef LZX_DEBUG
+    if(e->header_crc32 != e->computed_header_crc32)
+    {
+      debug("skipping file: header CRC-32 mismatch (got 0x%08zx, expected 0x%08zx)\n",
+       (size_t)e->computed_header_crc32, (size_t)e->header_crc32);
+    }
+    else
+    {
+      debug("skipping file: unsupported file (u:%zu c:%zu ver:%u method:%u flag:%u)\n",
+       (size_t)e->uncompressed_size, (size_t)e->compressed_size, e->extract_version,
+       e->method, e->flags);
+    }
+    #endif
+    selectable = 0;
+  }
+
+  if(e->flags & LZX_FLAG_MERGED)
+  {
+    if(lzx->merge_state != IN_MERGE)
+    {
+      lzx_reset_merge(lzx);
+      lzx->merge_state = IN_MERGE;
+    }
+
+    /* Check overflow for 32-bit systems and other unsupported things. */
+    if(lzx->merge_invalid ||
+       e->method != LZX_M_PACKED ||
+       lzx->merge_total_size + e->uncompressed_size < lzx->merge_total_size ||
+       lzx->merge_total_size + e->uncompressed_size > LZX_OUTPUT_MAX)
+    {
+      lzx->merge_invalid = 1;
+      selectable = 0;
+    }
+
+    if(selectable)
+      lzx_select_file(lzx, e);
+
+    lzx->merge_total_size += e->uncompressed_size;
+    if(e->compressed_size)
+    {
+      lzx->merge_state = FINAL_MERGE_ENTRY;
+      if(!lzx->merge_invalid)
+        return 0;
+    }
+    /* Continue until a usable entry with compressed data is found. */
+    return -1;
+  }
+
+  /* Not merged */
+  lzx_reset_merge(lzx);
+  if(selectable)
+  {
+    lzx_select_file(lzx, e);
+    lzx->merge_total_size += e->uncompressed_size;
+    return 0;
+  }
+  return -1;
+}
+
 static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned long file_len)
 {
-  struct lzx_header lzx;
+  struct lzx_data lzx;
   struct lzx_entry e;
   unsigned char *out;
   unsigned char *in;
@@ -195,40 +312,9 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
       return -1;
     }
 
-    if(e.method == LZX_EOF)
+    if(lzx_check_entry(&lzx, &e, file_len) < 0)
     {
-      #ifdef LZX_DEBUG
-      debug("found LZX_EOF, exiting\n");
-      #endif
-      return -1;
-    }
-
-    #ifdef LZX_DEBUG
-    debug("checking file '%s'\n", e.filename);
-    #endif
-
-    /* Ignore header CRC mismatch, junk sizes, and unsupported entries. */
-    if(e.header_crc32 != e.computed_header_crc32 ||
-       e.compressed_size >= file_len ||
-       e.uncompressed_size > LZX_OUTPUT_MAX ||
-       e.extract_version > 0x0a ||
-       (e.flags & LZX_FLAG_MERGED) ||
-       lzx_method_is_supported(e.method) < 0)
-    {
-      #ifdef LZX_DEBUG
-      if(e.header_crc32 != e.computed_header_crc32)
-      {
-        debug("skipping file: header CRC-32 mismatch (got 0x%08zx, expected 0x%08zx)\n",
-         (size_t)e.computed_header_crc32, (size_t)e.header_crc32);
-      }
-      else
-      {
-        debug("skipping file: unsupported file (u:%zu c:%zu ver:%u method:%u flag:%u)\n",
-         (size_t)e.uncompressed_size, (size_t)e.compressed_size, e.extract_version, e.method, e.flags);
-       }
-      #endif
-
-      if(fseek(f, e.compressed_size, SEEK_CUR) < 0)
+      if(e.compressed_size && fseek(f, e.compressed_size, SEEK_CUR) < 0)
         return -1;
       continue;
     }
@@ -250,8 +336,8 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
 
     if(e.method != LZX_M_UNPACKED)
     {
-      out = (unsigned char *)malloc(e.uncompressed_size);
-      out_len = e.uncompressed_size;
+      out = (unsigned char *)malloc(lzx.merge_total_size);
+      out_len = lzx.merge_total_size;
       if(out == NULL)
       {
         free(in);
@@ -276,12 +362,29 @@ static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned lo
       out_len = e.compressed_size;
     }
 
+    /* Select a file from a merge (if needed). */
+    if(lzx.selected_size < out_len)
+    {
+      unsigned char *t;
+      #ifdef LZX_DEBUG
+      debug("using data pos:%zu len:%zu in merge of length %zu\n",
+       lzx.selected_offset, lzx.selected_size, lzx.merge_total_size);
+      #endif
+      if(lzx.selected_offset && lzx.selected_offset <= out_len - lzx.selected_size)
+        memmove(out, out + lzx.selected_offset, lzx.selected_size);
+
+      out_len = lzx.selected_size;
+      t = (unsigned char *)realloc(out, out_len);
+      if(t != NULL)
+        out = t;
+    }
+
     out_crc32 = lzx_crc32(0, out, out_len);
-    if(out_crc32 != e.crc32)
+    if(out_crc32 != lzx.selected_crc32)
     {
       #ifdef LZX_DEBUG
       debug("file CRC-32 mismatch (got 0x%08zx, expected 0x%08zx)\n",
-       (size_t)out_crc32, (size_t)e.crc32);
+       (size_t)out_crc32, (size_t)lzx.selected_crc32);
       #endif
       free(out);
       return -1;
