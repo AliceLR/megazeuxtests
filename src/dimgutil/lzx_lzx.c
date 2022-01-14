@@ -199,9 +199,14 @@ static void lzx_reset_merge(struct lzx_data *lzx)
   lzx->selected_offset = SIZE_MAX;
 }
 
+static int lzx_has_selected_file(struct lzx_data *lzx)
+{
+  return lzx->selected_offset < SIZE_MAX;
+}
+
 static void lzx_select_file(struct lzx_data *lzx, const struct lzx_entry *e)
 {
-  if(lzx->selected_offset == SIZE_MAX)
+  if(!lzx_has_selected_file(lzx))
   {
     /* For multiple file output, use a queue here instead... */
     lzx->selected_offset = lzx->merge_total_size;
@@ -243,8 +248,11 @@ static int lzx_check_entry(struct lzx_data *lzx, const struct lzx_entry *e, size
        e->method, e->flags);
     }
     #endif
+    lzx->merge_invalid = 1;
     selectable = 0;
   }
+  if(e->uncompressed_size == 0)
+    selectable = 0;
 
   if(e->flags & LZX_FLAG_MERGED)
   {
@@ -271,7 +279,7 @@ static int lzx_check_entry(struct lzx_data *lzx, const struct lzx_entry *e, size
     if(e->compressed_size)
     {
       lzx->merge_state = FINAL_MERGE_ENTRY;
-      if(!lzx->merge_invalid)
+      if(lzx_has_selected_file(lzx) && !lzx->merge_invalid)
         return 0;
     }
     /* Continue until a usable entry with compressed data is found. */
