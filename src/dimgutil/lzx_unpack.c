@@ -139,6 +139,10 @@ static lzx_uint16 lzx_mem_u16be(const unsigned char *buf)
   return (buf[0] << 8) | buf[1];
 }
 
+/* NOTE: this needs to be 32-bit minimum and 64-bit whenever reasonable. The
+ * best C has is size_t, which can be 16-bit for some edge case systems. */
+typedef size_t buffertype;
+
 enum lzx_block_type
 {
   LZX_B_VERBATIM_NO_TREE = 1,
@@ -174,8 +178,8 @@ struct lzx_data
   size_t out;
   unsigned eof;
 
-  size_t buffer;
-  size_t buffer_left;
+  buffertype buffer;
+  unsigned buffer_left;
 
   struct lzx_tree codes;
   struct lzx_tree aligned;
@@ -214,22 +218,22 @@ static void lzx_unpack_free(struct lzx_data *lzx)
   free(lzx);
 }
 
-/* Amiga LZX uses a little endian (right shift) bitstream
- * but rather than appending bytes, it appends 16-bit big endian words.
+/* Amiga LZX uses an LSB ordered (right shift) bitstream, but
+ * rather than appending bytes, it appends 16-bit big endian words.
  */
 static void lzx_word_in(struct lzx_data * LZX_RESTRICT lzx,
  const unsigned char *src, size_t src_len)
 {
   if(src_len - lzx->in >= 2)
   {
-    lzx->buffer |= (size_t)lzx_mem_u16be(src + lzx->in) << lzx->buffer_left;
+    lzx->buffer |= (buffertype)lzx_mem_u16be(src + lzx->in) << lzx->buffer_left;
     lzx->buffer_left += 16;
     lzx->in += 2;
   }
 }
 
 /* Not guaranteed to return the requested number of bits! */
-static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
+static unsigned lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
  const unsigned char *src, size_t src_len, unsigned num)
 {
   static const lzx_uint16 BIT_MASKS[17] =
@@ -248,7 +252,7 @@ static lzx_uint32 lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
   {
     /* Minor optimization for 64-bit builds:
      * buffer_left < 16, so 3 words can be read into the buffer. */
-    if(sizeof(size_t) >= 8)
+    if(sizeof(buffertype) >= 8)
     {
       lzx_word_in(lzx, src, src_len);
       lzx_word_in(lzx, src, src_len);
@@ -277,7 +281,7 @@ static int lzx_skip_bits(struct lzx_data * LZX_RESTRICT lzx,
 static lzx_int32 lzx_get_bits(struct lzx_data * LZX_RESTRICT lzx,
  const unsigned char *src, size_t src_len, unsigned num)
 {
-  lzx_uint32 peek = lzx_peek_bits(lzx, src, src_len, num);
+  unsigned peek = lzx_peek_bits(lzx, src, src_len, num);
   if(lzx_skip_bits(lzx, num) < 0)
     return -1;
 
@@ -294,20 +298,17 @@ static lzx_int32 lzx_get_bits(struct lzx_data * LZX_RESTRICT lzx,
  * index is less than bin.last, it is a valid code for that width.
  *
  * A lookup table can be used on top of this as with usual Huffman trees.
- * And if the bitstream thing above wasn't bad enough, the codes are reversed.
  */
 
 static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
  const struct lzx_tree *tree, const unsigned char *src, size_t src_len)
 {
-  lzx_uint32 peek;
   unsigned pos = tree->min_bin;
+  unsigned peek;
 
   peek = lzx_peek_bits(lzx, src, src_len, 16);
   if(tree->lookup)
   {
-    /* MSB lookup:
-    struct lzx_lookup e = tree->lookup[peek >> (16 - LZX_LOOKUP_BITS)]; */
     struct lzx_lookup e = tree->lookup[peek & LZX_LOOKUP_MASK];
     if(e.length)
     {
@@ -319,8 +320,7 @@ static int lzx_get_huffman(struct lzx_data * LZX_RESTRICT lzx,
     pos = LZX_LOOKUP_BITS + 1;
   }
 
-  /* For MSB lookup, this needs to be done before using the lookup table,
-   * which is most of the reason the MSB lookup is slower. */
+  /* Fast canonical Huffman needs MSB ordered codes, but LZX is LSB ordered. */
   peek = lzx_reverse16(peek);
 
   for(; pos < tree->num_bins; pos++)
@@ -375,10 +375,9 @@ static int lzx_prepare_huffman(struct lzx_tree * LZX_RESTRICT tree,
     #endif
   }
 
-  /* The "first" value after all of the bins are generated should be the
-   * theoretical maximum number of codes that can be stored in the tree.
-   * If these aren't the same, the Huffman tree is under/over-specified.
-   * (These values are actually both twice the maximum number of codes.) */
+  /* The "first" value after completing a valid Huffman tree should be the
+   * maximum number of codes that can be held by a [max_bins]-bit tree.
+   * If it isn't, the Huffman tree is under/over-specified. */
   #ifdef LZX_DEBUG
   debug("Huffman tree: sum=%u expected=%u\n", first, 1 << max_bins);
   #endif
@@ -409,7 +408,7 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
   unsigned bin = tree->min_bin;
   unsigned j = 0;
   unsigned i;
-  unsigned fill;
+  unsigned code;
   unsigned iter;
 
   if(!tree->lookup)
@@ -429,21 +428,14 @@ static void lzx_prepare_lookup(struct lzx_tree * LZX_RESTRICT tree,
 
     e.value = tree->values[i];
     e.length = bin;
-    /* MSB lookup:
-    fill = 1 << (LZX_LOOKUP_BITS - bin);
-    while(fill--)
-      *(dest++) = e;
-    */
-    /* Since LZX didn't have the foresight to use an MSB order stream,
-     * codes need to be reversed here to get a table matching the stream.
-     * This is more complex than the MSB lookup, but can result in a ~15%
-     * execution time reduction due to far fewer lzx_reverse16 calls.
-     */
-    fill = i + tree->bins[bin].offset;
-    fill = lzx_reverse16(fill) >> (16 - bin);
+
+    /* LZX uses an LSB ordered stream but canonical Huffman codes are MSB,
+     * so they need to be bit reversed to get a table matching the stream. */
+    code = i + tree->bins[bin].offset;
+    code = lzx_reverse16(code) >> (16 - bin);
     iter = 1 << bin;
-    for(; fill < (1 << LZX_LOOKUP_BITS); fill += iter)
-      dest[fill] = e;
+    for(; code < (1 << LZX_LOOKUP_BITS); code += iter)
+      dest[code] = e;
   }
 }
 
