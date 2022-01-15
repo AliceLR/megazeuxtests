@@ -262,12 +262,21 @@ struct LZX_entry
     if(method() == LZX_UNPACKED && is_merged())
       return false;
 
+    return true;
+  }
+
+  /**
+   * Calculate the real header CRC for this entry.
+   * Compare the result of this function to header_crc().
+   */
+  uint32_t calculate_header_crc() const
+  {
     uint8_t tmp[ENTRY_SIZE + 255 + 255];
     size_t size = header_length();
     memcpy(tmp, data, size);
     memset(tmp + 26, '\0', 4); // header_crc wasn't known when the CRC was taken!
 
-    return header_crc() == dimgutil_crc32(0, tmp, size);
+    return dimgutil_crc32(0, tmp, size);
   }
 
   /**
@@ -566,6 +575,13 @@ bool LZXImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_le
   if(!h->can_decompress())
   {
     format::warning("decompressing file is unsupported");
+    return false;
+  }
+  uint32_t header_crc = h->calculate_header_crc();
+  if(header_crc != h->header_crc())
+  {
+    format::warning("skipping file with header CRC mismatch (got %08zx, expected %08zx)",
+     (size_t)header_crc, (size_t)h->header_crc());
     return false;
   }
 
