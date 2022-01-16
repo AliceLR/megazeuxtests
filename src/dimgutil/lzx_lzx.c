@@ -15,18 +15,20 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/**
+ * Simple single-file unpacker for Amiga LZX archives.
+ *
+ * Most format info was reverse engineered with a hex editor, with some
+ * minor details filled in from the comments in unlzx.c (unknown license).
+ * Usage of unlzx.c is directly stated and is probably non-copyrightable.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "crc32.h"
 #include "lzx_unpack.h"
-
-/**
- * Header base was reverse engineered with a hex editor and then filled in
- * with details from the documentation comments in unlzx.c (unknown license).
- * All usage of unlzx.c is directly stated and is probably non-copyrightable.
- */
 
 /* #define LZX_DEBUG */
 
@@ -55,7 +57,7 @@ enum lzx_merge_state
 {
   NO_MERGE,
   IN_MERGE,
-  FINAL_MERGE_ENTRY,
+  FINAL_MERGE_ENTRY
 };
 
 struct lzx_data
@@ -251,6 +253,7 @@ static int lzx_check_entry(struct lzx_data *lzx, const struct lzx_entry *e, size
     lzx->merge_invalid = 1;
     selectable = 0;
   }
+  /* Not invalid, but not useful (and bad for some realloc implementations). */
   if(e->uncompressed_size == 0)
     selectable = 0;
 

@@ -110,17 +110,13 @@ static const uint16_t crc16_IBM_table[256] =
 /* No inversion. */
 uint32_t dimgutil_crc32_no_inv(uint32_t crc, const unsigned char *src, size_t src_len)
 {
-  while(src_len >= 8)
+  while(src_len >= 4)
   {
     CRC(crc32_table);
     CRC(crc32_table);
     CRC(crc32_table);
     CRC(crc32_table);
-    CRC(crc32_table);
-    CRC(crc32_table);
-    CRC(crc32_table);
-    CRC(crc32_table);
-    src_len -= 8;
+    src_len -= 4;
   }
   while(src_len--)
     CRC(crc32_table);
@@ -136,17 +132,13 @@ uint32_t dimgutil_crc32(uint32_t crc, const unsigned char *src, size_t src_len)
 
 uint16_t dimgutil_crc16_IBM(uint16_t crc, const unsigned char *src, size_t src_len)
 {
-  while(src_len >= 8)
+  while(src_len >= 4)
   {
     CRC(crc16_IBM_table);
     CRC(crc16_IBM_table);
     CRC(crc16_IBM_table);
     CRC(crc16_IBM_table);
-    CRC(crc16_IBM_table);
-    CRC(crc16_IBM_table);
-    CRC(crc16_IBM_table);
-    CRC(crc16_IBM_table);
-    src_len -= 8;
+    src_len -= 4;
   }
   while(src_len--)
     CRC(crc16_IBM_table);

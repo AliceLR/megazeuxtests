@@ -51,6 +51,7 @@ enum arc_method
   ARC_M_SQUASHED     = 0x09, /* LZW 9-13 bit dynamic (PK extension)*/
   ARC_M_TRIMMED      = 0x0a, /* RLE90 + LZH with adaptive Huffman coding */
   ARC_M_COMPRESSED   = 0x7f, /* LZW 9-16 bit dynamic (Spark extension) */
+  ARC_M_MAX
 };
 
 /**

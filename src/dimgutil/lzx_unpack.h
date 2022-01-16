@@ -40,6 +40,7 @@ enum lzx_method
 {
   LZX_M_UNPACKED = 0,
   LZX_M_PACKED   = 2,
+  LZX_M_MAX
 };
 
 /**

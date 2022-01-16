@@ -17,6 +17,7 @@
 
 /**
  * Unpacker for Amiga LZX compressed streams.
+ *
  * Based primarily on the LZX compression documentation from MSDN, with
  * further reference and corrections based on temisu's Ancient decompressor:
  *
@@ -147,7 +148,7 @@ enum lzx_block_type
 {
   LZX_B_VERBATIM_NO_TREE = 1,
   LZX_B_VERBATIM         = 2,
-  LZX_B_ALIGNED          = 3,
+  LZX_B_ALIGNED          = 3
 };
 
 struct lzx_lookup
