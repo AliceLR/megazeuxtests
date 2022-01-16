@@ -35,20 +35,21 @@
 /* Arbitrary output maximum file length. */
 #define LZX_OUTPUT_MAX (1 << 29)
 
-#define LZX_HEADER_SIZE 10
-#define LZX_ENTRY_SIZE  31
-#define LZX_FLAG_MERGED 1
+#define LZX_HEADER_SIZE  10
+#define LZX_ENTRY_SIZE   31
+#define LZX_FLAG_MERGED  1
+#define LZX_NO_SELECTION ((size_t)-1)
 
 #ifdef LZX_DEBUG
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
 
-static lzx_uint32 lzx_crc32(lzx_uint32 crc, unsigned char *buf, size_t len)
+static lzx_uint32 lzx_crc32(lzx_uint32 crc, const lzx_uint8 *buf, size_t len)
 {
   return dimgutil_crc32(crc, buf, len);
 }
 
-static inline lzx_uint32 lzx_mem_u32(const unsigned char *buf)
+static inline lzx_uint32 lzx_mem_u32(const lzx_uint8 *buf)
 {
   return (buf[3] << 24UL) | (buf[2] << 16UL) | (buf[1] << 8UL) | buf[0];
 }
@@ -109,7 +110,7 @@ struct lzx_entry
   /* 22 */ lzx_uint32 crc32;           /* unlzx.c */
   /* 26 */ lzx_uint32 header_crc32;    /* unlzx.c */
   /* 30 */ lzx_uint8  filename_length; /* = n */
-  /* 31 */ lzx_uint8  filename[256];
+  /* 31 */ char       filename[256];
   /* 31 + n + m */
 
   lzx_uint32 computed_header_crc32;
@@ -142,7 +143,7 @@ static int lzx_read_header(struct lzx_data *lzx, FILE *f)
     return -1;
 
   memset(lzx, 0, sizeof(struct lzx_data));
-  lzx->selected_offset = SIZE_MAX;
+  lzx->selected_offset = LZX_NO_SELECTION;
   return 0;
 }
 
@@ -177,7 +178,7 @@ static int lzx_read_entry(struct lzx_entry *e, FILE *f)
     if(fread(e->filename, 1, e->filename_length, f) < e->filename_length)
       return -1;
 
-    crc = lzx_crc32(crc, e->filename, e->filename_length);
+    crc = lzx_crc32(crc, (lzx_uint8 *)e->filename, e->filename_length);
   }
   e->filename[e->filename_length] = '\0';
 
@@ -198,12 +199,12 @@ static void lzx_reset_merge(struct lzx_data *lzx)
   lzx->merge_state = NO_MERGE;
   lzx->merge_invalid = 0;
   lzx->merge_total_size = 0;
-  lzx->selected_offset = SIZE_MAX;
+  lzx->selected_offset = LZX_NO_SELECTION;
 }
 
 static int lzx_has_selected_file(struct lzx_data *lzx)
 {
-  return lzx->selected_offset < SIZE_MAX;
+  return lzx->selected_offset != LZX_NO_SELECTION;
 }
 
 static void lzx_select_file(struct lzx_data *lzx, const struct lzx_entry *e)
