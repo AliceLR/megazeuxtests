@@ -28,6 +28,14 @@ extern "C" {
 
 #include <stddef.h> /* size_t */
 
+#include <stdint.h>
+typedef int8_t   arc_int8;
+typedef int16_t  arc_int16;
+typedef int32_t  arc_int32;
+typedef uint8_t  arc_uint8;
+typedef uint16_t arc_uint16;
+typedef uint32_t arc_uint32;
+
 #define ARC_RESTRICT __restrict__
 
 enum arc_method

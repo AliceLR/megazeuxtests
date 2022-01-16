@@ -15,7 +15,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "arc_types.h"
 #include "arc_unpack.h"
 
 #include <stdio.h>

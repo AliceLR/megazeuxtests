@@ -28,6 +28,8 @@ extern "C" {
 uint32_t dimgutil_crc32_no_inv(uint32_t crc, const unsigned char *src, size_t src_len);
 uint32_t dimgutil_crc32(uint32_t crc, const unsigned char *src, size_t src_len);
 
+uint16_t dimgutil_crc16_IBM(uint16_t crc, const unsigned char *src, size_t src_len);
+
 #ifdef __cplusplus
 }
 #endif

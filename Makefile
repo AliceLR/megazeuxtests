@@ -103,7 +103,6 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/LZX.o \
   ${DIMG_OBJ}/SparkFS.o \
   ${DIMG_OBJ}/crc32.o \
-  ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
   ${DIMG_OBJ}/lzx_unpack.o \
   ${OBJ}/Config.o \
@@ -117,14 +116,14 @@ IFFDUMP_OBJS := \
 UNARC_EXE    := unarc${BINEXT}
 UNARC_OBJS   := \
   ${DIMG_OBJ}/arc_arc.o \
-  ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
+  ${DIMG_OBJ}/crc32.o \
 
 UNARCFS_EXE  := unarcfs${BINEXT}
 UNARCFS_OBJS := \
   ${DIMG_OBJ}/arc_arcfs.o \
-  ${DIMG_OBJ}/arc_crc16.o \
   ${DIMG_OBJ}/arc_unpack.o \
+  ${DIMG_OBJ}/crc32.o \
 
 UNLZX_EXE    := unlzx${BINEXT}
 UNLZX_OBJS   := \

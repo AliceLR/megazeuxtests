@@ -297,7 +297,8 @@ static int lzx_check_entry(struct lzx_data *lzx, const struct lzx_entry *e, size
   return -1;
 }
 
-static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f, unsigned long file_len)
+static int lzx_read(unsigned char **dest, size_t *dest_len, FILE *f,
+ unsigned long file_len)
 {
   struct lzx_data lzx;
   struct lzx_entry e;

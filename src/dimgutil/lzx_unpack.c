@@ -64,8 +64,6 @@
  */
 
 #include "lzx_unpack.h"
-#include <assert.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,6 +86,8 @@
 #define LZX_MIN_MATCH    3
 
 #ifdef LZX_DEBUG
+#include <assert.h>
+#include <stdio.h>
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
 

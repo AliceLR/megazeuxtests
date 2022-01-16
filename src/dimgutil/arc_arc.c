@@ -23,9 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "arc_types.h"
-#include "arc_crc16.h"
 #include "arc_unpack.h"
+#include "crc32.h"
 
 /* Arbitrary maximum allowed output filesize. */
 #define ARC_MAX_OUTPUT (1 << 28)
@@ -42,6 +41,11 @@
 #ifdef ARC_DEBUG
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
+
+static arc_uint16 arc_crc16(arc_uint8 *buf, size_t len)
+{
+  return dimgutil_crc16_IBM(0, buf, len);
+}
 
 static arc_uint16 arc_mem_u16(arc_uint8 *buf)
 {

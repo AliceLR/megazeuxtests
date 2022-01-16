@@ -24,8 +24,8 @@
 
 #include "DiskImage.hpp"
 #include "FileIO.hpp"
-#include "arc_crc16.h"
 #include "arc_unpack.h"
+#include "crc32.h"
 
 #include "../format.hpp"
 
@@ -528,7 +528,7 @@ bool SparkImage::unpack_file(const FileInfo &file, uint8_t **dest, size_t *dest_
     output_size = input_size;
   }
 
-  *dest_crc = arc_crc16(output, output_size);
+  *dest_crc = dimgutil_crc16_IBM(0, output, output_size);
   if(*dest_crc != h->crc16())
     format::warning("CRC-16 mismatch: expected 0x%04x, got 0x%04x", h->crc16(), *dest_crc);
 
