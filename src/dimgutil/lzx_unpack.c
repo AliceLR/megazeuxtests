@@ -93,6 +93,13 @@
 #define debug(...) do{ fprintf(stderr, "" __VA_ARGS__); fflush(stderr); }while(0)
 #endif
 
+/* Bit buffer should be able to hold at least 32-bits, but 64 is better.
+ * There are edge cases where size_t is 16-bits but they aren't relevant. */
+typedef size_t buffertype;
+#if defined(_WIN64) || LONG_MAX > 0x7fffffffL
+#define LZX_BUFFERTYPE_IS_64
+#endif
+
 /* Position slot base positions table from MSDN documentation. */
 static const unsigned lzx_slot_base[32] =
 {
@@ -140,10 +147,6 @@ static lzx_uint16 lzx_mem_u16be(const unsigned char *buf)
 {
   return (buf[0] << 8) | buf[1];
 }
-
-/* NOTE: this needs to be 32-bit minimum and 64-bit whenever reasonable. The
- * best C has is size_t, which can be 16-bit for some edge case systems. */
-typedef size_t buffertype;
 
 enum lzx_block_type
 {
@@ -254,11 +257,10 @@ static unsigned lzx_peek_bits(struct lzx_data * LZX_RESTRICT lzx,
   {
     /* Minor optimization for 64-bit builds:
      * buffer_left < 16, so 3 words can be read into the buffer. */
-    if(sizeof(buffertype) >= 8)
-    {
-      lzx_word_in(lzx, src, src_len);
-      lzx_word_in(lzx, src, src_len);
-    }
+    #ifdef LZX_BUFFERTYPE_IS_64
+    lzx_word_in(lzx, src, src_len);
+    lzx_word_in(lzx, src, src_len);
+    #endif
     lzx_word_in(lzx, src, src_len);
   }
   return lzx->buffer & BIT_MASKS[num];
