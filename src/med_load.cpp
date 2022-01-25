@@ -100,6 +100,13 @@ enum MED_features
   FT_CMD_1F_DELAY,
   FT_CMD_1F_RETRIGGER,
   FT_CMD_1F_DELAY_RETRIGGER,
+  FT_CMD_20_REVERSE,
+  FT_CMD_20_RELATIVE_OFFSET,
+  FT_CMD_LINEAR_PORTAMENTO,
+  FT_CMD_TRACK_PANNING,
+  FT_CMD_2F_ECHO_DEPTH,
+  FT_CMD_2F_STEREO_SEPARATION,
+  FT_CMD_2F_UNKNOWN,
   FT_INST_MIDI,
   FT_INST_IFFOCT,
   FT_INST_SYNTH,
@@ -131,45 +138,52 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "FilterOn",
   "ModSlide",
   "Tick0Slide",
-  "CmPortVol",
-  "CmVibVol",
-  "CmTremolo",
-  "CmHoldDecay",
-  "Cm900",
-  "Cm9<=20",
-  "Cm9>20",
-  "CmFBrk",
-  "CmFTwice",
-  "CmFF1NoNote",
-  "CmFDelay",
-  "CmFThree",
-  "CmFF3NoNote",
-  "CmFF4",
-  "CmFF5",
-  "CmFFilter",
-  "CmFPitch",
-  "CmFStop",
-  "CmFOff",
-  "CmF<=0A",
-  "CmF>0A",
-  "CmFBPM<=2",
-  "CmFBPM<=20",
-  "CmFBPM",
-  "CmFinePort",
-  "CmPTVib",
-  "CmFinetune",
-  "CmLoop",
-  "CmLoop>0F",
-  "Cm18Stop",
-  "Cm18Stop>0F",
-  "CmOffset",
-  "CmFineVol",
-  "Cm1DBrk",
-  "CmPatDelay",
-  "CmPatDelay>0F",
-  "Cm1FDelay",
-  "Cm1FRetrg",
-  "Cm1FBoth",
+  "E:PortVol",
+  "E:VibVol",
+  "E:Tremolo",
+  "E:HoldDecay",
+  "E:900",
+  "E:9<=20",
+  "E:9>20",
+  "E:FBrk",
+  "E:FTwice",
+  "E:FF1NoNote",
+  "E:FDelay",
+  "E:FThree",
+  "E:FF3NoNote",
+  "E:FF4",
+  "E:FF5",
+  "E:FFilter",
+  "E:FPitch",
+  "E:FStop",
+  "E:FOff",
+  "E:F<=0A",
+  "E:F>0A",
+  "E:FBPM<=2",
+  "E:FBPM<=20",
+  "E:FBPM",
+  "E:FinePort",
+  "E:PTVib",
+  "E:Finetune",
+  "E:Loop",
+  "E:Loop>0F",
+  "E:18Stop",
+  "E:18Stop>0F",
+  "E:Offset",
+  "E:FineVol",
+  "E:1DBrk",
+  "E:PatDelay",
+  "E:PatDelay>0F",
+  "E:1FDelay",
+  "E:1FRetrg",
+  "E:1FBoth",
+  "E:Reverse",
+  "E:RelOffset",
+  "E:LinearPort",
+  "E:Pan",
+  "E:EchoDepth",
+  "E:StereoSep",
+  "E:2F?",
   "MIDI",
   "IFFOct",
   "Synth",
@@ -263,13 +277,20 @@ enum MMD0effects
   E_VIBRATO_COMPAT   = 0x14,
   E_FINETUNE         = 0x15,
   E_LOOP             = 0x16,
+  E_CHANGE_VOL_CTRL  = 0x17,
   E_STOP_NOTE        = 0x18,
   E_SAMPLE_OFFSET    = 0x19,
   E_FINE_VOLUME_UP   = 0x1A,
   E_FINE_VOLUME_DOWN = 0x1B,
+  E_CHANGE_MIDI_PRE  = 0x1C,
   E_PATTERN_BREAK    = 0x1D,
   E_PATTERN_DELAY    = 0x1E,
   E_DELAY_RETRIGGER  = 0x1F,
+  E_REVERSE_REL_OFF  = 0x20,
+  E_LINEAR_PORTA_UP  = 0x21,
+  E_LINEAR_PORTA_DN  = 0x22,
+  E_TRACK_PANNING    = 0x2E,
+  E_ECHO_STEREO_SEP  = 0x2F,
 };
 
 struct MMD0sample
@@ -851,7 +872,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
               m.uses[FT_CMD_PATTERN_DELAY_OVER_0F] = true;
             m.uses[FT_CMD_PATTERN_DELAY] = true;
             break;
+
           case E_DELAY_RETRIGGER:
+          {
             bool uses_delay     = !!(current->param & 0xF0);
             bool uses_retrigger = !!(current->param & 0x0F);
             if(uses_delay && uses_retrigger)
@@ -863,6 +886,34 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
             if(uses_retrigger)
               m.uses[FT_CMD_1F_RETRIGGER] = true;
             break;
+          }
+
+          case E_REVERSE_REL_OFF:
+            if(!current->param)
+              m.uses[FT_CMD_20_REVERSE] = true;
+            else
+              m.uses[FT_CMD_20_RELATIVE_OFFSET] = true;
+            break;
+          case E_LINEAR_PORTA_UP:
+          case E_LINEAR_PORTA_DN:
+            m.uses[FT_CMD_LINEAR_PORTAMENTO] = true;
+            break;
+          case E_TRACK_PANNING:
+            m.uses[FT_CMD_TRACK_PANNING] = true;
+            break;
+
+          case E_ECHO_STEREO_SEP:
+          {
+            if(current->param >= 0xe1 && current->param <= 0xe6)
+              m.uses[FT_CMD_2F_ECHO_DEPTH] = true;
+            else
+            if((current->param >= 0xd0 && current->param <= 0xd4) ||
+             (current->param >= 0xdc && current->param <= 0xdf))
+              m.uses[FT_CMD_2F_STEREO_SEPARATION] = true;
+            else
+              m.uses[FT_CMD_2F_UNKNOWN] = true;
+            break;
+          }
         }
       }
     }
