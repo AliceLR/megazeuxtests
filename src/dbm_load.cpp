@@ -38,6 +38,44 @@ enum DBM_features
   FT_BAD_PAN_ENVELOPE,
   FT_NEGATIVE_ENVELOPE_VALUE,
   FT_HIGH_ENVELOPE_VALUE,
+  FT_E_ARPEGGIO,
+  FT_E_PORTAMENTO,
+  FT_E_TONEPORTA,
+  FT_E_VIBRATO,
+  FT_E_TONEPORTA_VOLSLIDE,
+  FT_E_VIBRATO_VOLSLIDE,
+  FT_E_PANNING,
+  FT_E_OFFSET,
+  FT_E_VOLSLIDE,
+  FT_E_JUMP,
+  FT_E_VOLUME,
+  FT_E_BREAK,
+  FT_E_FILTER,
+  FT_E_FINE_PORTAMENTO,
+  FT_E_REVERSE,
+  FT_E_TURN_OFF_SOUND,
+  FT_E_TURN_OFF_CHANNEL,
+  FT_E_LOOP,
+  FT_E_OFFSET_2,
+  FT_E_PANNING_2,
+  FT_E_RETRIG,
+  FT_E_FINE_VOLSLIDE,
+  FT_E_NOTE_CUT,
+  FT_E_NOTE_DELAY,
+  FT_E_PATTERN_DELAY,
+  FT_E_TEMPO_BPM,
+  FT_E_GLOBAL_VOLUME,
+  FT_E_GLOBAL_VOLSLIDE,
+  FT_E_KEY_OFF,
+  FT_E_ENVELOPE_POSITION,
+  FT_E_OFFSET_SLIDE,
+  FT_E_PANNING_SLIDE,
+  FT_E_BPM,
+  FT_E_ECHO,
+  FT_E_ECHO_DELAY,
+  FT_E_ECHO_FEEDBACK,
+  FT_E_ECHO_MIX,
+  FT_E_ECHO_CROSS,
   NUM_FEATURES
 };
 
@@ -55,12 +93,97 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "BadPanEnv",
   "EnvPt<0",
   "EnvPt>64",
+  "E:Arpeggio",
+  "E:Porta",
+  "E:Toneporta",
+  "E:Vibrato",
+  "E:TPorta+Vol",
+  "E:Vib+Vol",
+  "E:Pan",
+  "E:Offset",
+  "E:Volslide",
+  "E:Jump",
+  "E:Volume",
+  "E:Break",
+  "E:Filter",
+  "E:FinePorta",
+  "E:Reverse",
+  "E:TurnOffSnd",
+  "E:TurnOffChn",
+  "E:Loop",
+  "E:E7Offset",
+  "E:E8Pan",
+  "E:Retrig",
+  "E:FineVol",
+  "E:NoteCut",
+  "E:NoteDelay",
+  "E:PatDelay",
+  "E:TempoBPM",
+  "E:GVolume",
+  "E:GVolslide",
+  "E:KeyOff",
+  "E:EnvPos",
+  "E:OffsetSlide",
+  "E:PanSlide",
+  "E:BPM",
+  "E:Echo",
+  "E:EchoDelay",
+  "E:EchoFeedback",
+  "E:EchoMix",
+  "E:EchoCross",
 };
 
 static const int MAX_SONGS = 16;
 static const int MAX_INSTRUMENTS = 256;
 static const int MAX_SAMPLES = 256;
 static const int MAX_PATTERNS = 256;
+
+enum DBM_effects
+{
+  E_ARPEGGIO            = 0x00,
+  E_PORTAMENTO_UP       = 0x01,
+  E_PORTAMENTO_DN       = 0x02,
+  E_TONEPORTA           = 0x03,
+  E_VIBRATO             = 0x04,
+  E_TONEPORTA_VOLSLIDE  = 0x05,
+  E_VIBRATO_VOLSLIDE    = 0x06,
+  E_PANNING             = 0x08,
+  E_OFFSET              = 0x09,
+  E_VOLSLIDE            = 0x0a,
+  E_JUMP                = 0x0b,
+  E_VOLUME              = 0x0c,
+  E_BREAK               = 0x0d,
+  E_EXTENDED            = 0x0e,
+  E_TEMPO_BPM           = 0x0f,
+  E_GLOBAL_VOLUME       = 0x10,
+  E_GLOBAL_VOLSLIDE     = 0x11,
+  E_KEY_OFF             = 0x14,
+  E_ENVELOPE_POSITION   = 0x15,
+  E_OFFSET_SLIDE        = 0x18,
+  E_PANNING_SLIDE       = 0x19,
+  E_BPM                 = 0x1c,
+  E_ECHO                = 0x1f,
+  E_ECHO_DELAY          = 0x20,
+  E_ECHO_FEEDBACK       = 0x21,
+  E_ECHO_MIX            = 0x22,
+  E_ECHO_CROSS          = 0x23,
+
+  EX_FILTER             = 0x0,
+  EX_FINE_PORTAMENTO_UP = 0x1,
+  EX_FINE_PORTAMENTO_DN = 0x2,
+  EX_REVERSE            = 0x3,
+  EX_TURN_OFF_SOUND     = 0x4,
+  EX_TURN_OFF_CHANNEL   = 0x5,
+  EX_LOOP               = 0x6,
+  EX_OFFSET             = 0x7,
+  EX_PANNING            = 0x8,
+  EX_RETRIG             = 0x9,
+  EX_FINE_VOLUME_UP     = 0xa,
+  EX_FINE_VOLUME_DN     = 0xb,
+  EX_NOTE_CUT           = 0xc,
+  EX_NOTE_DELAY         = 0xd,
+  EX_PATTERN_DELAY      = 0xe,
+};
 
 struct DBM_song
 {
@@ -247,6 +370,73 @@ struct DBM_data
     delete[] dspe_mask;
   }
 };
+
+
+static DBM_features effect_feature(uint8_t effect, uint8_t param)
+{
+  switch(effect)
+  {
+    case E_ARPEGGIO:           return FT_E_ARPEGGIO;
+    case E_PORTAMENTO_UP:      return FT_E_PORTAMENTO;
+    case E_PORTAMENTO_DN:      return FT_E_PORTAMENTO;
+    case E_TONEPORTA:          return FT_E_TONEPORTA;
+    case E_VIBRATO:            return FT_E_VIBRATO;
+    case E_TONEPORTA_VOLSLIDE: return FT_E_TONEPORTA_VOLSLIDE;
+    case E_VIBRATO_VOLSLIDE:   return FT_E_VIBRATO_VOLSLIDE;
+    case E_PANNING:            return FT_E_PANNING;
+    case E_OFFSET:             return FT_E_OFFSET;
+    case E_VOLSLIDE:           return FT_E_VOLSLIDE;
+    case E_JUMP:               return FT_E_JUMP;
+    case E_VOLUME:             return FT_E_VOLUME;
+    case E_BREAK:              return FT_E_BREAK;
+    case E_TEMPO_BPM:          return FT_E_TEMPO_BPM;
+    case E_GLOBAL_VOLUME:      return FT_E_GLOBAL_VOLUME;
+    case E_GLOBAL_VOLSLIDE:    return FT_E_GLOBAL_VOLSLIDE;
+    case E_KEY_OFF:            return FT_E_KEY_OFF;
+    case E_ENVELOPE_POSITION:  return FT_E_ENVELOPE_POSITION;
+    case E_OFFSET_SLIDE:       return FT_E_OFFSET_SLIDE;
+    case E_PANNING_SLIDE:      return FT_E_PANNING_SLIDE;
+    case E_BPM:                return FT_E_BPM;
+    case E_ECHO:               return FT_E_ECHO;
+    case E_ECHO_DELAY:         return FT_E_ECHO_DELAY;
+    case E_ECHO_FEEDBACK:      return FT_E_ECHO_FEEDBACK;
+    case E_ECHO_MIX:           return FT_E_ECHO_MIX;
+    case E_ECHO_CROSS:         return FT_E_ECHO_CROSS;
+
+    case E_EXTENDED:
+      switch(param >> 4)
+      {
+        case EX_FILTER:             return FT_E_FILTER;
+        case EX_FINE_PORTAMENTO_UP: return FT_E_FINE_PORTAMENTO;
+        case EX_FINE_PORTAMENTO_DN: return FT_E_FINE_PORTAMENTO;
+        case EX_REVERSE:            return FT_E_REVERSE;
+        case EX_TURN_OFF_SOUND:     return FT_E_TURN_OFF_SOUND;
+        case EX_TURN_OFF_CHANNEL:   return FT_E_TURN_OFF_CHANNEL;
+        case EX_LOOP:               return FT_E_LOOP;
+        case EX_OFFSET:             return FT_E_OFFSET_2;
+        case EX_PANNING:            return FT_E_PANNING_2;
+        case EX_RETRIG:             return FT_E_RETRIG;
+        case EX_FINE_VOLUME_UP:     return FT_E_FINE_VOLSLIDE;
+        case EX_FINE_VOLUME_DN:     return FT_E_FINE_VOLSLIDE;
+        case EX_NOTE_CUT:           return FT_E_NOTE_CUT;
+        case EX_NOTE_DELAY:         return FT_E_NOTE_DELAY;
+        case EX_PATTERN_DELAY:      return FT_E_PATTERN_DELAY;
+      }
+      break;
+  }
+  return NUM_FEATURES;
+}
+
+static void check_event(DBM_data &m, const DBM_pattern::note &e)
+{
+  DBM_features a = effect_feature(e.effect_1, e.param_1);
+  DBM_features b = effect_feature(e.effect_2, e.param_2);
+  if(a != NUM_FEATURES)
+    m.uses[a] = true;
+  if(b != NUM_FEATURES)
+    m.uses[b] = true;
+}
+
 
 class NAME_handler
 {
@@ -467,6 +657,8 @@ public:
 
         if(feof(fp))
           return modutil::READ_ERROR;
+
+        check_event(m, row[channel]);
       }
       if(left)
       {

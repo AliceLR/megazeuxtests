@@ -35,7 +35,10 @@ enum ULT_features
   FT_FX_PORTAMENTO,
   FT_FX_TONE_PORTAMENTO,
   FT_FX_VIBRATO,
-  FT_FX_SPECIAL,
+  FT_FX_NO_LOOP,
+  FT_FX_BACKWARDS,
+  FT_FX_END_LOOP,
+  FT_FX_SPECIAL_UNKNOWN,
   FT_FX_UNUSED_6,
   FT_FX_TREMOLO,
   FT_FX_UNUSED_8,
@@ -66,7 +69,10 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "E:Porta",
   "E:TPorta",
   "E:Vibrato",
-  "E:Special",
+  "E:NoLoop",
+  "E:Backwards",
+  "E:EndLoop",
+  "E:Special?",
   "E:6",
   "E:Tremolo",
   "E:8",
@@ -252,8 +258,14 @@ static ULT_features effect_feature(uint8_t effect, uint8_t param)
     case FX_BREAK:           return FT_FX_BREAK;
     case FX_SPEED:           return FT_FX_SPEED;
 
-    // TODO individual effects
-    case FX_SPECIAL:         return FT_FX_SPECIAL;
+    case FX_SPECIAL:
+      switch(param >> 4)
+      {
+        case SP_NO_LOOP:     return FT_FX_NO_LOOP;
+        case SP_BACKWARDS:   return FT_FX_BACKWARDS;
+        case SP_END_LOOP:    return FT_FX_END_LOOP;
+      }
+      break;
 
     case FX_EXTRA:
       switch(param >> 4)
