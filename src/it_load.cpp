@@ -30,6 +30,7 @@ static int num_its;
 enum IT_features
 {
   FT_OLD_FORMAT,
+  FT_MIDI_CONFIG,
   FT_SAMPLE_MODE,
   FT_INSTRUMENT_MODE,
   FT_SAMPLE_GLOBAL_VOLUME,
@@ -51,6 +52,7 @@ enum IT_features
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
   "<2.00",
+  "MidiCfg",
   "SmplMode",
   "InstMode",
   "SmpGVL",
@@ -373,6 +375,13 @@ struct IT_pattern
   }
 };
 
+struct IT_midiconfig
+{
+  char global[9][32];
+  char sfx[16][32];
+  char zxx[128][32];
+};
+
 struct IT_header
 {
   /*  00 */ char     magic[4]; /* IMPM */
@@ -399,11 +408,13 @@ struct IT_header
 
   /*  64 */ uint8_t  channel_pan[64];
   /* 128 */ uint8_t  channel_volume[64];
+  /* 192 */
 };
 
 struct IT_data
 {
   IT_header     header;
+  IT_midiconfig midi;
   IT_sample     *samples = nullptr;
   IT_instrument *instruments = nullptr;
   IT_pattern    *patterns = nullptr;
@@ -1004,6 +1015,9 @@ static modutil::error IT_read(FILE *fp)
   else
     m.uses[FT_SAMPLE_MODE] = true;
 
+  if(h.flags & F_MIDI_CONFIG)
+    m.uses[FT_MIDI_CONFIG] = true;
+
   if(h.num_orders)
   {
     m.orders = new uint8_t[h.num_orders];
@@ -1037,6 +1051,40 @@ static modutil::error IT_read(FILE *fp)
     if(feof(fp))
       return modutil::READ_ERROR;
   }
+
+  /* "Read extra info"? */
+  {
+    uint16_t skip = fget_u16le(fp);
+    if(feof(fp) || (skip && fseek(fp, skip * 8, SEEK_CUR) < 0))
+      return modutil::READ_ERROR;
+  }
+
+  /* Macro parameters */
+  if(h.flags & F_MIDI_CONFIG)
+  {
+    IT_midiconfig &midi = m.midi;
+    for(int i = 0; i < arraysize(midi.global); i++)
+    {
+      if(fread(midi.global[i], 1, 32, fp) < 32)
+        return modutil::READ_ERROR;
+      midi.global[i][31] = '\0';
+    }
+    for(int i = 0; i < arraysize(midi.sfx); i++)
+    {
+      if(fread(midi.sfx[i], 1, 32, fp) < 32)
+        return modutil::READ_ERROR;
+      midi.sfx[i][31] = '\0';
+    }
+    for(int i = 0; i < arraysize(midi.zxx); i++)
+    {
+      if(fread(midi.zxx[i], 1, 32, fp) < 32)
+        return modutil::READ_ERROR;
+      midi.zxx[i][31] = '\0';
+    }
+  }
+
+  /* MPT extension: pattern names */
+  /* MPT extension: channel names */
 
   /* Load instruments. */
   if(h.num_instruments && (h.flags & F_INST_MODE))
@@ -1197,10 +1245,10 @@ static modutil::error IT_read(FILE *fp)
   format::line("Orders",   "%u", h.num_orders);
   format::uses(m.uses, FEATURE_STR);
 
+  namespace table = format::table;
+
   if(Config.dump_samples)
   {
-    namespace table = format::table;
-
     /* Instruments */
     if(h.flags & F_INST_MODE)
     {
@@ -1357,6 +1405,34 @@ static modutil::error IT_read(FILE *fp)
   {
     format::line();
     format::orders("Orders", m.orders, h.num_orders);
+
+    /* Print MIDI macro configuration */
+    if(h.flags & F_MIDI_CONFIG)
+    {
+      IT_midiconfig &midi = m.midi;
+
+      static const char *midi_labels[] = { "MIDI Message" };
+      table::table<
+        table::string<32>> midi_table;
+
+      format::line();
+      midi_table.header("Global", midi_labels);
+      for(int i = 0; i < arraysize(midi.global); i++)
+        if(midi.global[i][0])
+          midi_table.row(i, midi.global[i]);
+
+      format::line();
+      midi_table.header("SFx", midi_labels);
+      for(int i = 0; i < arraysize(midi.sfx); i++)
+        if(midi.sfx[i][0])
+          midi_table.row(i, midi.sfx[i]);
+
+      format::line();
+      midi_table.header("Zxx", midi_labels);
+      for(int i = 0; i < arraysize(midi.zxx); i++)
+        if(midi.zxx[i][0])
+          midi_table.row(i, midi.zxx[i]);
+    }
 
     if(!Config.dump_pattern_rows)
       format::line();
