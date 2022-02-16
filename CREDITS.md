@@ -3,6 +3,9 @@
 ## Modules/PCM files
 
 All modules used in modfmt.mzx are also attributed there (press `H` by the player robot).
+Many of these have unknown licensing situations and are used here as examples, or were
+problematic playback files for libxmp or one of the other module players MZX supports.
+If no license is noted by a module, ***do not assume it is freely usable***!
 
 FIXME: this list is currently not complete and is missing available author data.
 
@@ -21,58 +24,58 @@ FIXME: this list is currently not complete and is missing available author data.
 |-|-|-|-|
 | CV_BOSS.MOD             | Alexis Janson     | M.K.                    | Public domain
 | CV_TECH.MOD             | Alexis Janson     | M.K.                    | Public domain
-| GBUSTERS.MOD            | ?                 | ST                      | ?
+| GBUSTERS.MOD            | ?                 | Soundtracker IX         | ?
 | TDZ1.MOD                | Lachesis          | TakeTracker TDZ1        | Attribution
 | TDZ2.MOD                | Lachesis          | TakeTracker TDZ2        | Attribution
 | TDZ3.MOD                | Lachesis          | TakeTracker TDZ3        | Attribution
 | 1st try.mod             | DOMMSDAY          | Digital Tracker FA08    | ?
 | bluesy.mod              | The Viking        | Octalyser CD81          | ?
-| cat orange.mod          | ?                 | Digital Tracker FA08    | ?
 | chipbeat.mod            | duke/paragon      | M.K.                    | ?
 | desecret.mod            | Nytar             | 6CHN                    | ?
-| ekorren.mod             | ?                 | His Master's Noise M&K! | ?
-| fairli.mod              | ?                 | ?                       | ?
+| ekorren.mod             | Glue Master       | His Master's Noise M&K! | ?
+| fairli.mod              | Comrade J         | M.K. (Modplug ADPCM4)   | ?
 | gidion graveland.mod    | ?                 | StarTrekker FLT8        | ?
 | judgement_day_gvine.mod | echo              | "LARD"                  | ?
 | jul-paaske.mod          | fuzzy/death row   | M!K!                    | ?
 | kingdomofpleasure.mod   | bee hunter        | "NSMS"                  | ?
-| lepeltheme.mod          | ?                 | His Master's Noise FEST | ?
-| lind.mod                | ?                 | His Master's Noise M&K! | ?
+| lepeltheme.mod          | Mahoney           | His Master's Noise FEST | ?
+| lind.mod                | Mahoney           | His Master's Noise M&K! | ?
 | misimprm.mod            | inmate2993        | 8CHN                    | ?
 | new age.mod             | MN                | Octalyser CD61          | ?
 | ponylips.mod            | tummo/dual format | M.K.                    | ?
-| ref 8.mod               | ?                 | SoundTracker 2.6 MTN    | ?
+| ref 8.mod               | Stalker           | SoundTracker 2.6 MTN    | ?
 | rudi-hunden.mod         | fuzzy/death row   | M!K!                    | ?
-| s0d.mod                 | ?                 | StarTrekker FLT4        | ?
+| s0d.mod                 | Kollaps           | StarTrekker FLT4        | ?
 | soap bubble.mod         | Rez/Eclipse       | 16CH                    | ?
 | CRYSTALS.WOW            | Tran/Renaissance  | Mod's Grave WOW         | ? (conversion from 669)
 
 ### S3M
 
-| File | Author | License |
+| File | Author | Tested feature(s) | License |
 |-|-|-|
-| ASSAULT.S3M  | Madbrain  | ? (used with permission)
-| basket.s3m   | Krow      | ?
-| mm2flash.s3m | Frostbite | ?
+| ASSAULT.S3M		| Madbrain		| Sample segments >=64k	| ? (used with permission)
+| basket.s3m	 	| Krow			| 			| ?
+| mm2flash.s3m		| Frostbite		| Modplug ADPCM4	| ?
 
 ### XM
 
-| File | Author | License |
-|-|-|-|
-| MRHPx-HBTN LUCiFER.xm | MRHPx           | ?
-| bit_loader.xm         | Drozerix        | Public domain
-| villgust.xm           | Lachesis        | Attribution
-| vs_battle.xm          | Lachesis        | Request permission
-| xyce-dans_la_rue.xm   | xylo and cerror | ?
+| File | Author | Tested feature(s) | License |
+|-|-|-|-|
+| MRHPx-HBTN LUCiFER.xm	| MRHPx			| Modplug ADPCM4	| ?
+| bit_loader.xm		| Drozerix		|			| Public domain
+| villgust.xm		| Lachesis		| `Lxx`			| (Based on copyrighted music)
+| vs_battle.xm		| Lachesis		|			| Request permission
+| xyce-dans_la_rue.xm	| xylo and cerror	| Event edge case	| ?
 
 ### IT
 
-| File | Author | License |
-|-|-|-|
-| SX-shrine.it         | Lachesis              | Request permission
-| another life.it      | ?                     | ?
-| cudowna parasolka.it | alkor/dma^dw          | ?
-| the_hero_within.it   | Bacter and Saga Musix | ?
+| File | Author | Tested feature(s) | License |
+|-|-|-|-|
+| SX-shrine.it		| Lachesis		|			| Request permission
+| another life.it	| Darkman007		| Modplug ADPCM4	| ?
+| atomic_playboy.it	| Bacter and Saga Musix	| Sustain, default vol.	| ?
+| cudowna parasolka.it	| alkor/dma^dw		| Compression, filter	| ?
+| the_hero_within.it	| Bacter and Saga Musix	| Compression, filter	| ?
 
 ### 669
 
@@ -86,13 +89,13 @@ FIXME: this list is currently not complete and is missing available author data.
 | File | Author | License |
 |-|-|-|
 | AVOID.AMF             | dr.awesome/Crusaders | ?
-| Test6.amf             | ?                    | ?
+| Test6.amf             | Otto Chrons?         | ?
 | cosmos st.amf         | Toal Nkor/RT         | ?
 | fiercest.amf          | maelcum/KLF          | ?
-| reborning.amf         | ?                    | ?
+| reborning.amf         | 6-mate/zeroline      | ?
 | spiritual_high.amf    | Mike Genato          | ?
 | terminal_velocity.amf | Mike Genato          | ?
-| the tribal zone.amf   | ?                    | ?
+| the tribal zone.amf   | maelcum/KLF          | ?
 
 ### ASYLUM AMF
 
@@ -166,8 +169,8 @@ FIXME: this list is currently not complete and is missing available author data.
 
 | File | Author | License |
 |-|-|-|
-| black_box.okt  | ? | ?
-| distortion.okt | ? | ?
+| black_box.okt  | Blackbird | ?
+| distortion.okt | Metalking | ?
 
 ### STM
 
@@ -184,7 +187,7 @@ FIXME: this list is currently not complete and is missing available author data.
 |-|-|-|
 | analog.ult          | Killer Fish      | ?
 | fric-klf.ult        | Mental Floss/KLF | ?
-| sea of emotions.ult |                  | ?
+| sea of emotions.ult | EPSILON          | ?
 
 ### WAV/SAM
 
