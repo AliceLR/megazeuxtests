@@ -46,6 +46,9 @@ enum IT_features
   FT_ENV_PAN,
   FT_ENV_PITCH,
   FT_ENV_FILTER,
+  FT_E_MACROSET,
+  FT_E_MACRO,
+  FT_E_MACROSMOOTH,
   NUM_FEATURES
 };
 
@@ -68,6 +71,9 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "EnvPan",
   "EnvPitch",
   "EnvFilter",
+  "E:MacroSet",
+  "E:Macro",
+  "E:MacroSmooth",
 };
 
 enum IT_flags
@@ -877,7 +883,7 @@ static modutil::error IT_scan_pattern(IT_pattern &p, const uint8_t *stream)
 /**
  * Read an IT pattern.
  */
-static modutil::error IT_read_pattern(IT_pattern &p, const uint8_t *stream)
+static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *stream)
 {
   if(p.num_rows < 1 || p.num_channels < 1)
     return modutil::SUCCESS;
@@ -958,6 +964,13 @@ static modutil::error IT_read_pattern(IT_pattern &p, const uint8_t *stream)
       ev.effect = last_effect;
       ev.param  = last_param;
     }
+
+    if(ev.effect == ('S'-'@') && (ev.param >> 4) == 0xf)
+      m.uses[FT_E_MACROSET] = true;
+    if(ev.effect == ('Z'-'@'))
+      m.uses[FT_E_MACRO] = true;
+    if(ev.effect == ('\\'-'@'))
+      m.uses[FT_E_MACROSMOOTH] = true;
   }
   return modutil::SUCCESS;
 }
@@ -1227,7 +1240,7 @@ static modutil::error IT_read(FILE *fp)
         format::warning("error scanning pattern %zu", i);
         continue;
       }
-      ret = IT_read_pattern(p, patbuf.data());
+      ret = IT_read_pattern(m, p, patbuf.data());
       if(ret)
       {
         format::warning("error loading pattern %zu", i);
