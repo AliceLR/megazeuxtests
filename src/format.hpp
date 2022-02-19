@@ -183,6 +183,9 @@ namespace format
     if(!text || !Config.dump_descriptions || Config.quiet)
       return;
 
+    if(length > 0)
+      O_("\n");
+
     while(length > 0)
     {
       const char *line_start = text;
