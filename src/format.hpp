@@ -226,6 +226,9 @@ namespace format
         }
         fprintf(stderr, "%*.*s\n", left, left, line_start);
       }
+      else
+        O_("        :\n");
+
       text += line_len + 1;
       length -= line_len + 1;
     }
