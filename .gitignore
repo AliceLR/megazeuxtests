@@ -11,6 +11,9 @@ desktop.ini
 /dimgutil
 /dimgutil.exe
 /dimgutil_san*
+/dsymgen
+/dsymgen.exe
+/dsymgen_san*
 /iffdump
 /iffdump.exe
 /iffdump_san*

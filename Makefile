@@ -107,6 +107,10 @@ DIMGUTIL_OBJS := \
   ${DIMG_OBJ}/lzx_unpack.o \
   ${OBJ}/Config.o \
 
+DSYMGEN_EXE  := dsymgen${BINEXT}
+DSYMGEN_OBJS := \
+  ${OBJ}/dsymgen.o
+
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \
   ${OBJ}/iffdump.o \
@@ -138,6 +142,9 @@ ${MODUTIL_EXE}: ${MODUTIL_OBJS}
 ${DIMGUTIL_EXE}: ${DIMGUTIL_OBJS}
 ${DIMGUTIL_OBJS}: | ${DIMG_OBJ}
 
+-include ${DSYMGEN_OBJS:.o=.d}
+${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
+
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
@@ -156,6 +163,7 @@ ${UNLZX_OBJS}: | ${DIMG_OBJ}
 ALL_EXES := \
   ${MODUTIL_EXE}  \
   ${DIMGUTIL_EXE} \
+  ${DSYMGEN_EXE} \
   ${IFFDUMP_EXE} \
   ${UNARC_EXE} \
   ${UNARCFS_EXE} \
@@ -183,6 +191,10 @@ ${DIMGUTIL_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${DIMGUTIL_OBJS} ${LDLIBS}
 
+${DSYMGEN_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${DSYMGEN_OBJS} ${LDLIBS}
+
 ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${IFFDUMP_OBJS} ${LDLIBS}
@@ -203,6 +215,7 @@ clean:
 	rm -rf src/.build src/.build_san*/
 	rm -f modutil modutil.exe modutil_san*
 	rm -f dimgutil dimgutil.exe dimgutil_san*
+	rm -f dsymgen dsymgen.exe dsymgen_san*
 	rm -f iffdump iffdump.exe iffdump_san*
 	rm -f unarc unarc.exe unarc_san*
 	rm -f unarcfs unarcfs.exe unarcfs_san*

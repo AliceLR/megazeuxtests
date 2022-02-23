@@ -1,0 +1,36 @@
+BASSTRAK v1
+NAME		:: test.module
+VOICES		:: 4
+
+COMMENT		:: Simple Digital Symphony example file for dsymgen.
+		:: To generate a module: ../dsymgen <test.dsym.txt >test.dsym
+
+SAMPLE	1	:: 16 0 16 64 0 saw.sam saw.sam
+SAMP16	2	:: 16 0 16 64 0 log16.sam log16.sam
+SIGMA8	3	:: 64 0 64 32 0 sq.sam sq.sam
+
+ORDER	0	::	0	1	2	0x1000
+
+PATTERN	0	:: 18 1	0x1f 0xa	|		| 18 1 0x1c 3	| 18 1 0x1c 3
+		:: 18 1			| 0 0 0x1c 3	| 15 1		| 0 0 0x1c 3
+		:: 15 1			| 0 0 0x1c 3	| 15 1		| 0 0 0x1c 3
+		:: 17 1			|		|		|
+		:: 			|		|		|
+		:: 			|		|		|
+		:: 0 0 0x1c 0
+
+PATTERN	1	:: 8 2 0x1f 0xa		|		|		|
+		::			| 0 0 0x1c 3	| 6 2		| 0 0 0x1c 3
+		:: 6 2			| 0 0 0x1c 3	| 6 2		| 0 0 0x1c 3
+		:: 8 2			|		|		|
+		::			|		|		|
+		:: 			|		|		|
+		:: 0 0 0x1c 0
+
+PATTERN 2	:: 18 3	0x1f 0xf	|		|		|
+		::			| 0 0 0x1c 3	| 20 3		| 0 0 0x1c 3
+		:: 20 3			| 0 0 0x1c 3	| 20 3		| 0 0 0x1c 3
+		:: 13 3			|		|		|
+		::			|		|		|
+		:: 			|		|		|
+		:: 0 0 0x1c 0

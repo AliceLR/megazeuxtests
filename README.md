@@ -14,6 +14,10 @@ This repository is currently the home of a handful of utilities which all need b
   * `iffdump` is a testing program for `modutil`'s IFF support that sometimes is also useful debugging new IFF-based formats.
 * `dimgutil`
   * Lighter testing programs written in C: `unarc`, `unarcfs`, `unlzx`
+* `dsymgen` generates Digital Symphony modules from a template file because
+  working registered versions of this tracker seem to be very rare. The source
+  code is unfortunately the documentation currently, but an example template
+  and output can be found in `misc/`.
 
 All source code in `src/` is available under the MIT license rather than
 MegaZeux's GPL 2.0+ license, as the vast majority of this code is old file
