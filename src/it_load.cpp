@@ -883,6 +883,15 @@ static modutil::error IT_scan_pattern(IT_pattern &p, const uint8_t *stream)
 /**
  * Read an IT pattern.
  */
+struct last_event
+{
+  uint8_t note;
+  uint8_t instrument;
+  uint8_t volume;
+  uint8_t effect;
+  uint8_t param;
+};
+
 static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *stream)
 {
   if(p.num_rows < 1 || p.num_channels < 1)
@@ -891,11 +900,7 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
   p.allocate();
 
   uint8_t mask[64]{};
-  uint8_t last_note = 0;
-  uint8_t last_instrument = 0;
-  uint8_t last_volume = 0;
-  uint8_t last_effect = 0;
-  uint8_t last_param = 0;
+  last_event last_events[64]{};
 
   for(size_t row = 0, i = 0; row < p.num_rows && i < p.raw_size;)
   {
@@ -909,6 +914,8 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
     size_t channel = (flags - 1) & IT_event::CHANNEL;
     if(channel >= p.num_channels)
       return modutil::INVALID;
+
+    last_event &last = last_events[channel];
 
     if(flags & IT_event::READ_MASK)
     {
@@ -924,7 +931,7 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
       if(p.raw_size - i < 1)
         return modutil::INVALID;
 
-      ev.note = last_note = stream[i++];
+      ev.note = last.note = stream[i++];
     }
 
     if(mask[channel] & IT_event::INSTRUMENT)
@@ -932,7 +939,7 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
       if(p.raw_size - i < 1)
         return modutil::INVALID;
 
-      ev.instrument = last_instrument = stream[i++];
+      ev.instrument = last.instrument = stream[i++];
     }
 
     if(mask[channel] & IT_event::VOLUME)
@@ -940,8 +947,8 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
       if(p.raw_size - i < 1)
         return modutil::INVALID;
 
-      last_volume = stream[i++];
-      ev.set_volume(last_volume);
+      last.volume = stream[i++];
+      ev.set_volume(last.volume);
     }
 
     if(mask[channel] & IT_event::EFFECT)
@@ -949,20 +956,20 @@ static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *
       if(p.raw_size - i < 2)
         return modutil::INVALID;
 
-      ev.effect = last_effect = stream[i++];
-      ev.param  = last_param  = stream[i++];
+      ev.effect = last.effect = stream[i++];
+      ev.param  = last.param  = stream[i++];
     }
 
     if(mask[channel] & IT_event::LAST_NOTE)
-      ev.note = last_note;
+      ev.note = last.note;
     if(mask[channel] & IT_event::LAST_INSTRUMENT)
-      ev.instrument = last_instrument;
+      ev.instrument = last.instrument;
     if(mask[channel] & IT_event::LAST_VOLUME)
-      ev.set_volume(last_volume);
+      ev.set_volume(last.volume);
     if(mask[channel] & IT_event::LAST_EFFECT)
     {
-      ev.effect = last_effect;
-      ev.param  = last_param;
+      ev.effect = last.effect;
+      ev.param  = last.param;
     }
 
     if(ev.effect == ('S'-'@') && (ev.param >> 4) == 0xf)
