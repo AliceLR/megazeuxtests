@@ -39,9 +39,11 @@ enum XM_features
   FT_ORDER_OVER_NUM_PATTERNS,
   FT_ORDER_FE,
   FT_ORDER_FE_MODPLUG_SKIP,
+  FT_MODPLUG_FILTER,
   FT_FX_UNKNOWN,
   FT_EX_UNKNOWN,
   FT_XX_UNKNOWN,
+  FT_XX_REVERSE,
   FT_FX_MODPLUG_EXTENSION,
   FT_FX_ENVELOPE_POSITION,
   FT_FX_UNUSED_I,
@@ -66,9 +68,11 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "O>NumPat",
   "O:FE",
   "MPT:FE",
+  "MPT:Filter",
   "E:?xx",
   "E:E?x",
   "E:X?x",
+  "E:Reverse",
   "E:MPT",
   "E:EnvPos",
   "E:Ixx",
@@ -394,9 +398,13 @@ static void check_event(XM_data &m, const XM_event *ev)
       break;
 
     case FX_PANBRELLO:
+      m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+      break;
+
     case FX_MACRO:
     case FX_SMOOTH_MACRO:
       m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+      m.uses[FT_MODPLUG_FILTER] = true;
       break;
 
     // Unknown effects found in real modules.
@@ -455,6 +463,7 @@ static void check_event(XM_data &m, const XM_event *ev)
 
         case EX_SET_ACTIVE_MACRO:
           m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+          m.uses[FT_MODPLUG_FILTER] = true;
           break;
 
         default:
@@ -475,9 +484,14 @@ static void check_event(XM_data &m, const XM_event *ev)
 
         case XX_PANBRELLO_CONTROL:
         case XX_FINE_PATTERN_DELAY:
-        case XX_SOUND_CONTROL:
         case XX_HIGH_OFFSET:
           m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+          break;
+
+        case XX_SOUND_CONTROL:
+          m.uses[FT_FX_MODPLUG_EXTENSION] = true;
+          if((ev->param & 0xf) >= 0xe)
+            m.uses[FT_XX_REVERSE] = true;
           break;
 
         default:
