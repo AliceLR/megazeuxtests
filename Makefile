@@ -220,3 +220,14 @@ clean:
 	rm -f unarc unarc.exe unarc_san*
 	rm -f unarcfs unarcfs.exe unarcfs_san*
 	rm -f unlzx unlzx.exe unlzx_san*
+
+#
+# Build all sanitizers/fuzzers (recursive).
+#
+BATCH_SANITIZE := address memory undefined
+BATCH_FUZZER := address memory undefined
+
+batch:
+	@${MAKE}
+	@for s in ${BATCH_SANITIZE}; do CC=clang CXX=clang++ ${MAKE} SANITIZE=$$s; done
+	@for f in ${BATCH_FUZZER}; do CC=clang CXX=clang++ ${MAKE} FUZZER=$$f; done
