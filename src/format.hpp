@@ -515,7 +515,8 @@ namespace format
     uint8_t param;
     static constexpr int width() { return 4; }
     bool can_print() const { return effect > 0; }
-    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%c%02x", effect, param), effect + '@', param); else spaces(width()); }
+    char effect_char() const { return ((int)effect + '@' < 127) ? effect + '@' : '?'; }
+    void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT_FX("%c%02x", effect, param), effect_char(), param); else spaces(width()); }
   };
 
   /* 669 and FAR use a nibble effect + nibble param byte. */
