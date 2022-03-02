@@ -370,6 +370,7 @@ struct IT_event
 struct IT_pattern
 {
   IT_event *events = nullptr;
+  uint16_t raw_size_stored = 0;
   uint16_t raw_size = 0;
   uint16_t num_rows = 0;
   uint8_t  num_channels = 0;
@@ -1238,27 +1239,22 @@ static modutil::error IT_read(FILE *fp)
       p.num_rows = fget_u16le(fp);
       fget_u32le(fp);
 
+      p.raw_size_stored = p.raw_size;
+
       if(!p.raw_size || !p.num_rows)
         continue;
 
-      if(!fread(patbuf.data(), p.raw_size, 1, fp))
-      {
+      /* Load even if the read is short or if the scan fails
+       * since some software (libxmp) will also do this. */
+      p.raw_size = fread(patbuf.data(), 1, p.raw_size, fp);
+
+      if(p.raw_size < p.raw_size_stored)
         format::warning("read error at pattern %zu", i);
-        continue;
-      }
 
       modutil::error ret = IT_scan_pattern(p, patbuf.data());
-      if(ret)
-      {
-        format::warning("error scanning pattern %zu", i);
-        continue;
-      }
-      ret = IT_read_pattern(m, p, patbuf.data());
-      if(ret)
-      {
+      modutil::error ret2 = IT_read_pattern(m, p, patbuf.data());
+      if(ret || ret2)
         format::warning("error loading pattern %zu", i);
-        continue;
-      }
     }
   }
 
@@ -1484,6 +1480,9 @@ static modutil::error IT_read(FILE *fp)
 
       using EVENT = format::event<format::note, format::sample, volumeIT, format::effectIT>;
       format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.raw_size);
+
+      if(p.raw_size != p.raw_size_stored)
+        pattern.extra("Expected packed size: %u", p.raw_size_stored);
 
       if(!Config.dump_pattern_rows)
       {
