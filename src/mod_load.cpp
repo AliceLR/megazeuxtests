@@ -50,6 +50,7 @@ enum MOD_type
   MOD_HMN,                 // His Master's Noise FEST
   MOD_LARD,                // Signature found in judgement_day_gvine.mod. It's a normal 4-channel MOD.
   MOD_NSMS,                // Signature found in kingdomofpleasure.mod. It's a normal 4-channel MOD.
+  MOD_APOCALYPSE_ABYSS,    // Signature .M.K found in Apocalypse Abyss and Software Visions catalogs.
   WOW,                     // Mod's Grave M.K.
   MOD_SOUNDTRACKER,        // ST 15-instrument .MOD, no signature.
   MOD_SOUNDTRACKER_26,     // Soundtracker 2.6 MTN\0
@@ -87,6 +88,7 @@ static const struct MOD_type_info TYPES[NUM_MOD_TYPES] =
   { "FEST", "HMN",             4,  true  },
   { "LARD", "Unknown 4ch",     4,  false },
   { "NSMS", "Unknown 4ch",     4,  false },
+  { ".M.K", "Apocalypse Abyss",4,  false },
   { "M.K.", "Mod's Grave",     8,  true  },
   { "",     "Soundtracker",    4,  false },
   { "",     "ST 2.6",          -1, false },
@@ -336,17 +338,37 @@ static modutil::error MOD_check_format(MOD_data &m, FILE *fp)
   return modutil::SUCCESS;
 }
 
+/* Apocalypse Abyss "DMF" modules are actually just M.K. MODs
+ * with the first 2108 bytes flipped. In practice this just means
+ * flip the title, samples, order data, and first pattern. */
+static void MOD_AA_decode(uint8_t *buf, size_t len)
+{
+  for(size_t i = 0; i < len; i += 2)
+  {
+    uint8_t t = buf[i];
+    buf[i] = buf[i + 1];
+    buf[i + 1] = t;
+  }
+}
+
 static modutil::error MOD_read_sample(MOD_data &m, size_t sample_num, FILE *fp)
 {
   MOD_sample &ins = m.header.samples[sample_num];
-  if(!fread(ins.name, sizeof(ins.name), 1, fp))
+  uint8_t buf[30];
+
+  if(!fread(buf, 30, 1, fp))
     return m.type == MOD_SOUNDTRACKER ? modutil::FORMAT_ERROR : modutil::READ_ERROR;
 
-  ins.half_length      = fget_u16be(fp);
-  ins.finetune         = fgetc(fp);
-  ins.volume           = fgetc(fp);
-  ins.half_loop_start  = fget_u16be(fp);
-  ins.half_loop_length = fget_u16be(fp);
+  if(m.type == MOD_APOCALYPSE_ABYSS)
+    MOD_AA_decode(buf, sizeof(buf));
+
+  memcpy(ins.name, buf, 22);
+
+  ins.half_length      = mem_u16be(buf + 22);
+  ins.finetune         = buf[24];
+  ins.volume           = buf[25];
+  ins.half_loop_start  = mem_u16be(buf + 26);
+  ins.half_loop_length = mem_u16be(buf + 28);
 
   ins.length = ins.half_length << 1;
   ins.loop_start = ins.half_loop_start << 1;
@@ -362,6 +384,9 @@ static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp
 
   if(!fread(m.pattern_buffer, m.type_channels * 64 * 4, 1, fp))
     return modutil::READ_ERROR;
+
+  if(pattern_num == 0 && m.type == MOD_APOCALYPSE_ABYSS)
+    MOD_AA_decode(m.pattern_buffer, m.type_channels * 64 * 4);
 
   m.patterns[pattern_num] = new MOD_note[m.type_channels * 64]{};
 
@@ -442,6 +467,16 @@ static modutil::error MOD_read(FILE *fp, long file_length)
       return modutil::READ_ERROR;
 
     running_length = 1084;
+
+    if(m.type == MOD_APOCALYPSE_ABYSS)
+    {
+      MOD_AA_decode(reinterpret_cast<uint8_t *>(h.name), sizeof(h.name));
+      MOD_AA_decode(h.orders, sizeof(h.orders));
+      uint8_t t = h.num_orders;
+      h.num_orders = h.restart_byte;
+      h.restart_byte = t;
+    }
+    else
 
     if(m.type == MOD_DIGITALTRACKER_FA04 ||
        m.type == MOD_DIGITALTRACKER_FA06 ||
