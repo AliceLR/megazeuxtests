@@ -310,7 +310,7 @@ public:
         continue;
       }
 
-      std::unique_ptr<uint8_t> u_data(nullptr);
+      std::unique_ptr<uint8_t[]> u_data(nullptr);
 
       if(p.is_compressed)
       {
@@ -318,8 +318,8 @@ public:
         p.compressed_size   = fget_u32le(fp);
         p.compression_flags = fget_u32le(fp);
 
-        std::unique_ptr<uint8_t> c_data(new uint8_t[p.compressed_size]);
-        u_data = std::unique_ptr<uint8_t>(new uint8_t[p.uncompressed_size]);
+        std::unique_ptr<uint8_t[]> c_data(new uint8_t[p.compressed_size]);
+        u_data = std::unique_ptr<uint8_t[]>(new uint8_t[p.uncompressed_size]);
 
         if(!fread(c_data.get(), p.compressed_size, 1, fp))
           return modutil::READ_ERROR;

@@ -347,7 +347,7 @@ struct GDM_data
   GDM_sample samples[256];
   GDM_pattern patterns[256];
   uint8_t orders[256];
-  uint8_t buffer[65536];
+  //uint8_t buffer[65536];
   uint8_t num_channels;
   char *message = nullptr;
 
@@ -431,8 +431,13 @@ static modutil::error GDM_load_pattern(GDM_data &m, GDM_pattern &p, const std::v
   size_t channels = m.num_channels;
   const bool is_scan = (p.events == nullptr);
 
-  while(pos < p.raw_size)
+  while(true)
   {
+    if(pos >= p.raw_size)
+    {
+      row++;
+      break;
+    }
     uint8_t t = buffer[pos++];
 
     if(t == 0)
