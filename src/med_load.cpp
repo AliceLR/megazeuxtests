@@ -1166,7 +1166,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
       if(x.instr_info_size >= 40)
       {
-        fread(sxi.name, 40, 1, fp);
+        if(!fread(sxi.name, 40, 1, fp))
+          return modutil::READ_ERROR;
+
         sxi.name[40] = '\0';
         skip -= 40;
       }

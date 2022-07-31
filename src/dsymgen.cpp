@@ -594,7 +594,9 @@ int main()
     FILE *fp = fopen(s.filename, "rb");
     if(fp)
     {
-      fread(buf.data(), buf_size, 1, fp);
+      if(!fread(buf.data(), buf_size, 1, fp))
+        ERROR("read error for sample file '%s'\n", s.filename);
+
       fclose(fp);
     }
     else

@@ -298,7 +298,9 @@ struct LZX_entry
     ptrdiff_t size = header_length();
     if(size > data_end - here)
       return false;
-    if(compressed_size() > data_end - here - size)
+
+    size_t remaining = data_end - here - size;
+    if(compressed_size() > remaining)
       return false;
 
     return true;
