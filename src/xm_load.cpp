@@ -936,7 +936,7 @@ public:
           for(size_t j = 0; j < ins.num_samples; j++)
           {
             XM_sample &s = ins.samples[j];
-            s_table.row(smp, s.name, i, {},
+            s_table.row(smp, s.name, i + 1, {},
               s.length, s.loop_start, s.loop_length, {},
               s.volume, s.finetune, s.type, s.transpose);
             smp++;
