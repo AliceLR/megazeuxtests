@@ -123,6 +123,11 @@ enum MED_features
   FT_INST_MD16,
   FT_INST_HOLD_DECAY,
   FT_INST_DEFAULT_PITCH,
+  FT_INST_BIDI,
+  FT_INST_DISABLE,
+  FT_INST_LONG_REPEAT,
+  FT_INST_LONG_REPEAT_DIFF,
+  FT_INST_LONG_REPEAT_HIGH,
   FT_HYBRID_USES_IFFOCT,
   FT_HYBRID_USES_EXT,
   FT_HYBRID_USES_SYNTH,
@@ -190,16 +195,21 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "E:EchoDepth",
   "E:StereoSep",
   "E:2F?",
-  "MIDI",
-  "IFFOct",
-  "Synth",
-  "Hybrid",
-  "ExtSample",
-  "InsS16",
-  "InsStereo",
-  "InsAura",
-  "HoldDecay",
-  "DefPitch",
+  "I:MIDI",
+  "I:IFFOct",
+  "I:Synth",
+  "I:Hybrid",
+  "I:Ext",
+  "I:S16",
+  "I:Stereo",
+  "I:Aura",
+  "I:HoldDecay",
+  "I:DefPitch",
+  "I:Bidi",
+  "I:Disable",
+  "I:LongRep",
+  "I:!=LongRep",
+  "I:128kLongRep",
   "HybIFFOCT",
   "HybExt",
   "HybSyn(?!)",
@@ -228,6 +238,14 @@ enum MMD0instrtype
   I_MD16     = 0x18,
 };
 
+enum MMD3instrflags
+{
+  SSFLG_LOOP     = 0x01,
+  SSFLG_EXTPSET  = 0x02,
+  SSFLG_DISABLED = 0x04,
+  SSFLG_PINGPONG = 0x08,
+};
+
 static const char *MED_insttype_str(int t)
 {
   switch(t)
@@ -242,6 +260,19 @@ static const char *MED_insttype_str(int t)
     case I_IFF6OCT: return "IO6";
     case I_IFF7OCT: return "IO7";
     case I_EXT:     return "Ext";
+  }
+  if((t & ~I_S16 & ~I_STEREO & ~I_MD16) == 0)
+  {
+    if(t & I_S16)
+    {
+      if(t & I_STEREO)
+        return "S16S";
+      else
+        return "S16";
+    }
+    else
+    if(t & I_STEREO)
+      return "SmpS";
   }
   return "???";
 }
@@ -482,6 +513,7 @@ struct MMD0
   uint32_t       pattern_offsets[MAX_BLOCKS];
   uint32_t       instrument_offsets[MAX_INSTRUMENTS];
   uint32_t       num_tracks;
+  bool           use_long_repeat;
   bool           uses[NUM_FEATURES];
 
   ~MMD0()
@@ -993,6 +1025,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
       MMD0synth *syn = new MMD0synth;
+      m.synth_data[i] = syn;
 
       syn->default_decay         = fgetc(fp);
       syn->reserved[0]           = fgetc(fp);
@@ -1036,7 +1069,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
         if(h_inst.type > 0)
         {
-          if(h_inst.type & I_MD16)
+          if((h_inst.type & I_MD16) == I_MD16)
             m.uses[FT_INST_MD16] = true;
           else
           if(h_inst.type & I_S16)
@@ -1060,7 +1093,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       if((inst.type & I_TYPEMASK) > 0)
         m.uses[FT_INST_IFFOCT] = true;
 
-      if(inst.type & I_MD16)
+      if((inst.type & I_MD16) == I_MD16)
         m.uses[FT_INST_MD16] = true;
       else
       if(inst.type & I_S16)
@@ -1141,6 +1174,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       {
         sx.long_repeat_start  = fget_u32be(fp);
         sx.long_repeat_length = fget_u32be(fp);
+        m.use_long_repeat = true;
         skip -= 8;
       }
 
@@ -1151,6 +1185,20 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         m.uses[FT_INST_HOLD_DECAY] = true;
       if(sx.default_pitch)
         m.uses[FT_INST_DEFAULT_PITCH] = true;
+      if(sx.instrument_flags & SSFLG_DISABLED)
+        m.uses[FT_INST_DISABLE] = true;
+      if(sx.instrument_flags & SSFLG_PINGPONG)
+        m.uses[FT_INST_BIDI] = true;
+      if(x.sample_ext_size >= 18)
+      {
+        m.uses[FT_INST_LONG_REPEAT] = true;
+        if(sx.long_repeat_start != (uint32_t)(s.samples[i].repeat_start << 1) ||
+         sx.long_repeat_length != (uint32_t)(s.samples[i].repeat_length << 1))
+          m.uses[FT_INST_LONG_REPEAT_DIFF] = true;
+
+        if(sx.long_repeat_start >= (1<<17) || sx.long_repeat_length >= (1<<17))
+          m.uses[FT_INST_LONG_REPEAT_HIGH] = true;
+      }
     }
 
     if(x.instr_info_entries > MAX_INSTRUMENTS)
@@ -1229,11 +1277,16 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
     static const char *labels[] =
     {
-      "Name", "Type", "Length", "LoopStart", "LoopLen", "MIDI", "", "Vol", "Tr.", "Hold/", "Decay", "Fine"
+      "Name", "Type", "Hyb.", "Length", "LoopStart", "LoopLen", "MIDI", "", "Vol", "Tr.", "Hold/", "Decay", "Fine", "DefP", "Flg"
+    };
+    static const char *labels_long_repeat[] =
+    {
+      "Name", "Type", "Hyb.", "Start", "Long Start", "Length", "Long Length"
     };
 
     table::table<
       table::string<40>,
+      table::string<4>,
       table::string<4>,
       table::spacer,
       table::number<10>,
@@ -1247,7 +1300,20 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       table::number<4>,
       table::number<4>,
       table::number<5>,
-      table::number<4>>s_table;
+      table::number<4>,
+      table::number<4>,
+      table::number<3>>s_table;
+
+    table::table<
+      table::string<40>,
+      table::string<4>,
+      table::string<4>,
+      table::spacer,
+      table::number<7>,
+      table::number<11>,
+      table::spacer,
+      table::number<7>,
+      table::number<11>>lr_table;
 
     format::line();
     s_table.header("Instr.", labels);
@@ -1255,26 +1321,54 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     {
       MMD0sample     &sm = s.samples[i];
       MMD0instr      &si = m.instruments[i];
-      //MMD0synth      *ss = m.synths[i];
+      MMD0synth      *ss = m.synth_data[i];
       MMD3instr_ext  &sx = m.instruments_ext[i];
       MMD3instr_info &sxi = m.instruments_info[i];
 
       unsigned int length         = si.length;
-      unsigned int repeat_start   = sx.long_repeat_start ? sx.long_repeat_start : sm.repeat_start * 2;
-      unsigned int repeat_length  = sx.long_repeat_length ? sx.long_repeat_length : sm.repeat_length * 2;
+      unsigned int repeat_start   = m.use_long_repeat ? sx.long_repeat_start : sm.repeat_start * 2;
+      unsigned int repeat_length  = m.use_long_repeat ? sx.long_repeat_length : sm.repeat_length * 2;
       unsigned int midi_preset    = sx.long_midi_preset ? sx.long_midi_preset : sm.midi_preset;
       unsigned int midi_channel   = sm.midi_channel;
       unsigned int default_volume = sm.default_volume;
+      unsigned int default_pitch  = sx.default_pitch;
+      unsigned int instr_flags    = sx.instrument_flags;
       int transpose = sm.transpose;
 
       unsigned int hold  = sx.hold;
       unsigned int decay = sx.decay;
       int finetune = sx.finetune;
 
-      s_table.row(i + 1, sxi.name, MED_insttype_str(si.type), {},
+      const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
+
+      s_table.row(i + 1, sxi.name, MED_insttype_str(si.type), hyb, {},
        length, repeat_start, repeat_length, {},
        midi_channel, midi_preset, {},
-       default_volume, transpose, hold, decay, finetune);
+       default_volume, transpose, hold, decay, finetune, default_pitch, instr_flags);
+    }
+
+    if(m.uses[FT_INST_LONG_REPEAT_DIFF])
+    {
+      format::line();
+      lr_table.header("Instr.", labels_long_repeat);
+      for(unsigned int i = 0; i < s.num_instruments; i++)
+      {
+        MMD0sample     &sm = s.samples[i];
+        MMD0instr      &si = m.instruments[i];
+        MMD0synth      *ss = m.synth_data[i];
+        MMD3instr_ext  &sx = m.instruments_ext[i];
+        MMD3instr_info &sxi = m.instruments_info[i];
+
+        const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
+
+        if(sx.long_repeat_start == (uint32_t)(sm.repeat_start << 1) &&
+         sx.long_repeat_length == (uint32_t)(sm.repeat_length << 1))
+          continue;
+
+        lr_table.row(i + 1, sxi.name, MED_insttype_str(si.type), hyb, {},
+         sm.repeat_start << 1, sx.long_repeat_start, {},
+         sm.repeat_length << 1, sx.long_repeat_length);
+      }
     }
   }
 
