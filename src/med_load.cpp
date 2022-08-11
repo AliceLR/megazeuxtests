@@ -1010,6 +1010,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   /**
    * Instruments.
    */
+  trace("instruments");
   for(size_t i = 0; i < s.num_instruments; i++)
   {
     if(!m.instrument_offsets[i])
@@ -1021,11 +1022,14 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     MMD0instr &inst = m.instruments[i];
     inst.length = fget_u32be(fp);
     inst.type   = fget_s16be(fp);
+    trace("inst %zu length %zu type %d", i, (size_t)inst.length, inst.type);
 
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
       MMD0synth *syn = new MMD0synth;
       m.synth_data[i] = syn;
+
+      trace("synth %zu", i);
 
       syn->default_decay         = fgetc(fp);
       syn->reserved[0]           = fgetc(fp);
@@ -1039,16 +1043,24 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       syn->waveform_table_speed  = fgetc(fp);
       syn->num_waveforms         = fget_u16be(fp);
 
+      trace("synth %zu tables (vol: %d wf: %d)", i, syn->volume_table_length, syn->waveform_table_length);
+
       if(!fread(syn->volume_table, 128, 1, fp) ||
        !fread(syn->waveform_table, 128, 1, fp))
         return modutil::READ_ERROR;
 
-      for(int j = 0; j < 64; j++)
+      trace("synth %zu offsets (%d waveforms)", i, syn->num_waveforms);
+
+      for(unsigned j = 0; j < syn->num_waveforms; j++)
         syn->waveform_offsets[j] = fget_u32be(fp);
+
+      trace("synth %zu done", i);
 
       if(inst.type == I_HYBRID)
       {
         m.uses[FT_INST_SYNTH_HYBRID] = true;
+
+        trace("hybrid %zu ins 0", i);
 
         /* Get the size and type of the sample. */
         if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[0], SEEK_SET))
@@ -1058,6 +1070,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
         h_inst.length = fget_u32be(fp);
         h_inst.type   = fget_s16be(fp);
+        trace("hybrid %zu ins 0 length %zu type %d", i, (size_t)h_inst.length, h_inst.type);
         if(h_inst.type < 0)
           m.uses[FT_HYBRID_USES_SYNTH] = true; /* Shouldn't happen? */
         else
@@ -1110,6 +1123,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   /**
    * Expansion data.
    */
+  trace("expdata");
   if(h.expansion_offset && !fseek(fp, h.expansion_offset, SEEK_SET))
   {
     x.nextmod_offset       = fget_u32be(fp);

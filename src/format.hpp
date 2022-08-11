@@ -125,6 +125,9 @@ namespace format
     endline();
   }
 
+#define trace(str, ...) \
+  if(Config.trace) format::line(" trace", "%s:%d " str,  __FILE__, __LINE__, ##__VA_ARGS__);
+
   template<typename T, int N>
   static inline void uses(const T (&uses)[N], const char * const (&desc)[N])
   {

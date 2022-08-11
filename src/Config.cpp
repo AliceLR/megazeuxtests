@@ -31,6 +31,7 @@ ConfigInfo Config;
 const char ConfigInfo::COMMON_FLAGS[] =
   "Common flags:\n"
   "  -q[=N]    Suppress text output. N=1 enables (optional), N=0 disables (default).\n"
+  "  -v[=N]    Enable verbose output. N=1 enables (optional), N=0 disables (default).\n"
   "  -f=fmt... Filter by format loader extension and/or tag (see supported formats).\n"
   "            'fmt' can be a comma separated list or -f can be specified multiple\n"
   "            times to allow multiple formats.\n"
@@ -233,6 +234,15 @@ bool ConfigInfo::init(int *_argc, char **argv, bool (*handler)(const char *, voi
             return false;
 
           quiet = (value != 0);
+          continue;
+
+        /* Verbose/trace output. */
+        case 'v':
+          value = 1;
+          if(arg[2] == '=' && !parse_int(arg[1], arg + 3, &value))
+            return false;
+
+          trace = (value != 0);
           continue;
 
         /* Filter by format. */

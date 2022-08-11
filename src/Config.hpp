@@ -43,6 +43,7 @@ struct ConfigInfo final
   static constexpr int MAX_FORMAT_FILTERS = 32;
 
   bool quiet = false;
+  bool trace = false;
   bool dump_descriptions = false;
   bool dump_samples = false;
   bool dump_patterns = false;
