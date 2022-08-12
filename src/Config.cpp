@@ -38,6 +38,7 @@ const char ConfigInfo::COMMON_FLAGS[] =
   "  -a[=N]    Enable/disable all dump vars at a given level (if not provided, N=1).\n"
   "  -d[=N]    Dump description. N=1 (optional) enables, N=0 disables (default).\n"
   "  -s[=N]    Dump sample info. N=1 (optional) enables, N=0 disables (default).\n"
+  "            N=2 additionally dumps extended data (envelopes, MED synth programs).\n"
   "  -p[=N]    Dump patterns. N=1 (optional) enables, N=0 disables (default).\n"
   "            N=2 additionally dumps the entire pattern as raw data.\n"
   "  -H=...    Highlight data in pattern dump. Highlight string is in the format\n"
@@ -140,6 +141,7 @@ void ConfigInfo::set_dump_descriptions(int level)
 void ConfigInfo::set_dump_samples(int level)
 {
   dump_samples = (level >= 1);
+  dump_samples_extra = (level >= 2);
 }
 
 void ConfigInfo::set_dump_patterns(int level)

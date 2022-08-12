@@ -1168,12 +1168,12 @@ public:
         }
       }
 
-      if(m.num_volume_envelopes)
+      if(Config.dump_samples_extra && m.num_volume_envelopes)
       {
         print_envelopes("V.Env.", m.num_volume_envelopes, m.volume_envelopes);
       }
 
-      if(m.num_pan_envelopes)
+      if(Config.dump_samples_extra && m.num_pan_envelopes)
       {
         print_envelopes("P.Env.", m.num_pan_envelopes, m.pan_envelopes);
       }

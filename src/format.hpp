@@ -292,7 +292,8 @@ namespace format
   {
     LEFT  = (0<<0),
     RIGHT = (1<<0),
-    HEX   = (2<<0),
+    HEX   = (1<<1),
+    ZEROS = (1<<2),
   };
 
   struct spacer
@@ -362,17 +363,37 @@ namespace format
     {
       if(F & HEX)
       {
-        if(F & RIGHT)
-          fprintf(stderr, "%*" PRIx64 " ", N, (int64_t)value);
+        if(F & ZEROS)
+        {
+          if(F & RIGHT)
+            fprintf(stderr, "%0*" PRIx64 " ", N, (int64_t)value);
+          else
+            fprintf(stderr, "%-*" PRIx64 " ", N, (int64_t)value);
+        }
         else
-          fprintf(stderr, "%-*" PRIx64 " ", N, (int64_t)value);
+        {
+          if(F & RIGHT)
+            fprintf(stderr, "%*" PRIx64 " ", N, (int64_t)value);
+          else
+            fprintf(stderr, "%-*" PRIx64 " ", N, (int64_t)value);
+        }
       }
       else
       {
-        if(F & RIGHT)
-          fprintf(stderr, "%*" PRId64 " ", N, (int64_t)value);
+        if(F & ZEROS)
+        {
+          if(F & RIGHT)
+            fprintf(stderr, "%0*" PRId64 " ", N, (int64_t)value);
+          else
+            fprintf(stderr, "%-*" PRId64 " ", N, (int64_t)value);
+        }
         else
-          fprintf(stderr, "%-*" PRId64 " ", N, (int64_t)value);
+        {
+          if(F & RIGHT)
+            fprintf(stderr, "%*" PRId64 " ", N, (int64_t)value);
+          else
+            fprintf(stderr, "%-*" PRId64 " ", N, (int64_t)value);
+        }
       }
     }
   };

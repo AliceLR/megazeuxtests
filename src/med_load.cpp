@@ -277,6 +277,82 @@ static const char *MED_insttype_str(int t)
   return "???";
 }
 
+struct MED_cmd_info
+{
+  const char *cmd;
+  const char *description;
+  int params;
+};
+
+static const MED_cmd_info MED_bad_command =
+{
+  "???", "Unknown command", 0
+};
+
+static const MED_cmd_info *MED_volcommand_strs(uint8_t cmd)
+{
+  static const MED_cmd_info MED_volcommands[16] =
+  {
+    { "SPD",   "Volume sequence speed [#]",     1 },
+    { "WAI",   "Wait [#]",                      1 },
+    { "CHD",   "Change volume down [#]",        1 },
+    { "CHU",   "Change volume up [#]",          1 },
+    { "EN1",   "Envelope waveform [#]",         1 },
+    { "EN2",   "Envelope waveform (loop) [#]",  1 },
+    { "RES",   "Reset volume",                  0 },
+    { nullptr, nullptr, 0 },
+    { nullptr, nullptr, 0 },
+    { nullptr, nullptr, 0 },
+    { "JWS",   "Jump waveform sequence to [#]", 1 },
+    { "HLT",   "Halt sequence",                 0 },
+    { nullptr, nullptr, 0 },
+    { nullptr, nullptr, 0 },
+    { "JMP",   "Jump to [#]",                   1 },
+    { "END",   "End sequence",                  -1 },
+  };
+  static const MED_cmd_info set_volume = { " # ", "Set volume", 0 };
+
+  if(cmd >= 0xF0 && MED_volcommands[cmd - 0xF0].cmd)
+    return &MED_volcommands[cmd - 0xF0];
+
+  if(cmd >= 0x80)
+    return &MED_bad_command;
+
+  return &set_volume;
+}
+
+static const MED_cmd_info *MED_wfcommand_strs(uint8_t cmd)
+{
+  static const MED_cmd_info MED_wfcommands[16] =
+  {
+    { "SPD",   "Waveform sequence speed [#]",       1 },
+    { "WAI",   "Wait [#]",                          1 },
+    { "CHD",   "Change pitch down (period up) [#]", 1 },
+    { "CHU",   "Change pitch up (period down) [#]", 1 },
+    { "VBD",   "Vibrato depth [#]",                 1 },
+    { "VBS",   "Vibrato speed [#]",                 1 },
+    { "RES",   "Reset pitch",                       0 },
+    { "VWF",   "Vibrato waveform [#]",              1 },
+    { nullptr, nullptr, 0 },
+    { nullptr, nullptr, 0 },
+    { "JVS",   "Jump volume sequence to [#]",       1 },
+    { "HLT",   "Halt sequence",                     0 },
+    { "ARP",   "Arpeggio definition start [#...]",  0xFD },
+    { "ARE",   "Arpeggio definition end",           0 },
+    { "JMP",   "Jump to [#]",                       1 },
+    { "END",   "End sequence",                      -1 },
+  };
+  static const MED_cmd_info set_waveform = { " # ", "Set waveform", 0 };
+
+  if(cmd >= 0xF0 && MED_wfcommands[cmd - 0xF0].cmd)
+    return &MED_wfcommands[cmd - 0xF0];
+
+  if(cmd >= 0x80)
+    return &MED_bad_command;
+
+  return &set_waveform;
+}
+
 enum MMD0flags
 {
   F_FILTER_ON  = (1<<0),
@@ -375,13 +451,19 @@ struct MMD0instr
   /*   4 */ int16_t  type;
 };
 
+struct MMD0synthWF
+{
+  /*   0 */ uint16_t length; // Divided by 2.
+  /*   2 */ /* uint8_t data[]; */
+};
+
 /* Following fields are only present for synth instruments. */
 struct MMD0synth
 {
-  /*   6 */ uint8_t  default_decay;
+  /*   6 */ uint8_t  default_decay;        /* Used only when saving single instruments */
   /*   7 */ uint8_t  reserved[3];
-  /*  10 */ uint16_t hy_repeat_offset;
-  /*  12 */ uint16_t hy_repeat_length;
+  /*  10 */ uint16_t hy_repeat_start;      /* Used only when saving single instruments */
+  /*  12 */ uint16_t hy_repeat_length;     /* Used only when saving single instruments */
   /*  14 */ uint16_t volume_table_length;
   /*  16 */ uint16_t waveform_table_length;
   /*  18 */ uint8_t  volume_table_speed;
@@ -391,6 +473,7 @@ struct MMD0synth
   /* 150 */ uint8_t  waveform_table[128];
   /* 278 */ uint32_t waveform_offsets[64]; /* struct SynthWF * */
 
+  MMD0synthWF waveforms[64];
   /* Waveform 0 for hybrids is a sample. */
   MMD0instr hybrid_instrument;
 };
@@ -1027,6 +1110,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
       MMD0synth *syn = new MMD0synth;
+      MMD0instr &h_inst = syn->hybrid_instrument;
       m.synth_data[i] = syn;
 
       trace("synth %zu", i);
@@ -1035,7 +1119,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       syn->reserved[0]           = fgetc(fp);
       syn->reserved[1]           = fgetc(fp);
       syn->reserved[2]           = fgetc(fp);
-      syn->hy_repeat_offset      = fget_u16be(fp);
+      syn->hy_repeat_start       = fget_u16be(fp);
       syn->hy_repeat_length      = fget_u16be(fp);
       syn->volume_table_length   = fget_u16be(fp);
       syn->waveform_table_length = fget_u16be(fp);
@@ -1054,23 +1138,32 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       for(unsigned j = 0; j < syn->num_waveforms; j++)
         syn->waveform_offsets[j] = fget_u32be(fp);
 
+      for(unsigned j = 0; j < syn->num_waveforms; j++)
+      {
+        trace("synth %zu waveform %u", i, j);
+        if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[j], SEEK_SET))
+          return modutil::SEEK_ERROR;
+
+        if(inst.type == I_HYBRID && j == 0)
+        {
+          /* Get the size and type of the sample. */
+          h_inst.length = fget_u32be(fp);
+          h_inst.type   = fget_s16be(fp);
+          trace("hybrid %zu waveform 0 length %zu type %d", i, (size_t)h_inst.length, h_inst.type);
+        }
+        else
+        {
+          syn->waveforms[j].length = fget_u16be(fp);
+          trace("synth %zu waveform %u length %u", i, j, syn->waveforms[j].length << 1);
+        }
+      }
+
       trace("synth %zu done", i);
 
       if(inst.type == I_HYBRID)
       {
         m.uses[FT_INST_SYNTH_HYBRID] = true;
 
-        trace("hybrid %zu ins 0", i);
-
-        /* Get the size and type of the sample. */
-        if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[0], SEEK_SET))
-          return modutil::SEEK_ERROR;
-
-        MMD0instr &h_inst = syn->hybrid_instrument;
-
-        h_inst.length = fget_u32be(fp);
-        h_inst.type   = fget_s16be(fp);
-        trace("hybrid %zu ins 0 length %zu type %d", i, (size_t)h_inst.length, h_inst.type);
         if(h_inst.type < 0)
           m.uses[FT_HYBRID_USES_SYNTH] = true; /* Shouldn't happen? */
         else
@@ -1297,6 +1390,10 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     {
       "Name", "Type", "Hyb.", "Start", "Long Start", "Length", "Long Length"
     };
+    static const char *labels_synths[] =
+    {
+      "Name", "Type", "Hyb.", "#WFs", "VolLen", "VolSpd", "WFLen", "WFSpd"
+    };
 
     table::table<
       table::string<40>,
@@ -1328,6 +1425,19 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       table::spacer,
       table::number<7>,
       table::number<11>>lr_table;
+
+    table::table<
+      table::string<40>,
+      table::string<4>,
+      table::string<4>,
+      table::spacer,
+      table::number<4>,
+      table::spacer,
+      table::number<6>,
+      table::number<6>,
+      table::spacer,
+      table::number<6>,
+      table::number<6>>synth_table;
 
     format::line();
     s_table.header("Instr.", labels);
@@ -1382,6 +1492,112 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         lr_table.row(i + 1, sxi.name, MED_insttype_str(si.type), hyb, {},
          sm.repeat_start << 1, sx.long_repeat_start, {},
          sm.repeat_length << 1, sx.long_repeat_length);
+      }
+    }
+
+    if(m.uses[FT_INST_SYNTH] || m.uses[FT_INST_SYNTH_HYBRID])
+    {
+      format::line();
+      synth_table.header("Instr.", labels_synths);
+      for(unsigned int i = 0; i < s.num_instruments; i++)
+      {
+        MMD0instr      &si = m.instruments[i];
+        MMD0synth      *ss = m.synth_data[i];
+        MMD3instr_info &sxi = m.instruments_info[i];
+
+        const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
+
+        if(si.type >= 0)
+          continue;
+
+        synth_table.row(i + 1, sxi.name, MED_insttype_str(si.type), hyb, {},
+         ss->num_waveforms, {},
+         ss->volume_table_length, ss->volume_table_speed, {},
+         ss->waveform_table_length, ss->waveform_table_speed);
+      }
+    }
+  }
+
+  if(Config.dump_samples_extra)
+  {
+    namespace table = format::table;
+
+    static const char *labels_program[] =
+    {
+      "#", "Command", "Description"
+    };
+    static const char *labels_waveform[] =
+    {
+      "Offset", "Abs.Offset", "Length"
+    };
+
+    table::table<
+      table::number<2,table::RIGHT|table::HEX|table::ZEROS>,
+      table::string<8>,
+      table::string<40>> program_table;
+
+    table::table<
+      table::number<10>,
+      table::number<10>,
+      table::number<10>> waveform_table;
+
+    for(unsigned int i = 0; i < s.num_instruments; i++)
+    {
+      MMD0instr      &si = m.instruments[i];
+      MMD0synth      *ss = m.synth_data[i];
+      MMD3instr_info &sxi = m.instruments_info[i];
+
+      const MED_cmd_info *cmd = nullptr;
+      unsigned int j;
+      int params;
+
+      if(si.type >= 0)
+        continue;
+
+      format::endline();
+      format::line("Synth", "%02x : %s", i + 1, sxi.name);
+
+      format::line();
+      program_table.header("Volume", labels_program);
+      for(j = 0, params = 0; j < ss->volume_table_length && params >= 0; j++)
+      {
+        uint8_t val = ss->volume_table[j];
+        if(params == 0 || (cmd->params >= 0x80 && cmd->params == val))
+        {
+          cmd = MED_volcommand_strs(val);
+          params = cmd->params;
+          program_table.row(j, val, cmd->cmd, cmd->description);
+        }
+        else
+          program_table.row(j, val, "", ""), params--;
+      }
+
+      params = 0;
+      format::line();
+      program_table.header("WF    ", labels_program);
+      for(j = 0, params = 0; j < ss->waveform_table_length && params >= 0; j++)
+      {
+        uint8_t val = ss->waveform_table[j];
+        if(params == 0 || (cmd->params >= 0x80 && cmd->params == val))
+        {
+          cmd = MED_wfcommand_strs(val);
+          params = cmd->params;
+          program_table.row(j, val, cmd->cmd, cmd->description);
+        }
+        else
+          program_table.row(j, val, "", ""), params--;
+      }
+
+      if(!ss->num_waveforms)
+        continue;
+
+      format::line();
+      waveform_table.header("WFs   ", labels_waveform);
+      for(j = 0; j < ss->num_waveforms; j++)
+      {
+        uint32_t offset = m.instrument_offsets[i] + ss->waveform_offsets[j];
+        uint32_t length = (si.type == I_HYBRID && j == 0) ? ss->hybrid_instrument.length : ss->waveforms[j].length << 1;
+        waveform_table.row(j, ss->waveform_offsets[j], offset, length);
       }
     }
   }
