@@ -103,6 +103,7 @@ static void check_module(FILE *fp)
       if(is_loader_filtered(loader))
         continue;
 
+      trace("%-4s %-8s %s", loader->ext, loader->tag, loader->name);
       err = loader->load(fp, file_length);
       if(err == modutil::FORMAT_ERROR)
       {
