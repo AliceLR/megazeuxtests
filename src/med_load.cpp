@@ -47,6 +47,7 @@ static int num_mmdc;
 
 static const int MAX_BLOCKS      = 256;
 static const int MAX_INSTRUMENTS = 63;
+static const int MAX_WAVEFORMS   = 64;
 
 /* MMDC is effectively MMD0 but with packed pattern data. */
 static const int MMDC_VERSION    = -1;
@@ -232,7 +233,7 @@ enum MMD0instrtype
   I_EXT     = 7,
 
   /* Flags */
-  I_TYPEMASK = 0x08,
+  I_TYPEMASK = 0x07,
   I_S16      = 0x10,
   I_STEREO   = 0x20,
   I_MD16     = 0x18,
@@ -1096,16 +1097,23 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   trace("instruments");
   for(size_t i = 0; i < s.num_instruments; i++)
   {
+    trace("inst %zu offset is %zu", i+1, (size_t)m.instrument_offsets[i]);
     if(!m.instrument_offsets[i])
       continue;
 
     if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
       return modutil::SEEK_ERROR;
 
+    if(feof(fp))
+    {
+      format::warning("skipping instrument %zu past file end", i+1);
+      continue;
+    }
+
     MMD0instr &inst = m.instruments[i];
     inst.length = fget_u32be(fp);
     inst.type   = fget_s16be(fp);
-    trace("inst %zu length %zu type %d", i, (size_t)inst.length, inst.type);
+    trace("inst %zu length %zu type %d", i+1, (size_t)inst.length, inst.type);
 
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
@@ -1113,7 +1121,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       MMD0instr &h_inst = syn->hybrid_instrument;
       m.synth_data[i] = syn;
 
-      trace("synth %zu", i);
+      trace("synth %zu", i+1);
 
       syn->default_decay         = fgetc(fp);
       syn->reserved[0]           = fgetc(fp);
@@ -1127,38 +1135,41 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       syn->waveform_table_speed  = fgetc(fp);
       syn->num_waveforms         = fget_u16be(fp);
 
-      trace("synth %zu tables (vol: %d wf: %d)", i, syn->volume_table_length, syn->waveform_table_length);
+      trace("synth %zu tables (vol: %d wf: %d)", i+1, syn->volume_table_length, syn->waveform_table_length);
 
       if(!fread(syn->volume_table, 128, 1, fp) ||
        !fread(syn->waveform_table, 128, 1, fp))
         return modutil::READ_ERROR;
 
-      trace("synth %zu offsets (%d waveforms)", i, syn->num_waveforms);
+      trace("synth %zu offsets (%d waveforms)", i+1, syn->num_waveforms);
 
-      for(unsigned j = 0; j < syn->num_waveforms; j++)
+      for(unsigned j = 0; j < syn->num_waveforms && j < MAX_WAVEFORMS; j++)
         syn->waveform_offsets[j] = fget_u32be(fp);
 
-      for(unsigned j = 0; j < syn->num_waveforms; j++)
+      for(unsigned j = 0; j < syn->num_waveforms && j < MAX_WAVEFORMS; j++)
       {
-        trace("synth %zu waveform %u", i, j);
+        trace("synth %zu waveform %u", i+1, j);
         if(fseek(fp, m.instrument_offsets[i] + syn->waveform_offsets[j], SEEK_SET))
-          return modutil::SEEK_ERROR;
+        {
+          format::warning("seek error, skipping synth %zu waveform %u", i+1, j);
+          continue;
+        }
 
         if(inst.type == I_HYBRID && j == 0)
         {
           /* Get the size and type of the sample. */
           h_inst.length = fget_u32be(fp);
           h_inst.type   = fget_s16be(fp);
-          trace("hybrid %zu waveform 0 length %zu type %d", i, (size_t)h_inst.length, h_inst.type);
+          trace("hybrid %zu waveform 0 length %zu type %d", i+1, (size_t)h_inst.length, h_inst.type);
         }
         else
         {
           syn->waveforms[j].length = fget_u16be(fp);
-          trace("synth %zu waveform %u length %u", i, j, syn->waveforms[j].length << 1);
+          trace("synth %zu waveform %u length %u", i+1, j, syn->waveforms[j].length << 1);
         }
       }
 
-      trace("synth %zu done", i);
+      trace("synth %zu done", i+1);
 
       if(inst.type == I_HYBRID)
       {
@@ -1209,9 +1220,6 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         m.uses[FT_INST_STEREO] = true;
     }
   }
-
-  if(feof(fp))
-    return modutil::READ_ERROR;
 
   /**
    * Expansion data.
@@ -1593,7 +1601,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
       format::line();
       waveform_table.header("WFs   ", labels_waveform);
-      for(j = 0; j < ss->num_waveforms; j++)
+      for(j = 0; j < ss->num_waveforms && j < MAX_WAVEFORMS; j++)
       {
         uint32_t offset = m.instrument_offsets[i] + ss->waveform_offsets[j];
         uint32_t length = (si.type == I_HYBRID && j == 0) ? ss->hybrid_instrument.length : ss->waveforms[j].length << 1;
