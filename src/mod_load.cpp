@@ -232,26 +232,109 @@ struct MOD_data
   }
 };
 
-static modutil::error MOD_ST_check(MOD_data &m)
+template<int N>
+static modutil::error MOD_ST_check_name(const char (&name)[N])
+{
+  for(int i = 0; i < N; i++)
+  {
+    if(name[i] == '\0')
+      break;
+    if(i == 0) // Skip position 0- there is junk here in multiple modules.
+      continue;
+    if(name[i] == 0x0e) // Soundtracker/- unknown/ata.mod
+      continue;
+    if(name[i] >= 32 && name[i] <= 126)
+      continue;
+
+    format::warning("ST mod check: position %d bad: %-*s", i, N, name);
+    return modutil::FORMAT_ERROR;
+  }
+  return modutil::SUCCESS;
+};
+
+static modutil::error MOD_ST_check(MOD_data &m, FILE *fp)
 {
   MOD_header &h = m.header;
+  int pattern_errors = 0;
+
+  if(MOD_ST_check_name(m.name))
+  {
+    trace("ST mod check: bad module name");
+    return modutil::FORMAT_ERROR;
+  }
+
   // Try to filter out ST mods based on sample data bounding.
+  trace("ST mod check: instrument parameters");
   for(int i = 0; i < m.type_instruments; i++)
   {
     MOD_sample &ins = h.samples[i];
-    uint16_t sample_length = ins.length;
 
-    if(ins.finetune || ins.volume > 64 || sample_length > 32768)
+    if(ins.finetune > 0xf || ins.volume > 64 || ins.length > 65536)
+    {
+      trace("ST mod check: bad instrument %d: finetune %02xh vol %02xh len %04xh",
+       i+1, ins.finetune, ins.volume, ins.length);
       return modutil::FORMAT_ERROR;
+    }
+    if(MOD_ST_check_name(ins.name))
+    {
+      trace("ST mod check: bad instrument %d name", i);
+      return modutil::FORMAT_ERROR;
+    }
   }
   // Make sure the order count and pattern numbers aren't nonsense.
   if(!h.num_orders || h.num_orders > 128)
+  {
+    trace("ST mod check: bad order count %d", h.num_orders);
     return modutil::FORMAT_ERROR;
+  }
 
+  trace("ST mod check: order list (length %d)", h.num_orders);
+  uint16_t num_patterns = 0;
   for(int i = 0; i < 128; i++)
+  {
     if(h.orders[i] >= 0x80)
+    {
+      trace("ST mod check: bad pattern '%d' at order list %d", h.orders[i], i);
       return modutil::FORMAT_ERROR;
+    }
+    if(h.orders[i] >= num_patterns)
+      num_patterns = h.orders[i] + 1;
+  }
 
+  // Check patterns too.
+  trace("ST mod check: patterns (count %d)", num_patterns);
+  uint8_t data[1024];
+  long pos = ftell(fp);
+  for(int i = 0; i < num_patterns; i++)
+  {
+    if(!fread(data, 1024, 1, fp))
+    {
+      trace("ST mod check: failed to read pattern %d", i);
+      return modutil::FORMAT_ERROR;
+    }
+
+    const uint8_t *current = data;
+    for(int j = 0; j < 256; j++, current += 4)
+    {
+      uint8_t smp = (current[0] & 0xF0) | ((current[2] & 0xF0) >> 4);
+
+      if(smp > 15)
+      {
+        trace("ST mod check: bad instrument number %d at pattern %d channel %d row %d",
+         smp, i, j&3, j>>2);
+        pattern_errors++;
+      }
+    }
+  }
+  fseek(fp, pos, SEEK_SET);
+
+  if(pattern_errors > 16)
+  {
+    trace("ST mod check: too many pattern errors, failing: %d", pattern_errors);
+    return modutil::FORMAT_ERROR;
+  }
+
+  trace("ST mod check: this is probably an ST module");
   return modutil::SUCCESS;
 }
 
@@ -454,7 +537,7 @@ static modutil::error MOD_read(FILE *fp, long file_length)
   // If this was "detected" as Soundtracker, make sure it actually is one...
   if(m.type == MOD_SOUNDTRACKER)
   {
-    ret = MOD_ST_check(m);
+    ret = MOD_ST_check(m, fp);
     if(ret != modutil::SUCCESS)
       return ret;
 
@@ -634,7 +717,10 @@ static modutil::error MOD_read(FILE *fp, long file_length)
   if(TYPES[m.type].print_channel_count)
     format::line("Type",   "%s %4.4s %d ch.", TYPES[m.type].source, h.magic, m.type_channels);
   else
+  if(m.type != MOD_SOUNDTRACKER)
     format::line("Type",   "%s %4.4s", TYPES[m.type].source, h.magic);
+  else
+    format::line("Type",   "%s", TYPES[m.type].source);
   format::line("Patterns", "%u", m.pattern_count);
   format::line("Orders",   "%u (0x%02x)", h.num_orders, h.restart_byte);
   format::line("Filesize", "%zd", m.real_length);
