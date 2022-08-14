@@ -593,6 +593,7 @@ struct MMD0
   MMD3instr_info instruments_info[MAX_INSTRUMENTS];
   MMD0note      *pattern_data[MAX_BLOCKS];
   MMD0synth     *synth_data[MAX_INSTRUMENTS];
+  char          *songname;
   uint32_t      *pattern_highlight[MAX_BLOCKS];
   uint32_t       pattern_offsets[MAX_BLOCKS];
   uint32_t       instrument_offsets[MAX_INSTRUMENTS];
@@ -609,6 +610,8 @@ struct MMD0
     }
     for(int i = 0; i < arraysize(synth_data); i++)
       delete synth_data[i];
+
+    delete songname;
   }
 
   bool highlight(int pattern, int row)
@@ -1102,11 +1105,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       continue;
 
     if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
-      return modutil::SEEK_ERROR;
-
-    if(feof(fp))
     {
-      format::warning("skipping instrument %zu past file end", i+1);
+      format::warning("skipping instrument %zu with invalid offset %zu", i+1, (size_t)m.instrument_offsets[i]);
       continue;
     }
 
@@ -1114,6 +1114,11 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     inst.length = fget_u32be(fp);
     inst.type   = fget_s16be(fp);
     trace("inst %zu length %zu type %d", i+1, (size_t)inst.length, inst.type);
+    if(feof(fp))
+    {
+      format::warning("skipping instrument %zu past file end", i+1);
+      continue;
+    }
 
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
@@ -1253,6 +1258,26 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     if(feof(fp))
       return modutil::READ_ERROR;
 
+    if(x.songname_offset && x.songname_length && x.songname_length < 256)
+    {
+      trace("songname %08zx length %zu", (size_t)x.songname_offset, (size_t)x.songname_length);
+      if(!fseek(fp, x.songname_offset, SEEK_SET))
+      {
+        m.songname = new char[x.songname_length + 1]{};
+        if(fread(m.songname, x.songname_length, 1, fp))
+        {
+          strip_module_name(m.songname, x.songname_length);
+        }
+        else
+        {
+          format::warning("failed to load songname");
+          m.songname[0] = '\0';
+        }
+      }
+      else
+        format::warning("failed to seek to songname");
+    }
+
     if(x.sample_ext_entries > MAX_INSTRUMENTS)
       return modutil::MED_TOO_MANY_INSTR;
 
@@ -1357,6 +1382,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   if(h.num_extra_songs && x.nextmod_offset)
     m.uses[FT_MULTIPLE_SONGS] = true;
 
+  if(m.songname)
+    format::line("Name",   "%s", m.songname);
   format::line("Type",     "%4.4s", h.magic);
   format::line("Size",     "%u", h.file_length);
   format::line("Instr.",   "%u", s.num_instruments);
@@ -1515,7 +1542,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
         const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
 
-        if(si.type >= 0)
+        if(si.type >= 0 || !ss)
           continue;
 
         synth_table.row(i + 1, sxi.name, MED_insttype_str(si.type), hyb, {},
