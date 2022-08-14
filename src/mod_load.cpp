@@ -111,6 +111,7 @@ enum MOD_features
   FT_SAMPLE_ADPCM,
   FT_RETRIGGER_NO_NOTE,
   FT_RETRIGGER_ZERO,
+  FT_SOUNDTRACKER_JUNK_ORDERS,
   NUM_FEATURES
 };
 
@@ -119,6 +120,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "S:ADPCM",
   "RetrigNoNote",
   "Retrig0",
+  "ST:JunkOrd",
 };
 
 enum MOD_effects
@@ -246,7 +248,7 @@ static modutil::error MOD_ST_check_name(const char (&name)[N])
     if(name[i] >= 32 && name[i] <= 126)
       continue;
 
-    format::warning("ST mod check: position %d bad: %-*s", i, N, name);
+    trace("ST mod check: position %d bad: %-*s", i, N, name);
     return modutil::FORMAT_ERROR;
   }
   return modutil::SUCCESS;
@@ -255,6 +257,7 @@ static modutil::error MOD_ST_check_name(const char (&name)[N])
 static modutil::error MOD_ST_check(MOD_data &m, FILE *fp)
 {
   MOD_header &h = m.header;
+  long samples_length = 0;
   int pattern_errors = 0;
 
   if(MOD_ST_check_name(m.name))
@@ -268,6 +271,7 @@ static modutil::error MOD_ST_check(MOD_data &m, FILE *fp)
   for(int i = 0; i < m.type_instruments; i++)
   {
     MOD_sample &ins = h.samples[i];
+    samples_length += ins.length;
 
     if(ins.finetune > 0xf || ins.volume > 64 || ins.length > 65536)
     {
@@ -290,7 +294,8 @@ static modutil::error MOD_ST_check(MOD_data &m, FILE *fp)
 
   trace("ST mod check: order list (length %d)", h.num_orders);
   uint16_t num_patterns = 0;
-  for(int i = 0; i < 128; i++)
+  uint16_t num_patterns_st = 0;
+  for(unsigned i = 0; i < 128; i++)
   {
     if(h.orders[i] >= 0x80)
     {
@@ -298,13 +303,35 @@ static modutil::error MOD_ST_check(MOD_data &m, FILE *fp)
       return modutil::FORMAT_ERROR;
     }
     if(h.orders[i] >= num_patterns)
+    {
       num_patterns = h.orders[i] + 1;
+      if(i < h.num_orders)
+        num_patterns_st = num_patterns;
+    }
+  }
+
+  // Some Soundtracker modules contain unused values in
+  // the order list. These fail to load with pattern errors when
+  // those values are counted as patterns like newer MODs rely on.
+  // See the Bad Dudes and Operation Wolf modules by Jean Baudlot.
+  long pos = ftell(fp);
+  long file_length = get_file_length(fp);
+  long total_length = pos + samples_length + 1024 * num_patterns;
+  long total_length_st = pos + samples_length + 1024 * num_patterns_st;
+
+  trace("ST mod check: file length %ld; calculated %ld; calculated (ignore extra) %ld",
+   file_length, total_length, total_length_st);
+
+  if(file_length == total_length_st && file_length != total_length)
+  {
+    trace("ST mod check: this looks like ST with junk orders; counting used orders only");
+    num_patterns = num_patterns_st;
+    m.uses[FT_SOUNDTRACKER_JUNK_ORDERS] = true;
   }
 
   // Check patterns too.
   trace("ST mod check: patterns (count %d)", num_patterns);
   uint8_t data[1024];
-  long pos = ftell(fp);
   for(int i = 0; i < num_patterns; i++)
   {
     if(!fread(data, 1024, 1, fp))
@@ -624,9 +651,14 @@ static modutil::error MOD_read(FILE *fp, long file_length)
    * (observed with converting 'final vision.669' to .WOW). This
    * is consistent with how libmodplug and libxmp determine the
    * pattern count as well (including the 0x80 check).
+   *
+   * Note some Soundtracker modules have unused values
+   * in the order list, and these should NOT be counted.
+   * See the Bad Dudes and Operation Wolf modules by Jean Baudlot.
    */
+  uint8_t max_order = m.uses[FT_SOUNDTRACKER_JUNK_ORDERS] ? h.num_orders : 128;
   uint8_t max_pattern = 0;
-  for(i = 0; i < 128; i++)
+  for(i = 0; i < max_order; i++)
   {
     if(h.orders[i] < 0x80 && h.orders[i] > max_pattern)
       max_pattern = h.orders[i];
