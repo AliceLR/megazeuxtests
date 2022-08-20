@@ -27,6 +27,19 @@
 
 #include "modutil.hpp"
 
+enum MTM_features
+{
+  FT_E_SPEED,
+  FT_E_TEMPO,
+  NUM_FEATURES
+};
+
+static constexpr const char *FEATURE_STR[NUM_FEATURES] =
+{
+  "E:Speed",
+  "E:Tempo",
+};
+
 static int total_mtms = 0;
 
 
@@ -34,6 +47,45 @@ static const int MAX_CHANNELS = 32;
 //static const int MAX_TRACKS = 8191;
 static const int MAX_ORDERS = 256;
 static const int MAX_SAMPLES = 255;
+
+enum MTM_effects
+{
+  E_ARPEGGIO,
+  E_PORTAMENTO_UP,
+  E_PORTAMENTO_DOWN,
+  E_TONEPORTA,
+  E_VIBRATO,
+  E_TONEPORTA_VOLSLIDE,
+  E_VIBRATO_VOLSLIDE,
+  E_TREMOLO,
+  E_UNUSED_8,
+  E_OFFSET,
+  E_VOLSLIDE,
+  E_JUMP,
+  E_VOLUME,
+  E_BREAK,
+  E_EXTENDED,
+  E_SPEED,
+};
+enum MTM_effects_extended
+{
+  EX_UNUSED_0, // filter
+  EX_FINE_PORTAMENTO_UP,
+  EX_FINE_PORTAMENTO_DOWN,
+  EX_UNUSED_3, // glissando control
+  EX_UNUSED_4, // vibrato waveform
+  EX_FINETUNE,
+  EX_UNUSED_6, // loop
+  EX_UNUSED_7, // tremolo waveform
+  EX_PAN,
+  EX_RETRIGGER,
+  EX_FINE_VOLSLIDE_UP,
+  EX_FINE_VOLSLIDE_DOWN,
+  EX_NOTE_CUT,
+  EX_NOTE_DELAY,
+  EX_PATTERN_DELAY,
+  EX_UNUSED_F, // invert loop
+};
 
 struct MTM_event
 {
@@ -99,6 +151,7 @@ struct MTM_data
   unsigned int num_patterns;
   unsigned int num_orders;
   char name[21];
+  bool uses[NUM_FEATURES];
 
   ~MTM_data()
   {
@@ -200,12 +253,21 @@ public:
     for(size_t i = 1; i < m.num_tracks; i++)
     {
       MTM_event *current = m.tracks[i];
-      for(size_t row = 0; row < h.num_rows; row++)
+      for(size_t row = 0; row < h.num_rows; row++, current++)
       {
         uint8_t a = fgetc(fp);
         uint8_t b = fgetc(fp);
         uint8_t c = fgetc(fp);
-        *(current++) = MTM_event(a, b, c);
+        *current = MTM_event(a, b, c);
+
+        switch(current->effect)
+        {
+          case E_SPEED:
+            if(current->param >= 0x20)
+              m.uses[FT_E_TEMPO] = true;
+            else
+              m.uses[FT_E_SPEED] = true;
+        }
       }
       if(feof(fp))
         return modutil::READ_ERROR;
@@ -226,7 +288,25 @@ public:
       if(!fread(m.comment, h.comment_length, 1, fp))
         return modutil::READ_ERROR;
 
-      m.comment[h.comment_length] = '\0';
+      /* MultiTracker nul pads 40-byte lines... */
+      unsigned last_line = 0;
+      for(unsigned i = 0; i + 40 <= h.comment_length; i += 40)
+        if(m.comment[i] != '\0')
+          last_line = i + 40;
+
+      unsigned j = 0;
+      for(unsigned line = 0; line < last_line; line += 40)
+      {
+        for(unsigned i = 0; i < 39; i++)
+        {
+          if(m.comment[line + i] == '\0')
+            break;
+          m.comment[j++] = m.comment[line + i];
+        }
+        m.comment[j++] = '\n';
+      }
+      h.comment_length = j;
+      m.comment[j] = '\0';
     }
 
     /* Sample data - ignore. */
@@ -241,7 +321,8 @@ public:
     format::line("Tracks",   "%u", m.num_tracks);
     format::line("Patterns", "%u", m.num_patterns);
     format::line("Orders",   "%u", m.num_orders);
-    format::description("Desc.", m.comment, h.comment_length);
+    format::uses(m.uses, FEATURE_STR);
+    format::description<40>("Desc.", m.comment, h.comment_length);
 
     if(Config.dump_samples)
     {
