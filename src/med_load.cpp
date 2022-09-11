@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <memory>
+#include <vector>
 
 #include "modutil.hpp"
 
@@ -58,6 +60,8 @@ enum MED_features
   FT_MULTIPLE_SONGS,
   FT_VARIABLE_TRACKS,
   FT_OVER_256_ROWS,
+  FT_NOTE_HOLD,
+  FT_NOTE_1,
   FT_OCTAVE_4,
   FT_OCTAVE_8,
   FT_TRANSPOSE_SONG,
@@ -68,6 +72,7 @@ enum MED_features
   FT_FILTER_ON,
   FT_MOD_SLIDES,
   FT_TICK_0_SLIDES,
+  FT_COMMAND_PAGES,
   FT_CMD_PORTAMENTO_VOLSLIDE,
   FT_CMD_VIBRATO_VOLSLIDE,
   FT_CMD_TREMOLO,
@@ -118,6 +123,7 @@ enum MED_features
   FT_INST_IFFOCT,
   FT_INST_SYNTH,
   FT_INST_SYNTH_HYBRID,
+  FT_INST_SYNTH_WF_GT_1,
   FT_INST_EXT,
   FT_INST_S16,
   FT_INST_STEREO,
@@ -140,6 +146,8 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   ">1Songs",
   "VarTracks",
   ">256Rows",
+  "NoteHold",
+  "Note1",
   "Oct4-7",
   "Oct8-A",
   "STrans",
@@ -150,6 +158,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "FilterOn",
   "ModSlide",
   "Tick0Slide",
+  ">1CmdPages",
   "E:PortVol",
   "E:VibVol",
   "E:Tremolo",
@@ -200,6 +209,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "I:IFFOct",
   "I:Synth",
   "I:Hybrid",
+  "I:WF>1",
   "I:Ext",
   "I:S16",
   "I:Stereo",
@@ -433,17 +443,68 @@ struct MMD0song
   /* 787 */ uint8_t    num_instruments;
 };
 
+struct MMD0note
+{
+  uint8_t note;
+  uint8_t instrument;
+  uint8_t effect;
+  uint8_t param;
+
+  void mmd0(int a, int b, int c)
+  {
+    note       = (a & 0x3F);
+    instrument = ((a & 0x80) >> 3) | ((a & 0x40) >> 1) | ((b & 0xF0) >> 4); // WTF?
+    effect     = (b & 0x0F);
+    param      = c;
+  }
+
+  void mmd1(int a, int b, int c, int d)
+  {
+    note       = (a & 0x7F);
+    instrument = (b & 0x3F);
+    effect     = c;
+    param      = d;
+  }
+};
+
 struct MMD1block
 {
   uint16_t num_tracks;       // uint8_t for MMD0
   uint16_t num_rows;         // uint8_t for MMD0 (stored as length - 1 for both)
   uint32_t blockinfo_offset; // MMD1 only.
 
-  // These are from the blockinfo struct.
+  // These are from the BlockInfo struct.
   uint32_t  highlight_offset;
   uint32_t  block_name_offset;
   uint32_t  block_name_length;
+  uint32_t  pagetable_offset;
   //uint32_t  reserved[6]; // just ignore these lol
+
+  // These are from the BlockCmdPageTable struct.
+  uint16_t  num_pages;
+  //uint16_t  reserved;
+
+  struct CommandPage
+  {
+    uint32_t offset = 0;
+    bool loaded = false;
+    std::vector<uint8_t> data;
+  };
+
+  std::vector<MMD0note>    events;
+  std::vector<uint32_t>    highlight;
+  std::vector<CommandPage> page;
+
+  bool is_highlighted(unsigned row)
+  {
+    if(highlight.size() > row / 32)
+    {
+      uint32_t t = highlight[row / 32];
+      uint32_t m = 1 << (row & 31);
+      return (t & m) != 0;
+    }
+    return false;
+  }
 };
 
 struct MMD0instr
@@ -558,30 +619,6 @@ struct MMD0head
   /* 51 */ uint8_t  num_extra_songs;
 };
 
-struct MMD0note
-{
-  uint8_t note;
-  uint8_t instrument;
-  uint8_t effect;
-  uint8_t param;
-
-  void mmd0(int a, int b, int c)
-  {
-    note       = (a & 0x3F);
-    instrument = ((a & 0x80) >> 3) | ((a & 0x40) >> 1) | ((b & 0xF0) >> 4); // WTF?
-    effect     = (b & 0x0F);
-    param      = c;
-  }
-
-  void mmd1(int a, int b, int c, int d)
-  {
-    note       = (a & 0x7F);
-    instrument = (b & 0x3F);
-    effect     = c;
-    param      = d;
-  }
-};
-
 struct MMD0
 {
   MMD0head       header;
@@ -591,39 +628,14 @@ struct MMD0
   MMD0instr      instruments[MAX_INSTRUMENTS];
   MMD3instr_ext  instruments_ext[MAX_INSTRUMENTS];
   MMD3instr_info instruments_info[MAX_INSTRUMENTS];
-  MMD0note      *pattern_data[MAX_BLOCKS];
-  MMD0synth     *synth_data[MAX_INSTRUMENTS];
-  char          *songname;
-  uint32_t      *pattern_highlight[MAX_BLOCKS];
   uint32_t       pattern_offsets[MAX_BLOCKS];
   uint32_t       instrument_offsets[MAX_INSTRUMENTS];
   uint32_t       num_tracks;
   bool           use_long_repeat;
   bool           uses[NUM_FEATURES];
 
-  ~MMD0()
-  {
-    for(int i = 0; i < arraysize(pattern_data); i++)
-    {
-      delete[] pattern_data[i];
-      delete[] pattern_highlight[i];
-    }
-    for(int i = 0; i < arraysize(synth_data); i++)
-      delete synth_data[i];
-
-    delete songname;
-  }
-
-  bool highlight(int pattern, int row)
-  {
-    if(pattern_highlight[pattern])
-    {
-      uint32_t t = pattern_highlight[pattern][row / 32];
-      uint32_t m = 1 << (row & 31);
-      return (t & m) != 0;
-    }
-    return false;
-  }
+  std::vector<char>          songname;
+  std::unique_ptr<MMD0synth> synth_data[MAX_INSTRUMENTS];
 };
 
 static modutil::error read_mmd(FILE *fp, int mmd_version)
@@ -767,8 +779,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       continue;
     }
 
-    MMD0note *pat = new MMD0note[b.num_tracks * b.num_rows];
-    m.pattern_data[i] = pat;
+    b.events.resize(b.num_tracks * b.num_rows, {});
+    MMD0note *pat = b.events.data();
 
     MMD0note *current = pat;
     if(mmd_version != MMDC_VERSION)
@@ -798,9 +810,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     else
     {
       size_t tmp_size = (size_t)b.num_rows * b.num_tracks * 3;
-      uint8_t *tmp = new uint8_t[tmp_size]{};
-      uint8_t *pos = tmp;
-      uint8_t *end = tmp + tmp_size;
+      std::vector<uint8_t> tmp(tmp_size);
+      uint8_t *pos = tmp.data();
+      uint8_t *end = pos + tmp_size;
 
       while(pos < end)
       {
@@ -825,7 +837,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
         pos += pack;
       }
-      pos = tmp;
+      pos = tmp.data();
       for(size_t j = 0; j < b.num_rows; j++)
       {
         for(size_t k = 0; k < b.num_tracks; k++, current++)
@@ -834,7 +846,59 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
           pos += 3;
         }
       }
-      delete[] tmp;
+    }
+
+    /* BlockInfo (MMD1+) */
+    if(b.blockinfo_offset && fseek(fp, b.blockinfo_offset, SEEK_SET) == 0)
+    {
+      b.highlight_offset  = fget_u32be(fp);
+      b.block_name_offset = fget_u32be(fp);
+      b.block_name_length = fget_u32be(fp);
+      b.pagetable_offset  = fget_u32be(fp);
+      /* Several reserved words here... */
+
+      if(Config.dump_pattern_rows && b.highlight_offset && fseek(fp, b.highlight_offset, SEEK_SET) == 0)
+      {
+        uint32_t highlight_len = (b.num_rows + 31)/32;
+        b.highlight.resize(highlight_len);
+
+        for(size_t j = 0; j < highlight_len; j++)
+          b.highlight[j] = fget_u32be(fp);
+      }
+
+      if(b.pagetable_offset && fseek(fp, b.pagetable_offset, SEEK_SET) == 0)
+      {
+        b.num_pages  = fget_u16be(fp);
+        /*reserved =*/ fget_u16be(fp);
+
+        if(b.num_pages > 0)
+          m.uses[FT_COMMAND_PAGES] = true;
+
+        try
+        {
+          b.page.resize(b.num_pages);
+        }
+        catch(std::exception &e)
+        {
+          format::warning("failed to alloc pages for block %zu, ignoring: %zu", i, (size_t)b.num_pages);
+          b.num_pages = 0;
+        }
+
+        for(unsigned j = 0; j < b.num_pages; j++)
+          b.page[j].offset = fget_u32be(fp);
+
+        for(unsigned j = 0; j < b.num_pages; j++)
+        {
+          if(fseek(fp, b.page[j].offset, SEEK_SET))
+            continue;
+
+          size_t len = b.num_tracks * b.num_rows * 2;
+
+          b.page[j].data.resize(len);
+          if(fread(b.page[j].data.data(), len, 1, fp))
+            b.page[j].loaded = true;
+        }
+      }
     }
 
     /* Feature detection (common to all formats). */
@@ -855,6 +919,17 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         if(current->note >= (1 + 12 * 3))
           m.uses[FT_OCTAVE_4] = true;
 
+        /* Hold symbols are stored as note 0 + instrument. */
+        if(current->note == 0 && current->instrument > 0)
+          m.uses[FT_NOTE_HOLD] = true;
+
+        /* MED Soundstudio v2.1 emits note values of 1 to indicate that
+         * the default note should be substituted. A large number of MMD0s
+         * through MMD2s use this as a normal note, so only check MMD3. */
+        if(current->note == 1 && mmd_version == 3)
+          m.uses[FT_NOTE_1] = true;
+
+        /* FIXME command pages */
         switch(current->effect)
         {
           case E_PORTAMENTO_UP:
@@ -1042,31 +1117,6 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         }
       }
     }
-
-    /* Dumping patterns? Might as well get the highlighting too. */
-    if(Config.dump_pattern_rows && b.blockinfo_offset)
-    {
-      if(fseek(fp, b.blockinfo_offset, SEEK_SET))
-        return modutil::SEEK_ERROR;
-
-      b.highlight_offset  = fget_u32be(fp);
-      b.block_name_offset = fget_u32be(fp);
-      b.block_name_length = fget_u32be(fp);
-      /* Several reserved words here... */
-
-      if(b.highlight_offset)
-      {
-        if(fseek(fp, b.highlight_offset, SEEK_SET))
-          return modutil::SEEK_ERROR;
-
-        uint32_t highlight_len = (b.num_rows + 31)/32;
-        uint32_t *highlight = new uint32_t[highlight_len];
-        m.pattern_highlight[i] = highlight;
-
-        for(size_t j = 0; j < highlight_len; j++)
-          highlight[j] = fget_u32be(fp);
-      }
-    }
   }
 
   /* Do a quick check for blocks with fewer tracks than the maximum track count. */
@@ -1122,9 +1172,11 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
     if(inst.type == I_HYBRID || inst.type == I_SYNTH)
     {
-      MMD0synth *syn = new MMD0synth;
+      std::unique_ptr<MMD0synth> &syn = m.synth_data[i];
+      std::unique_ptr<MMD0synth> tmp(new MMD0synth{});
+      syn = std::move(tmp);
+
       MMD0instr &h_inst = syn->hybrid_instrument;
-      m.synth_data[i] = syn;
 
       trace("synth %zu", i+1);
 
@@ -1175,6 +1227,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       }
 
       trace("synth %zu done", i+1);
+
+      if(syn->num_waveforms > 1)
+        m.uses[FT_INST_SYNTH_WF_GT_1] = true;
 
       if(inst.type == I_HYBRID)
       {
@@ -1263,10 +1318,10 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       trace("songname %08zx length %zu", (size_t)x.songname_offset, (size_t)x.songname_length);
       if(!fseek(fp, x.songname_offset, SEEK_SET))
       {
-        m.songname = new char[x.songname_length + 1]{};
-        if(fread(m.songname, x.songname_length, 1, fp))
+        m.songname.resize(x.songname_length + 1, '\0');
+        if(fread(m.songname.data(), x.songname_length, 1, fp))
         {
-          strip_module_name(m.songname, x.songname_length);
+          strip_module_name(m.songname.data(), x.songname_length);
         }
         else
         {
@@ -1382,8 +1437,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
   if(h.num_extra_songs && x.nextmod_offset)
     m.uses[FT_MULTIPLE_SONGS] = true;
 
-  if(m.songname)
-    format::line("Name",   "%s", m.songname);
+  if(m.songname.size())
+    format::line("Name",   "%s", m.songname.data());
   format::line("Type",     "%4.4s", h.magic);
   format::line("Size",     "%u", h.file_length);
   format::line("Instr.",   "%u", s.num_instruments);
@@ -1480,9 +1535,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     {
       MMD0sample     &sm = s.samples[i];
       MMD0instr      &si = m.instruments[i];
-      MMD0synth      *ss = m.synth_data[i];
       MMD3instr_ext  &sx = m.instruments_ext[i];
       MMD3instr_info &sxi = m.instruments_info[i];
+      auto           &ss = m.synth_data[i];
 
       unsigned int length         = si.length;
       unsigned int repeat_start   = m.use_long_repeat ? sx.long_repeat_start : sm.repeat_start * 2;
@@ -1514,9 +1569,9 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       {
         MMD0sample     &sm = s.samples[i];
         MMD0instr      &si = m.instruments[i];
-        MMD0synth      *ss = m.synth_data[i];
         MMD3instr_ext  &sx = m.instruments_ext[i];
         MMD3instr_info &sxi = m.instruments_info[i];
+        auto           &ss = m.synth_data[i];
 
         const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
 
@@ -1537,8 +1592,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       for(unsigned int i = 0; i < s.num_instruments; i++)
       {
         MMD0instr      &si = m.instruments[i];
-        MMD0synth      *ss = m.synth_data[i];
         MMD3instr_info &sxi = m.instruments_info[i];
+        auto           &ss = m.synth_data[i];
 
         const char *hyb = (ss && si.type == I_HYBRID) ? MED_insttype_str(ss->hybrid_instrument.type): "";
 
@@ -1579,8 +1634,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     for(unsigned int i = 0; i < s.num_instruments; i++)
     {
       MMD0instr      &si = m.instruments[i];
-      MMD0synth      *ss = m.synth_data[i];
       MMD3instr_info &sxi = m.instruments_info[i];
+      auto           &ss = m.synth_data[i];
 
       const MED_cmd_info *cmd = nullptr;
       unsigned int j;
@@ -1654,13 +1709,13 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       format::pattern<EVENT> pattern(i, b.num_tracks, b.num_rows);
       pattern.labels("Blk.", "Block");
 
-      if(!Config.dump_pattern_rows || !m.pattern_data[i])
+      if(!Config.dump_pattern_rows || !b.events.size())
       {
         pattern.summary();
         continue;
       }
 
-      MMD0note *current = m.pattern_data[i];
+      MMD0note *current = b.events.data();
       for(unsigned int row = 0; row < b.num_rows; row++)
       {
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
