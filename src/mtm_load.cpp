@@ -380,7 +380,10 @@ public:
         {
           for(size_t track = 0; track < h.num_channels; track++)
           {
-            int idx = m.patterns[i][track];
+            unsigned idx = m.patterns[i][track];
+            if(idx >= m.num_tracks)
+              idx = 0;
+
             MTM_event *ev = m.tracks[idx] + row;
 
             format::note   a{ ev->note };
