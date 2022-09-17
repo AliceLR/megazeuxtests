@@ -244,19 +244,17 @@ static void sigma_delta_compress(std::vector<uint8_t> &out,
   if(in.size() < max)
     max = in.size();
 
-  std::vector<uint8_t> tmp;
-  tmp.reserve(in.size());
-
   for(unsigned i = 1; i < max; i++)
   {
+    std::vector<uint8_t> tmp;
+    tmp.reserve(in.size());
+
     sigma_delta_compress(tmp, in, i);
 
     if(tmp.size() < out.size() || out.size() == 0)
     {
       DEBUG("  using max_runlength=%u, output size=%zu\n", i, tmp.size());
       out = std::move(tmp);
-      tmp.resize(0);
-      tmp.reserve(in.size());
     }
   }
 }
