@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "Bitstream.hpp"
 #include "modutil.hpp"
 
 static int num_its;
@@ -280,14 +281,13 @@ struct IT_event
     NUM_VOLUME_FX   = 12
   };
 
-  uint8_t note = 0;
-  uint8_t instrument = 0;
-  uint8_t volume_effect = NO_VOLUME;
-  uint8_t volume_param = 0;
-  uint8_t effect = 0;
-  uint8_t param = 0;
-
-  IT_event() {}
+  // If switching back to vector for some reason, 0 init these.
+  uint8_t note;
+  uint8_t instrument;
+  uint8_t volume_effect;// = NO_VOLUME;
+  uint8_t volume_param;
+  uint8_t effect;
+  uint8_t param;
 
   void set_volume(uint8_t volume)
   {
@@ -369,6 +369,9 @@ struct IT_event
 
 struct IT_pattern
 {
+  // Using calloc instead of std::vector cuts ~20 seconds off of a
+  // full scan of Modland's IT folder, a ~22% improvement when cached.
+//  std::vector<IT_event> events;
   IT_event *events = nullptr;
   uint16_t raw_size_stored = 0;
   uint16_t raw_size = 0;
@@ -376,15 +379,17 @@ struct IT_pattern
   uint8_t  num_channels = 0;
 
   IT_pattern() {}
-
   ~IT_pattern()
   {
-    delete[] events;
+    free(events);
   }
 
   void allocate()
   {
-    events = new IT_event[num_rows * num_channels]{};
+//    events.resize(num_rows * num_channels);
+    if(events)
+      free(events);
+    events = (IT_event *)calloc(num_rows * num_channels, sizeof(IT_event));
   }
 };
 
@@ -428,88 +433,22 @@ struct IT_data
 {
   IT_header     header;
   IT_midiconfig midi;
-  IT_sample     *samples = nullptr;
-  IT_instrument *instruments = nullptr;
-  IT_pattern    *patterns = nullptr;
-  uint8_t       *orders = nullptr;
-  uint32_t      *instrument_offsets = nullptr;
-  uint32_t      *sample_offsets = nullptr;
-  uint32_t      *pattern_offsets = nullptr;
   bool          uses[NUM_FEATURES];
-
   size_t        num_channels;
 
-  ~IT_data()
-  {
-    delete[] samples;
-    delete[] instruments;
-    delete[] patterns;
-    delete[] orders;
-    delete[] instrument_offsets;
-    delete[] sample_offsets;
-    delete[] pattern_offsets;
-  }
-};
-
-class Bitstream
-{
-private:
-  FILE *in;
-  size_t in_length;
-  size_t in_total_bytes = 0;
-  uint32_t in_buffer = 0;
-  uint32_t in_bits = 0;
-
-public:
-  Bitstream(FILE *fp, size_t max_length): in(fp), in_length(max_length) {}
-
-  bool end_of_block()
-  {
-    return in_total_bytes >= in_length;
-  }
-
-  ssize_t read_bits(uint32_t bits)
-  {
-    if(bits > 24)
-      return -1;
-
-    if(in_bits < bits)
-    {
-      if(end_of_block())
-        return -1;
-
-      while(in_bits < 24)
-      {
-        int b = fgetc(in);
-        if(b < 0)
-        {
-          if(ferror(in))
-            return -1;
-          break;
-        }
-
-        in_buffer |= (b << in_bits);
-        in_bits += 8;
-        in_total_bytes++;
-
-        if(end_of_block())
-          break;
-      }
-
-      if(in_bits < bits)
-        return -1;
-    }
-
-    ssize_t ret = in_buffer & ((1 << bits) - 1);
-    in_buffer >>= bits;
-    in_bits -= bits;
-    return ret;
-  }
+  std::vector<IT_sample>     samples;
+  std::vector<IT_instrument> instruments;
+  std::vector<IT_pattern>    patterns;
+  std::vector<uint8_t>       orders;
+  std::vector<uint32_t>      instrument_offsets;
+  std::vector<uint32_t>      sample_offsets;
+  std::vector<uint32_t>      pattern_offsets;
 };
 
 static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
 {
   bool is_16_bit = !!(s.flags & SAMPLE_16_BIT);
+  int block_num = 0;
 
   if(fseek(fp, s.sample_data_offset, SEEK_SET))
     return false;
@@ -521,7 +460,7 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
   s.smallest_block_samples = 0;
   s.largest_block = 0u;
 
-  for(uint32_t pos = 0; pos < s.length;)
+  for(uint32_t pos = 0; pos < s.length; block_num++)
   {
     uint16_t block_uncompressed_samples = is_16_bit ? 0x4000 : 0x8000;
     uint16_t block_compressed_bytes = fget_u16le(fp);
@@ -544,25 +483,24 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
       s.smallest_block_samples = block_uncompressed_samples;
     }
 
-    Bitstream bs(fp, block_compressed_bytes);
+    std::vector<uint8_t> buf(block_compressed_bytes);
+    if(!fread(buf.data(), block_compressed_bytes, 1, fp))
+      return false;
+
+    Bitstream bs(buf);
     //O_("block of size %u -> %u samples\n", block_compressed_bytes, block_uncompressed_samples);
     for(uint32_t i = 0; i < block_uncompressed_samples;)
     {
-      ssize_t code = bs.read_bits(bit_width);
+      ssize_t code = bs.read(bit_width);
       if(code < 0)
-      {
-        if(bs.end_of_block())
-          break;
-        else
-          return false;
-      }
+        break;
 
       if(bit_width >= 1 && bit_width <= 6)
       {
         if(code == (1 << (bit_width - 1)))
         {
           // Change bitwidth.
-          ssize_t new_bit_width = bs.read_bits(is_16_bit ? 4 : 3) + 1;
+          ssize_t new_bit_width = bs.read(is_16_bit ? 4 : 3) + 1;
           if(new_bit_width < 0)
             return false;
 
@@ -623,7 +561,7 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
       else
       {
         // Invalid width--prematurely end block.
-        format::warning("invalid bit width %u", bit_width);
+        format::warning("invalid bit width %u in block %d", bit_width, block_num);
         m.uses[FT_SAMPLE_COMPRESSION_INVALID_WIDTH] = true;
         pos += block_uncompressed_samples - i;
         break;
@@ -1047,14 +985,14 @@ static modutil::error IT_read(FILE *fp)
 
   if(h.num_orders)
   {
-    m.orders = new uint8_t[h.num_orders];
-    if(!fread(m.orders, h.num_orders, 1, fp))
+    m.orders.resize(h.num_orders);
+    if(!fread(m.orders.data(), h.num_orders, 1, fp))
       return modutil::READ_ERROR;
   }
 
   if(h.num_instruments && (h.flags & F_INST_MODE))
   {
-    m.instrument_offsets = new uint32_t[h.num_instruments];
+    m.instrument_offsets.resize(h.num_instruments);
     for(size_t i = 0; i < h.num_instruments; i++)
       m.instrument_offsets[i] = fget_u32le(fp);
     if(feof(fp))
@@ -1063,7 +1001,7 @@ static modutil::error IT_read(FILE *fp)
 
   if(h.num_samples)
   {
-    m.sample_offsets = new uint32_t[h.num_samples];
+    m.sample_offsets.resize(h.num_samples);
     for(size_t i = 0; i < h.num_samples; i++)
       m.sample_offsets[i] = fget_u32le(fp);
     if(feof(fp))
@@ -1072,7 +1010,7 @@ static modutil::error IT_read(FILE *fp)
 
   if(h.num_patterns)
   {
-    m.pattern_offsets = new uint32_t[h.num_patterns];
+    m.pattern_offsets.resize(h.num_patterns);
     for(size_t i = 0; i < h.num_patterns; i++)
       m.pattern_offsets[i] = fget_u32le(fp);
     if(feof(fp))
@@ -1116,25 +1054,27 @@ static modutil::error IT_read(FILE *fp)
   /* Load instruments. */
   if(h.num_instruments && (h.flags & F_INST_MODE))
   {
-    m.instruments = new IT_instrument[h.num_instruments]{};
+    m.instruments.resize(h.num_instruments, {});
     for(size_t i = 0; i < h.num_instruments; i++)
     {
+      if(m.instrument_offsets[i] == 0)
+        continue;
+
       if(fseek(fp, m.instrument_offsets[i], SEEK_SET))
         return modutil::SEEK_ERROR;
 
       IT_instrument &ins = m.instruments[i];
 
+      modutil::error ret;
       if(h.format_version >= 0x200)
-      {
-        modutil::error ret = IT_read_instrument(fp, ins);
-        if(ret != modutil::SUCCESS)
-          return ret;
-      }
+        ret = IT_read_instrument(fp, ins);
       else
+        ret = IT_read_old_instrument(fp, ins);
+
+      if(ret != modutil::SUCCESS)
       {
-        modutil::error ret = IT_read_old_instrument(fp, ins);
-        if(ret != modutil::SUCCESS)
-          return ret;
+        format::warning("failed to load instrument %zu: %s", i, modutil::strerror(ret));
+        continue;
       }
 
       if(ins.env_volume.flags & IT_envelope::ENABLED)
@@ -1156,9 +1096,12 @@ static modutil::error IT_read(FILE *fp)
   /* Load samples. */
   if(h.num_samples)
   {
-    m.samples = new IT_sample[h.num_samples];
+    m.samples.resize(h.num_samples, {});
     for(size_t i = 0; i < h.num_samples; i++)
     {
+      if(m.sample_offsets[i] == 0)
+        continue;
+
       if(fseek(fp, m.sample_offsets[i], SEEK_SET))
         return modutil::SEEK_ERROR;
 
@@ -1166,7 +1109,10 @@ static modutil::error IT_read(FILE *fp)
 
       modutil::error ret = IT_read_sample(fp, s);
       if(ret != modutil::SUCCESS)
-        return ret;
+      {
+        format::warning("failed to load sample %zu: %s", i, modutil::strerror(ret));
+        continue;
+      }
 
       if(s.global_volume < 0x40)
         m.uses[FT_SAMPLE_GLOBAL_VOLUME] = true;
@@ -1189,7 +1135,7 @@ static modutil::error IT_read(FILE *fp)
   }
 
   /* Scan sample compression data. */
-  if(m.samples && m.uses[FT_SAMPLE_COMPRESSION])
+  if(h.num_samples && m.uses[FT_SAMPLE_COMPRESSION])
   {
     for(unsigned int i = 0; i < h.num_samples; i++)
     {
@@ -1203,13 +1149,13 @@ static modutil::error IT_read(FILE *fp)
         /* Theoretical minimum size is 1 bit per sample.
          * Potentially samples can go lower if certain alleged quirks re: large bit widths are true.
          */
-        if(s.compressed_bytes < s.length / 8)
+        if(s.compressed_bytes * 8 < s.length)
         {
           m.uses[FT_SAMPLE_COMPRESSION_1_8TH] = true;
         }
         else
 
-        if(s.compressed_bytes < s.length / 4)
+        if(s.compressed_bytes * 4 < s.length)
           m.uses[FT_SAMPLE_COMPRESSION_1_4TH] = true;
       }
       else
@@ -1220,7 +1166,7 @@ static modutil::error IT_read(FILE *fp)
   /* Load patterns. */
   if(h.num_patterns)
   {
-    m.patterns = new IT_pattern[h.num_patterns];
+    m.patterns.resize(h.num_patterns, {});
 
     std::vector<uint8_t> patbuf(65536);
 
@@ -1426,7 +1372,7 @@ static modutil::error IT_read(FILE *fp)
   if(Config.dump_patterns)
   {
     format::line();
-    format::orders("Orders", m.orders, h.num_orders);
+    format::orders("Orders", m.orders.data(), h.num_orders);
 
     /* Print MIDI macro configuration */
     if(h.flags & F_MIDI_CONFIG)
