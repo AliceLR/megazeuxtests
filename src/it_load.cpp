@@ -443,6 +443,8 @@ struct IT_data
   std::vector<uint32_t>      instrument_offsets;
   std::vector<uint32_t>      sample_offsets;
   std::vector<uint32_t>      pattern_offsets;
+
+  std::vector<uint8_t>       workbuf;
 };
 
 static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
@@ -483,11 +485,10 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
       s.smallest_block_samples = block_uncompressed_samples;
     }
 
-    std::vector<uint8_t> buf(block_compressed_bytes);
-    if(!fread(buf.data(), block_compressed_bytes, 1, fp))
+    if(!fread(m.workbuf.data(), block_compressed_bytes, 1, fp))
       return false;
 
-    Bitstream bs(buf);
+    Bitstream bs(m.workbuf);
     //O_("block of size %u -> %u samples\n", block_compressed_bytes, block_uncompressed_samples);
     for(uint32_t i = 0; i < block_uncompressed_samples;)
     {
@@ -780,7 +781,7 @@ static modutil::error IT_read_old_instrument(FILE *fp, IT_instrument &ins)
 /**
  * Scan an IT pattern. This is required to determine the number of stored channels.
  */
-static modutil::error IT_scan_pattern(IT_pattern &p, const uint8_t *stream)
+static modutil::error IT_scan_pattern(IT_pattern &p, const std::vector<uint8_t> &stream)
 {
   p.num_channels = 0;
 
@@ -837,7 +838,7 @@ struct last_event
   uint8_t param;
 };
 
-static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const uint8_t *stream)
+static modutil::error IT_read_pattern(IT_data &m, IT_pattern &p, const std::vector<uint8_t> &stream)
 {
   if(p.num_rows < 1 || p.num_channels < 1)
     return modutil::SUCCESS;
@@ -1051,6 +1052,9 @@ static modutil::error IT_read(FILE *fp)
   /* MPT extension: pattern names */
   /* MPT extension: channel names */
 
+  /* Buffer used for pattern data and checks on sample compression. */
+  m.workbuf.resize(65536);
+
   /* Load instruments. */
   if(h.num_instruments && (h.flags & F_INST_MODE))
   {
@@ -1168,8 +1172,6 @@ static modutil::error IT_read(FILE *fp)
   {
     m.patterns.resize(h.num_patterns, {});
 
-    std::vector<uint8_t> patbuf(65536);
-
     for(size_t i = 0; i < h.num_patterns; i++)
     {
       if(m.pattern_offsets[i] == 0)
@@ -1192,13 +1194,13 @@ static modutil::error IT_read(FILE *fp)
 
       /* Load even if the read is short or if the scan fails
        * since some software (libxmp) will also do this. */
-      p.raw_size = fread(patbuf.data(), 1, p.raw_size, fp);
+      p.raw_size = fread(m.workbuf.data(), 1, p.raw_size, fp);
 
       if(p.raw_size < p.raw_size_stored)
         format::warning("read error at pattern %zu", i);
 
-      modutil::error ret = IT_scan_pattern(p, patbuf.data());
-      modutil::error ret2 = IT_read_pattern(m, p, patbuf.data());
+      modutil::error ret = IT_scan_pattern(p, m.workbuf);
+      modutil::error ret2 = IT_read_pattern(m, p, m.workbuf);
       if(ret || ret2)
         format::warning("error loading pattern %zu", i);
     }
