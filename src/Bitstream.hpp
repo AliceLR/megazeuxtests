@@ -41,12 +41,12 @@ struct Bitstream
   size_t pos = 0;
   size_t num_read = 0;
   size_t max_read;
-  int buf_bits = 0;
+  unsigned buf_bits = 0;
 
-  Bitstream(SRC &_fp): fp(_fp), max_read(_fp.size()) {}
+  Bitstream(SRC &_fp): fp(_fp), max_read(0) {}
   Bitstream(SRC &_fp, size_t _max_read): fp(_fp), max_read(_max_read) {}
 
-  inline int read(int bits_to_read)
+  inline int read(unsigned bits_to_read)
   {
     int ret;
 
@@ -62,7 +62,7 @@ struct Bitstream
 
 private:
   inline int read_byte();
-  inline bool fill(int bits_to_read);
+  inline bool fill(unsigned bits_to_read);
 };
 
 template<>
@@ -94,7 +94,7 @@ inline int Bitstream<const std::vector<uint8_t>>::read_byte()
 /* TODO: the main user of this is Digital Symphony, which fills
  * by reading four new bytes at a time. */
 template<>
-inline bool Bitstream<FILE *>::fill(int bits_to_read)
+inline bool Bitstream<FILE *>::fill(unsigned bits_to_read)
 {
   while(buf_bits < bits_to_read)
   {
@@ -113,13 +113,20 @@ inline bool Bitstream<FILE *>::fill(int bits_to_read)
 }
 
 template<>
-inline bool Bitstream<std::vector<uint8_t>>::fill(int bits_to_read)
+inline bool Bitstream<std::vector<uint8_t>>::fill(unsigned bits_to_read)
 {
-  if(num_read >= fp.size())
+  unsigned m = fp.size();
+  if(max_read && max_read < m)
+    m = max_read;
+
+  if(num_read >= m)
     return false;
 
-  unsigned bytes = MIN(fp.size() - num_read, ((sizeof(BUFFERTYPE)<<3) - buf_bits)>>3);
+  unsigned bytes = MIN(m - num_read, ((sizeof(BUFFERTYPE)<<3) - buf_bits)>>3);
   const uint8_t *data = fp.data() + num_read;
+
+  if(bytes > 4)
+    bytes = 4;
 
   num_read += bytes;
 

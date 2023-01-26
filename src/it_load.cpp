@@ -488,7 +488,7 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
     if(!fread(m.workbuf.data(), block_compressed_bytes, 1, fp))
       return false;
 
-    Bitstream bs(m.workbuf);
+    Bitstream bs(m.workbuf, block_compressed_bytes);
     //O_("block of size %u -> %u samples\n", block_compressed_bytes, block_uncompressed_samples);
     for(uint32_t i = 0; i < block_uncompressed_samples;)
     {
@@ -502,7 +502,7 @@ static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
         {
           // Change bitwidth.
           ssize_t new_bit_width = bs.read(is_16_bit ? 4 : 3) + 1;
-          if(new_bit_width < 0)
+          if(new_bit_width <= 0)
             return false;
 
           bit_width = (new_bit_width < bit_width) ? new_bit_width : new_bit_width + 1;
