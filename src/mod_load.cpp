@@ -112,6 +112,7 @@ enum MOD_features
   FT_RETRIGGER_NO_NOTE,
   FT_RETRIGGER_ZERO,
   FT_SOUNDTRACKER_JUNK_ORDERS,
+  FT_E_SPEED_HIGH,
   NUM_FEATURES
 };
 
@@ -121,6 +122,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "RetrigNoNote",
   "Retrig0",
   "ST:JunkOrd",
+  "E:FxxHigh",
 };
 
 enum MOD_effects
@@ -519,6 +521,8 @@ static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp
         if(!(note->param & 0xF))
           m.use(FT_RETRIGGER_ZERO);
       }
+      if(note->effect == E_SPEED && note->param >= 0x20)
+        m.use(FT_E_SPEED_HIGH);
 
       current += 4;
       note++;
