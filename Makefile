@@ -90,6 +90,7 @@ MODUTIL_OBJS := \
   ${OBJ}/stm_load.o \
   ${OBJ}/sym_load.o \
   ${OBJ}/ult_load.o \
+  ${OBJ}/xmf_load.o \
 
 DIMGUTIL_EXE  := dimgutil${BINEXT}
 DIMGUTIL_OBJS := \

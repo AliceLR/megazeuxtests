@@ -119,6 +119,18 @@ static inline constexpr int16_t mem_s16be(const void *mem)
   return mem_u16be(mem);
 }
 
+static inline constexpr uint32_t mem_u24le(const void *_mem)
+{
+  const uint8_t *mem = (const uint8_t *)_mem;
+  return mem[0] | (mem[1] << 8) | (mem[2] << 16);
+}
+
+static inline constexpr uint32_t mem_u24be(const void *_mem)
+{
+  const uint8_t *mem = (const uint8_t *)_mem;
+  return (mem[0] << 16) | (mem[1] << 8) | mem[2];
+}
+
 static inline constexpr uint32_t mem_u32le(const void *_mem)
 {
   const uint8_t *mem = (const uint8_t *)_mem;
