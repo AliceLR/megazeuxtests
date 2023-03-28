@@ -54,32 +54,34 @@ enum XMF_features
   FT_E_EXTENDED,
   FT_E_SPEED,
   FT_E_BPM,
-  FT_E_10,
+  FT_E_PAN,
+  FT_E_PAN_OVER_16,
   FT_E_UNKNOWN,
   NUM_FEATURES
 };
 
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
-  "X:Arpeggio",
-  "X:PortaUp",
-  "X:PortaDn",
-  "X:Toneporta",
-  "X:Vibrato",
-  "X:VolPorta",
-  "X:VolVibrato",
-  "X:Tremolo",
-  "X:8",
-  "X:Offset",
-  "X:Volslide",
-  "X:Jump",
-  "X:Volume",
-  "X:Break",
-  "X:Ext",
-  "X:Speed",
-  "X:BPM",
-  "X:10",
-  "X:unknown",
+  "E:Arpeggio",
+  "E:PortaUp",
+  "E:PortaDn",
+  "E:Toneporta",
+  "E:Vibrato",
+  "E:VolPorta",
+  "E:VolVibrato",
+  "E:Tremolo",
+  "E:8",
+  "E:Offset",
+  "E:Volslide",
+  "E:Jump",
+  "E:Volume",
+  "E:Break",
+  "E:Ext",
+  "E:Speed",
+  "E:BPM",
+  "E:Pan",
+  "E:Pan>f",
+  "E:unknown",
 };
 
 static constexpr size_t MAX_INSTRUMENTS = 256;
@@ -108,7 +110,7 @@ enum XMF_effects
   E_BREAK,
   E_EXTENDED,
   E_SPEED_BPM, // <0x20: speed, >=0x20: BPM
-  E_10,        // unknown, but appears a lot, and is always in the range 0-f.
+  E_PAN,       // GUS range
 };
 
 enum XMF_flags
@@ -135,7 +137,7 @@ struct XMF_sequence
 {
   /*   0 */ uint8_t  orders[MAX_ORDERS];
   /* 256 */ uint8_t  num_channels;
-  /* 257 */ uint8_t  num_orders;
+  /* 257 */ uint8_t  num_patterns;
   /* 258 */ uint8_t  default_panning[MAX_CHANNELS];
   /* 258 + num_channels */
 };
@@ -179,7 +181,7 @@ struct XMF_data
   XMF_pattern       patterns[MAX_PATTERNS];
 
   unsigned num_instruments;
-  unsigned num_patterns;
+  unsigned num_orders;
 
   bool uses[NUM_FEATURES];
 };
@@ -207,7 +209,7 @@ static enum XMF_features get_effect_feature(uint8_t effect, uint8_t param)
   case E_SPEED_BPM:
     if(param < 0x20)         return FT_E_SPEED;
     else                     return FT_E_BPM;
-  case E_10:                 return FT_E_10;
+  case E_PAN:                return FT_E_PAN;
   default:
     return FT_E_UNKNOWN;
   }
@@ -216,7 +218,12 @@ static enum XMF_features get_effect_feature(uint8_t effect, uint8_t param)
 static void check_effect_features(XMF_data &m, uint8_t effect, uint8_t param)
 {
   if(effect && param)
+  {
     m.uses[get_effect_feature(effect, param)] = true;
+
+    if(effect == 0x10 && param >= 0x10)
+      m.uses[FT_E_PAN_OVER_16] = true;
+  }
 }
 
 static void check_event_features(XMF_data &m, const XMF_event *event)
@@ -283,22 +290,25 @@ public:
       return modutil::READ_ERROR;
 
     h.num_channels = fgetc(fp) + 1;
-    h.num_orders   = fgetc(fp) + 1;
+    h.num_patterns = fgetc(fp) + 1;
     if(ferror(fp))
       return modutil::READ_ERROR;
 
-    if(h.num_channels > MAX_CHANNELS)
+    if(h.num_channels < 1 || h.num_channels > MAX_CHANNELS)
       return modutil::INVALID;
 
     if(fread(h.default_panning, 1, h.num_channels, fp) < h.num_channels)
       return modutil::READ_ERROR;
 
-    for(size_t i = 0; i < h.num_orders; i++)
-      if(h.orders[i] < 0xff && h.orders[i] >= m.num_patterns)
-        m.num_patterns = h.orders[i] + 1;
+    for(size_t i = 0; i < 256; i++)
+    {
+      if(h.orders[i] == 0xff)
+        break;
+      m.num_orders++;
+    }
 
     /* Patterns */
-    for(size_t i = 0; i < m.num_patterns; i++)
+    for(size_t i = 0; i < h.num_patterns; i++)
     {
       XMF_pattern &p = m.patterns[i];
       p.initialize(h.num_channels);
@@ -323,8 +333,8 @@ public:
     format::line("Type",     "Imperium Galactica");
     format::line("Tracks",   "%u", h.num_channels);
     format::line("Samples",  "%u", m.num_instruments);
-    format::line("Patterns", "%u", m.num_patterns);
-    format::line("Orders",   "%u", h.num_orders);
+    format::line("Patterns", "%u", h.num_patterns);
+    format::line("Orders",   "%u", m.num_orders);
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
@@ -364,12 +374,12 @@ public:
     if(Config.dump_patterns)
     {
       format::line();
-      format::orders("Orders", h.orders, h.num_orders);
+      format::orders("Orders", h.orders, m.num_orders);
 
       if(!Config.dump_pattern_rows)
         format::line();
 
-      for(size_t i = 0; i < m.num_patterns; i++)
+      for(size_t i = 0; i < h.num_patterns; i++)
       {
         XMF_pattern &p = m.patterns[i];
 
