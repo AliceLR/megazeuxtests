@@ -568,6 +568,7 @@ public:
     format::line("Channels", "%u", m.num_channels);
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u", h.num_orders);
+    format::line("Mix Vol.", "%u%s", h.master_volume & 0x7f, h.master_volume & 0x80 ? "" : " (mono)");
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)

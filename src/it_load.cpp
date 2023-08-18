@@ -1213,6 +1213,7 @@ static modutil::error IT_read(FILE *fp)
     format::line("Instr.",   "%u", h.num_instruments);
   format::line("Patterns", "%u", h.num_patterns);
   format::line("Orders",   "%u", h.num_orders);
+  format::line("Mix Vol.", "%u", h.mix_volume);
   format::uses(m.uses, FEATURE_STR);
 
   namespace table = format::table;

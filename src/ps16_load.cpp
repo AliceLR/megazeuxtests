@@ -333,6 +333,10 @@ public:
       if(p.raw_size < 4 || p.num_rows == 0 || p.num_channels == 0)
         continue;
 
+      // Use the logical number of channels instead, since some effects
+      // are in non-"playing" channels.
+      p.num_channels = h.num_channels;
+
       if(!fread(patbuf.data(), p.raw_size - 4, 1, fp))
       {
         format::warning("read error at pattern %zu", i);
@@ -417,6 +421,7 @@ public:
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u", h.num_orders);
     format::line("Tempo",    "%u/%u", h.init_speed, h.init_bpm);
+    format::line("Mix Vol.", "%u", h.global_volume);
     format::uses(m.uses, FEATURE_STR);
 
     if(Config.dump_samples)
