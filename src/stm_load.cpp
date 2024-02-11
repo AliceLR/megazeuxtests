@@ -196,11 +196,18 @@ static modutil::error STM_read(FILE *fp)
     return modutil::FORMAT_ERROR;
 
   /* This format doesn't have a proper magic, so do some basic tests on the header. */
-  if(h.eof != '\x1a' || (h.type != TYPE_SONG && h.type != TYPE_MODULE))
+  if(h.type != TYPE_SONG && h.type != TYPE_MODULE)
     return modutil::FORMAT_ERROR;
   for(int i = 0; i < 8; i++)
     if(!(h.tracker[i] >= 32 && h.tracker[i] <= 126))
       return modutil::FORMAT_ERROR;
+
+  /* EOF may be non-0x1a in rare cases. */
+  if(h.eof != 0x1a)
+  {
+    O_("wrong eof byte: %02x\n", h.eof);
+    return modutil::FORMAT_ERROR;
+  }
 
   /* libxmp checks for this STX magic string at position 60,
    * presumably to prevent false positives from S3M or STMIK files. */
