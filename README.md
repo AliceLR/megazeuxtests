@@ -6,13 +6,13 @@ This repository contains some miscellaneous utilities primarily intended for [Me
 
 This repository is currently the home of a handful of utilities which all need better names. These are mostly written with libxmp or misc. archival tasks in mind:
 
-* `modutil` dumps a bunch of information about module formats I've had to work with developing libxmp, most (but not all) of which are formats supported by MegaZeux. Some of the information printed is actually useful!
+* `moddiag` (formerly `modutil`) dumps a bunch of information about module formats I've had to work with developing libxmp, most (but not all) of which are formats supported by MegaZeux. Some of the information printed is actually useful!
   * MOD, S3M, XM, IT
   * Other DOS formats: 669, DSMI AMF, ASYLUM AMF, DSIK DSM, FAR, GDM, MTM, Epic MegaGames PSM (both), STM, ULT
   * Other Amiga formats: DIGI Booster Pro, MED (partial support), Oktalyzer
   * RISC OS formats: Archimedes !Tracker, Coconizer, Desktop Tracker, Digital Symphony
   * `iffdump` is a testing program for `modutil`'s IFF support that sometimes is also useful debugging new IFF-based formats.
-* `dimgutil`
+* `modunpack` (formerly `dimgutil`)
   * Lighter testing programs written in C: `unarc`, `unarcfs`, `unlzx`
 * `dsymgen` generates Digital Symphony modules from a template file because
   working registered versions of this tracker seem to be very rare. The source
@@ -38,7 +38,7 @@ copyrights that really need to be scrutinized better (see CREDITS.md).
 
 ## License
 ```
-Copyright (C) 2020-2022 Lachesis <petrifiedrowan@gmail.com>
+Copyright (C) 2020-2024 Lachesis <petrifiedrowan@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
