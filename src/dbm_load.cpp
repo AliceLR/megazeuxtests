@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2020 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2020-2024 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,6 +44,10 @@ enum DBM_features
   FT_BAD_PAN_ENVELOPE,
   FT_NEGATIVE_ENVELOPE_VALUE,
   FT_HIGH_ENVELOPE_VALUE,
+  FT_S_8_BIT,
+  FT_S_16_BIT,
+  FT_S_32_BIT,
+  FT_S_UNKNOWN_FORMAT,
   FT_E_ARPEGGIO,
   FT_E_PORTAMENTO,
   FT_E_TONEPORTA,
@@ -99,6 +103,10 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "BadPanEnv",
   "EnvPt<0",
   "EnvPt>64",
+  "S:8",
+  "S:16",
+  "S:32",
+  "S:???",
   "E:Arpeggio",
   "E:Porta",
   "E:Toneporta",
@@ -796,11 +804,26 @@ public:
       s.length = fget_u32be(fp);
 
       size_t byte_length = s.length;
-      if(s.flags & DBM_sample::S_16_BIT)
-        byte_length <<= 1;
+      if(s.flags & DBM_sample::S_8_BIT)
+      {
+        m.uses[FT_S_8_BIT] = true;
+      }
       else
+
+      if(s.flags & DBM_sample::S_16_BIT)
+      {
+        byte_length <<= 1;
+        m.uses[FT_S_16_BIT] = true;
+      }
+      else
+
       if(s.flags & DBM_sample::S_32_BIT)
+      {
         byte_length <<= 2;
+        m.uses[FT_S_32_BIT] = true;
+      }
+      else
+        m.uses[FT_S_UNKNOWN_FORMAT] = true;
 
       /* Ignore the sample data... */
       if(fseek(fp, byte_length, SEEK_CUR))
