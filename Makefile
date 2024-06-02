@@ -61,8 +61,8 @@ OBJ  = src/.build${TAG}
 
 DIMG_OBJ = ${OBJ}/dimgutil
 
-MODUTIL_EXE  := modutil${BINEXT}
-MODUTIL_OBJS := \
+MODULEDIAG_EXE  := moddiag${BINEXT}
+MODULEDIAG_OBJS := \
   ${OBJ}/modutil.o \
   ${OBJ}/encode.o \
   ${OBJ}/error.o \
@@ -92,8 +92,8 @@ MODUTIL_OBJS := \
   ${OBJ}/ult_load.o \
   ${OBJ}/xmf_load.o \
 
-DIMGUTIL_EXE  := dimgutil${BINEXT}
-DIMGUTIL_OBJS := \
+MODULEUNPACK_EXE  := modunpack${BINEXT}
+MODULEUNPACK_OBJS := \
   ${DIMG_OBJ}/dimgutil.o \
   ${DIMG_OBJ}/DiskImage.o \
   ${DIMG_OBJ}/FileIO.o \
@@ -136,12 +136,12 @@ UNLZX_OBJS   := \
   ${DIMG_OBJ}/lzx_unpack.o \
   ${DIMG_OBJ}/crc32.o \
 
--include ${MODUTIL_OBJS:.o=.d}
-${MODUTIL_EXE}: ${MODUTIL_OBJS}
+-include ${MODULEDIAG_OBJS:.o=.d}
+${MODULEDIAG_EXE}: ${MODULEDIAG_OBJS}
 
--include ${DIMGUTIL_OBJS:.o=.d}
-${DIMGUTIL_EXE}: ${DIMGUTIL_OBJS}
-${DIMGUTIL_OBJS}: | ${DIMG_OBJ}
+-include ${MODULEUNPACK_OBJS:.o=.d}
+${MODULEUNPACK_EXE}: ${MODULEUNPACK_OBJS}
+${MODULEUNPACK_OBJS}: | ${MODULEUNPACK_OBJ}
 
 -include ${DSYMGEN_OBJS:.o=.d}
 ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
@@ -162,8 +162,8 @@ ${UNLZX_EXE}: ${UNLZX_OBJS}
 ${UNLZX_OBJS}: | ${DIMG_OBJ}
 
 ALL_EXES := \
-  ${MODUTIL_EXE}  \
-  ${DIMGUTIL_EXE} \
+  ${MODULEDIAG_EXE}  \
+  ${MODULEUNPACK_EXE} \
   ${DSYMGEN_EXE} \
   ${IFFDUMP_EXE} \
   ${UNARC_EXE} \
@@ -184,13 +184,13 @@ ${OBJ}/%.o: ${SRC}/%.cpp | ${OBJ}
 	$(if ${V},,@echo " CXX     " $<)
 	${CXX} -MD ${CXXFLAGS} -c $< -o $@
 
-${MODUTIL_EXE}:
+${MODULEDIAG_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
-	${LINKCXX} ${LDFLAGS} -o $@ ${MODUTIL_OBJS} ${LDLIBS}
+	${LINKCXX} ${LDFLAGS} -o $@ ${MODULEDIAG_OBJS} ${LDLIBS}
 
-${DIMGUTIL_EXE}:
+${MODULEUNPACK_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
-	${LINKCXX} ${LDFLAGS} -o $@ ${DIMGUTIL_OBJS} ${LDLIBS}
+	${LINKCXX} ${LDFLAGS} -o $@ ${MODULEUNPACK_OBJS} ${LDLIBS}
 
 ${DSYMGEN_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
@@ -214,6 +214,8 @@ ${UNLZX_EXE}:
 
 clean:
 	rm -rf src/.build src/.build_san*/
+	rm -f moddiag moddiag.exe moddiag_san*
+	rm -f modunpack modunpack.exe modunpack_san*
 	rm -f modutil modutil.exe modutil_san*
 	rm -f dimgutil dimgutil.exe dimgutil_san*
 	rm -f dsymgen dsymgen.exe dsymgen_san*
