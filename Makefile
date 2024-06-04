@@ -2,7 +2,7 @@
 all:
 
 COMMON_FLAGS := -O3 -g
-WARNING_FLAGS := -Wall -Wextra -pedantic -Wno-unused-parameter
+WARNING_FLAGS := -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-gnu-zero-variadic-macro-arguments
 TAG :=
 
 F_SANITIZE = ${SANITIZE}
@@ -78,6 +78,7 @@ MODULEDIAG_OBJS := \
   ${OBJ}/coco_load.o \
   ${OBJ}/dbm_load.o \
   ${OBJ}/dsm_load.o \
+  ${OBJ}/dtm_load.o \
   ${OBJ}/dtt_load.o \
   ${OBJ}/far_load.o \
   ${OBJ}/gdm_load.o \

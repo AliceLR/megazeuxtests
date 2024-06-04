@@ -279,7 +279,7 @@ public:
         result = exec_dynamic_handler(fp, len, m, id);
         if(result == modutil::IFF_NO_HANDLER)
         {
-          format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.\n",
+          format::warning("ignoring unknown IFF tag '%*.*s' @ %#lx.",
            codelen, codelen, id, ftell(fp) - 8);
           result = modutil::SUCCESS;
         }

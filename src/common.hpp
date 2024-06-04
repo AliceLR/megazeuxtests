@@ -46,6 +46,26 @@ constexpr int arraysize(T (&arr)[N])
   return N;
 }
 
+template<size_t N>
+static size_t fget_asciiz(char (&buffer)[N], size_t max_in_file, FILE *fp)
+{
+  size_t i;
+  for(i = 0; i < max_in_file; i++)
+  {
+    int val = fgetc(fp);
+    if(val <= 0)
+    {
+      if(i < N)
+        buffer[i] = '\0';
+      break;
+    }
+    if(i < N)
+      buffer[i] = (char)val;
+  }
+  buffer[N - 1] = '\0';
+  return i;
+}
+
 template<int N>
 static char *fgets_safe(char (&buffer)[N], FILE *fp)
 {
@@ -95,7 +115,7 @@ enum class Endian
 
 /* Multibyte memory reading functions. */
 
-static inline constexpr uint16_t mem_u16le(const void *_mem)
+static inline constexpr uint16_t mem_u16le(const void *_mem) noexcept
 {
   // this makes clang unhappy :-(
   //const uint8_t *mem = reinterpret_cast<const uint8_t *>(_mem);
@@ -103,41 +123,41 @@ static inline constexpr uint16_t mem_u16le(const void *_mem)
   return mem[0] | (mem[1] << 8);
 }
 
-static inline constexpr uint16_t mem_u16be(const void *_mem)
+static inline constexpr uint16_t mem_u16be(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
   return (mem[0] << 8) | mem[1];
 }
 
-static inline constexpr int16_t mem_s16le(const void *mem)
+static inline constexpr int16_t mem_s16le(const void *mem) noexcept
 {
   return mem_u16le(mem);
 }
 
-static inline constexpr int16_t mem_s16be(const void *mem)
+static inline constexpr int16_t mem_s16be(const void *mem) noexcept
 {
   return mem_u16be(mem);
 }
 
-static inline constexpr uint32_t mem_u24le(const void *_mem)
+static inline constexpr uint32_t mem_u24le(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
   return mem[0] | (mem[1] << 8) | (mem[2] << 16);
 }
 
-static inline constexpr uint32_t mem_u24be(const void *_mem)
+static inline constexpr uint32_t mem_u24be(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
   return (mem[0] << 16) | (mem[1] << 8) | mem[2];
 }
 
-static inline constexpr uint32_t mem_u32le(const void *_mem)
+static inline constexpr uint32_t mem_u32le(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
   return mem[0] | (mem[1] << 8) | (mem[2] << 16) | (mem[3] << 24);
 }
 
-static inline constexpr uint32_t mem_u32be(const void *_mem)
+static inline constexpr uint32_t mem_u32be(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
   return (mem[0] << 24) | (mem[1] << 16) | (mem[2] << 8) | mem[3];
@@ -145,35 +165,35 @@ static inline constexpr uint32_t mem_u32be(const void *_mem)
 
 /* Multibyte file reading functions. */
 
-static inline uint16_t fget_u16le(FILE *fp)
+static inline uint16_t fget_u16le(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
   return (a) | (b << 8);
 }
 
-static inline uint16_t fget_u16be(FILE *fp)
+static inline uint16_t fget_u16be(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
   return (a << 8) | (b);
 }
 
-static inline int16_t fget_s16le(FILE *fp)
+static inline int16_t fget_s16le(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
   return (a) | (b << 8);
 }
 
-static inline int16_t fget_s16be(FILE *fp)
+static inline int16_t fget_s16be(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
   return (a << 8) | (b);
 }
 
-static inline uint32_t fget_u24le(FILE *fp)
+static inline uint32_t fget_u24le(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
@@ -181,7 +201,7 @@ static inline uint32_t fget_u24le(FILE *fp)
   return (a) | (b << 8) | (c << 16);
 }
 
-static inline uint32_t fget_u24be(FILE *fp)
+static inline uint32_t fget_u24be(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
@@ -189,7 +209,7 @@ static inline uint32_t fget_u24be(FILE *fp)
   return (a << 16) | (b << 8) | (c);
 }
 
-static inline uint32_t fget_u32le(FILE *fp)
+static inline uint32_t fget_u32le(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
@@ -198,7 +218,7 @@ static inline uint32_t fget_u32le(FILE *fp)
   return (a) | (b << 8) | (c << 16) | (d << 24);
 }
 
-static inline uint32_t fget_u32be(FILE *fp)
+static inline uint32_t fget_u32be(FILE *fp) noexcept
 {
   int a = fgetc(fp);
   int b = fgetc(fp);
@@ -209,7 +229,7 @@ static inline uint32_t fget_u32be(FILE *fp)
 
 /* String cleaning functions. */
 
-static inline bool strip_module_name(char *dest, size_t dest_len)
+static inline bool strip_module_name(char *dest, size_t dest_len) noexcept
 {
   size_t start = 0;
   size_t end = strlen(dest);
@@ -259,12 +279,12 @@ static inline bool strip_module_name(char *dest, size_t dest_len)
 #define DIR_SEPARATOR '/'
 #endif
 
-static bool isslash(char c)
+static constexpr bool isslash(char c) noexcept
 {
   return c == '/' || c == '\\';
 }
 
-static inline char *path_tokenize(char **cursor)
+static inline char *path_tokenize(char **cursor) noexcept
 {
   char *tok = *cursor;
   if(tok)
@@ -278,7 +298,7 @@ static inline char *path_tokenize(char **cursor)
   return tok;
 }
 
-static inline size_t path_clean_slashes(char *path)
+static inline size_t path_clean_slashes(char *path) noexcept
 {
   char *current;
   size_t len = 0;
@@ -316,7 +336,7 @@ static inline size_t path_clean_slashes(char *path)
 /* Utility function: get the number of days since the extended
  * Gregorian date 0000-03-01. Useful for conversion of dates
  * defined in "number of [days,seconds] since [epoch]". */
-static inline constexpr uint64_t date_to_total_days(int year, int month, int day)
+static inline constexpr uint64_t date_to_total_days(int year, int month, int day) noexcept
 {
   uint64_t m = (month + 9) % 12;
   uint64_t y = year - m / 10;
@@ -330,7 +350,7 @@ static inline constexpr uint64_t date_to_total_days(int year, int month, int day
  * Utility function: convert a number days since the extended Gregorian
  * date 0000-03-01 to a real date.
  */
-static inline void total_days_to_date(uint64_t total_days, int *year, int *month, int *day)
+static inline void total_days_to_date(uint64_t total_days, int *year, int *month, int *day) noexcept
 {
   int y = (10000 * total_days + 14780) / 3652425;
   int64_t dayofyear = total_days - (365 * y + (y / 4) - (y / 100) + (y / 400));
