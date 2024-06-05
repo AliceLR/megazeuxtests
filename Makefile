@@ -113,6 +113,12 @@ DSYMGEN_EXE  := dsymgen${BINEXT}
 DSYMGEN_OBJS := \
   ${OBJ}/dsymgen.o
 
+WAV2AVR_EXE  := wav2avr${BINEXT}
+WAV2AVR_OBJS := \
+  ${OBJ}/wav2avr.o \
+  ${OBJ}/error.o \
+  ${OBJ}/Config.o \
+
 IFFDUMP_EXE  := iffdump${BINEXT}
 IFFDUMP_OBJS := \
   ${OBJ}/iffdump.o \
@@ -147,6 +153,9 @@ ${MODULEUNPACK_OBJS}: | ${MODULEUNPACK_OBJ}
 -include ${DSYMGEN_OBJS:.o=.d}
 ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
 
+-include ${WAV2AVR_OBJS:.o=.d}
+${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
+
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
@@ -166,6 +175,7 @@ ALL_EXES := \
   ${MODULEDIAG_EXE}  \
   ${MODULEUNPACK_EXE} \
   ${DSYMGEN_EXE} \
+  ${WAV2AVR_EXE} \
   ${IFFDUMP_EXE} \
   ${UNARC_EXE} \
   ${UNARCFS_EXE} \
@@ -197,6 +207,10 @@ ${DSYMGEN_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${DSYMGEN_OBJS} ${LDLIBS}
 
+${WAV2AVR_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${WAV2AVR_OBJS} ${LDLIBS}
+
 ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${IFFDUMP_OBJS} ${LDLIBS}
@@ -220,6 +234,7 @@ clean:
 	rm -f modutil modutil.exe modutil_san*
 	rm -f dimgutil dimgutil.exe dimgutil_san*
 	rm -f dsymgen dsymgen.exe dsymgen_san*
+	rm -rf wav2avr wav2avr.exe wav2avr_san*
 	rm -f iffdump iffdump.exe iffdump_san*
 	rm -f unarc unarc.exe unarc_san*
 	rm -f unarcfs unarcfs.exe unarcfs_san*

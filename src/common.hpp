@@ -227,6 +227,78 @@ static inline uint32_t fget_u32be(FILE *fp) noexcept
   return (a << 24) | (b << 16) | (c << 8) | (d);
 }
 
+static inline int fput_u16le(uint16_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
+static inline int fput_u16be(uint16_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
+static inline int fput_u24le(uint32_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 16) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
+static inline int fput_u24be(uint32_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 16) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
+static inline int64_t fput_u32le(uint32_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 16) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 24) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
+static inline int64_t fput_u32be(uint32_t val, FILE *fp) noexcept
+{
+  int ret;
+  if((ret = fputc((val >> 24) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 16) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 8) & 0xff, fp)) < 0)
+    return ret;
+  if((ret = fputc((val >> 0) & 0xff, fp)) < 0)
+    return ret;
+  return val;
+}
+
 /* String cleaning functions. */
 
 static inline bool strip_module_name(char *dest, size_t dest_len) noexcept
