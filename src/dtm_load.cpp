@@ -198,6 +198,12 @@ public:
   {
     return !!(sample_type & 0x100);
   }
+
+  constexpr bool is_default() noexcept
+  {
+    return length == 0 && loop_start == 0 && loop_length == 0 && finetune == 0 &&
+      default_volume == 64 && sample_type == 8 && frequency == 8363;
+  }
 };
 
 class DTM_comment
@@ -281,7 +287,7 @@ public:
 class DTM_module
 {
 public:
-  static constexpr size_t D_T_header_length = 10;
+  static constexpr size_t D_T_header_length = 14;
   static constexpr size_t min_SV19_length = 4 + 2 * MAX_CHANNELS;
   static constexpr size_t max_SV19_length = min_SV19_length + MAX_INSTRUMENTS;
   static constexpr size_t max_PATT_length = 8;
@@ -307,6 +313,7 @@ public:
   uint16_t reserved_dt;
   uint16_t initial_speed;
   uint16_t initial_tempo; // tracker BPM
+  uint32_t undocumented_dt;
   uint8_t  name[129];
   char     name_clean[129];
   /* SV19 */
@@ -366,6 +373,7 @@ public:
     m.reserved_dt = mem_u16be(buf + 4);
     m.initial_speed = mem_u16be(buf + 6);
     m.initial_tempo = mem_u16be(buf + 8);
+    m.undocumented_dt = mem_u32be(buf + 10);
 
     size_t name_len = len - DTM_module::D_T_header_length;
     memcpy(m.name, buf + DTM_module::D_T_header_length, name_len);
@@ -790,7 +798,7 @@ public:
 
       static constexpr const char *labels[] =
       {
-        "Name", "Length", "LoopStart", "LoopLen", "Fmt", "Ch", "Vol"
+        "Name", "Length", "LoopStart", "LoopLen", "Fmt", "Ch", "Freq.", "Fine", "Vol"
       };
 
       table::table<
@@ -802,6 +810,8 @@ public:
         table::spacer,
         table::number<3>,
         table::number<2>,
+        table::number<5>,
+        table::number<4>,
         table::number<4>> s_table;
 
       format::line();
@@ -810,9 +820,13 @@ public:
       for(size_t i = 0; i < m.instruments.size(); i++)
       {
         DTM_instrument &ins = m.instruments[i];
-        s_table.row(i + 1, ins.name, {},
+        if(ins.is_default() && !Config.dump_samples_extra)
+          continue;
+
+        s_table.row(i, ins.name, {},
           ins.length, ins.loop_start, ins.loop_length, {},
-          ins.sample_bits(), ins.is_stereo() == true, ins.default_volume);
+          ins.sample_bits(), ins.is_stereo() == true,
+          ins.frequency, ins.finetune, ins.default_volume);
       }
     }
 
