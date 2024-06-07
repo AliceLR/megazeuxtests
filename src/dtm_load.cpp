@@ -32,49 +32,273 @@
 static size_t num_dtm = 0;
 
 
-enum DTM_features
+enum DTM_feature
 {
+  FT_CHUNK_VERS,
+  FT_CHUNK_SV19,
+  FT_CHUNK_IENV,
+  FT_PATTERN_MOD,
+  FT_PATTERN_V204,
+  FT_PATTERN_V206,
+  FT_PATTERN_UNKNOWN,
+  FT_MONO_MODE,
   FT_SAMPLE_8_BIT,
   FT_SAMPLE_16_BIT,
   FT_SAMPLE_UNKNOWN_BITS,
   FT_SAMPLE_STEREO,
+  FT_FX_ARPEGGIO,
+  FT_FX_PORTA_UP,
+  FT_FX_PORTA_DN,
+  FT_FX_TONE_PORTAMENTO,
+  FT_FX_VIBRATO,
+  FT_FX_TONE_PORTAMENTO_VOLSLIDE,
+  FT_FX_VIBRATO_VOLSLIDE,
+  FT_FX_TREMOLO,
+  FT_FX_8,
+  FT_FX_SET_SAMPLE_OFFSET,
+  FT_FX_VOLSLIDE,
+  FT_FX_PATTERN_JUMP,
+  FT_FX_VOLUME,
+  FT_FX_PATTERN_BREAK,
+  FT_FX_EXTENDED,
+  FT_FX_SPEED,
+  FT_FX_GT_10,
+  FT_FX_EX_0,
+  FT_FX_FINE_PORTA_UP,
+  FT_FX_FINE_PORTA_DN,
+  FT_FX_GLISSANDO_CONTROL,
+  FT_FX_SET_VIBRATO_WAVEFORM,
+  FT_FX_SET_FINETUNE,
+  FT_FX_PATTERN_LOOP,
+  FT_FX_EX_7,
+  FT_FX_EX_8,
+  FT_FX_EX_9,
+  FT_FX_FINE_VOLSLIDE_UP,
+  FT_FX_FINE_VOLSLIDE_DN,
+  FT_FX_NOTE_CUT,
+  FT_FX_NOTE_DELAY,
+  FT_FX_PATTERN_DELAY,
+  FT_FX_EX_F,
   NUM_FEATURES
 };
 
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "C:VERS",
+  "C:SV19",
+  "C:IENV",
+  "P:MOD",
+  "P:2.04",
+  "P:2.06",
+  "P:???",
+  "M:Mono",
   "S:8",
   "S:16",
   "S:??",
   "S:Stereo",
+  "E:Arp",
+  "E:PortaUp",
+  "E:PortaDn",
+  "E:Toneporta",
+  "E:Vibrato",
+  "E:TPVolside",
+  "E:VibVolslide",
+  "E:Tremolo",
+  "E:8",
+  "E:Offset",
+  "E:Volslide",
+  "E:Jump",
+  "E:Volume",
+  "E:Break",
+  "E:Ex",
+  "E:Speed",
+  "E:>=10",
+  "E:E0x",
+  "E:FPortaUp",
+  "E:FPortaDn",
+  "E:Glissando",
+  "E:VibWF",
+  "E:Finetune",
+  "E:Loop",
+  "E:E7x",
+  "E:E8x",
+  "E:E9x",
+  "E:FVolslideUp",
+  "E:FVolslideDn",
+  "E:NoteCut",
+  "E:NoteDelay",
+  "E:PatternDelay",
+  "E:EFx",
 };
 
 static constexpr unsigned MAX_CHANNELS = 32;
+static constexpr unsigned MAX_ROWS = 512;
 static constexpr unsigned MAX_INSTRUMENTS = 64;
 static constexpr unsigned MAX_PATTERNS = 128;
 static constexpr unsigned MAX_SEQUENCE = 128;
 
+class format_version
+{
+public:
+  uint32_t value;
+  constexpr format_version(uint32_t v) noexcept: value(v) {}
+
+  constexpr format_version(char a, char b, char c, char d) noexcept:
+   format_version(((unsigned)a << 24u) | ((unsigned)b << 16u) |
+                  ((unsigned)c <<  8u) | ((unsigned)d)) {}
+
+  constexpr format_version(const char (&a)[5]) noexcept:
+   format_version(a[0], a[1], a[2], a[3]) {}
+
+  constexpr bool operator=(format_version v) const noexcept
+  {
+     return value == v.value;
+  }
+  constexpr bool operator=(uint32_t v) const noexcept
+  {
+    return value == v;
+  }
+  constexpr operator uint32_t() const noexcept
+  {
+    return value;
+  }
+};
+
+static constexpr format_version format_mod(0);
+static constexpr format_version format_v204("2.04");
+static constexpr format_version format_v206("2.06");
+
+
+static constexpr DTM_feature effect_features[16] =
+{
+  FT_FX_ARPEGGIO,
+  FT_FX_PORTA_UP,
+  FT_FX_PORTA_DN,
+  FT_FX_TONE_PORTAMENTO,
+  FT_FX_VIBRATO,
+  FT_FX_TONE_PORTAMENTO_VOLSLIDE,
+  FT_FX_VIBRATO_VOLSLIDE,
+  FT_FX_TREMOLO,
+  FT_FX_8,
+  FT_FX_SET_SAMPLE_OFFSET,
+  FT_FX_VOLSLIDE,
+  FT_FX_PATTERN_JUMP,
+  FT_FX_VOLUME,
+  FT_FX_PATTERN_BREAK,
+  FT_FX_EXTENDED,
+  FT_FX_SPEED,
+};
+
+static constexpr DTM_feature extended_features[16] =
+{
+  FT_FX_EX_0,
+  FT_FX_FINE_PORTA_UP,
+  FT_FX_FINE_PORTA_DN,
+  FT_FX_GLISSANDO_CONTROL,
+  FT_FX_SET_VIBRATO_WAVEFORM,
+  FT_FX_SET_FINETUNE,
+  FT_FX_PATTERN_LOOP,
+  FT_FX_EX_7,
+  FT_FX_EX_8,
+  FT_FX_EX_9,
+  FT_FX_FINE_VOLSLIDE_UP,
+  FT_FX_FINE_VOLSLIDE_DN,
+  FT_FX_NOTE_CUT,
+  FT_FX_NOTE_DELAY,
+  FT_FX_PATTERN_DELAY,
+  FT_FX_EX_F,
+};
 
 class DTM_event
 {
 public:
-  uint8_t  note; /* upper: octave, lower: note */
+  static constexpr size_t size_mod = 4;
+  static constexpr size_t size_v204 = 4;
+  static constexpr size_t size_v206 = 6;
+
+  /* MOD:  Amiga period */
+  /* 2.04: upper: octave, lower: note */
+  /* 2.06: FIXME */
+  uint16_t note;
   uint8_t  instrument; /* 0-63 */
   uint8_t  volume; /* 0-63? */
   uint8_t  effect; /* 0-15 */
   uint8_t  param; /* 0-255 */
 
-  bool constexpr unpack_v204(const uint8_t *data, size_t data_len) noexcept
+  static constexpr size_t size(uint32_t format) noexcept
   {
-    if(data_len < 4)
-      return false;
+    switch(format)
+    {
+      case format_mod:
+        return size_mod;
+      case format_v204:
+        return size_v204;
+      case format_v206:
+        return size_v206;
+    }
+    return 0;
+  }
+
+  constexpr size_t unpack_mod(const uint8_t *data, size_t data_len) noexcept
+  {
+    if(data_len < size_mod)
+      return 0;
+
+    note = ((data[0] & 0x0F) << 8) | (data[1]);
+    volume = 0;
+    instrument = (data[0] & 0xF0) | (data[2] >> 4);
+    effect = (data[2] & 0x0F);
+    param = data[3];
+    return size_mod;
+  }
+
+  constexpr size_t unpack_v204(const uint8_t *data, size_t data_len) noexcept
+  {
+    if(data_len < size_v204)
+      return 0;
 
     note = data[0];
-    instrument = data[1] & 0x3F;
-    volume = ((data[2] & 0x0F) << 2) | (data[1] >> 6);
-    effect = (data[2] & 0xF0) >> 4;
+    volume = data[1] >> 2;
+    instrument = ((data[2] & 0xF0) >> 4) | ((data[1] & 0x03) << 4);
+    effect = (data[2] & 0x0F);
     param = data[3];
-    return true;
+    return size_v204;
+  }
+
+  constexpr size_t unpack_v206(const uint8_t *data, size_t data_len) noexcept
+  {
+    if(data_len < size_v206)
+      return 0;
+
+    return 0; // FIXME!
+  }
+
+  constexpr size_t unpack(const uint8_t *data, size_t data_len, uint32_t format) noexcept
+  {
+    switch(format)
+    {
+      case format_mod:
+        return unpack_mod(data, data_len);
+      case format_v204:
+        return unpack_v204(data, data_len);
+      case format_v206:
+        return unpack_v206(data, data_len);
+    }
+    return 0;
+  }
+
+  constexpr void check_features(bool (&uses)[NUM_FEATURES]) const noexcept
+  {
+    if(effect >= 0x10)
+    {
+      uses[FT_FX_GT_10] = true;
+      return;
+    }
+
+    if(effect == 0x0E)
+      uses[extended_features[param >> 4]] = true;
+
+    uses[effect_features[effect]] = true;
   }
 };
 
@@ -89,8 +313,9 @@ public:
   char name[max_name_length + 1];
   char name_clean[max_name_length + 1];
   /* DAPT */
-  uint16_t reserved;
+  uint32_t reserved;
   uint16_t length;
+  uint16_t channels; // Copied from global data
   std::vector<DTM_event> events;
 
   DTM_pattern() noexcept: loaded_DAPT(false),
@@ -104,13 +329,36 @@ public:
     // FIXME: clean
   }
 
-  void load(const uint8_t *data, size_t data_len)
+  void set_header(uint16_t chn, uint32_t res, uint16_t len)
   {
-/*
     reserved = res;
     length = len;
-*/
-    // FIXME: load pattern
+    channels = chn;
+    events.resize((size_t)chn * len);
+  }
+
+  bool load(const uint8_t *data, size_t data_len, uint32_t format)
+  {
+    size_t ev = 0;
+    for(size_t i = 0; i < length; i++)
+    {
+      for(size_t j = 0; j < channels; j++)
+      {
+        size_t used = events[ev++].unpack(data, data_len, format);
+        if(!used)
+          return false;
+
+        data += used;
+        data_len -= used;
+      }
+    }
+    return true;
+  }
+
+  void check_features(bool (&uses)[NUM_FEATURES]) const
+  {
+    for(const DTM_event &ev : events)
+      ev.check_features(uses);
   }
 };
 
@@ -189,17 +437,17 @@ public:
     return modutil::SUCCESS;
   }
 
-  constexpr unsigned sample_bits() noexcept
+  constexpr unsigned sample_bits() const noexcept
   {
     return sample_type & 0xff;
   }
 
-  constexpr bool is_stereo() noexcept
+  constexpr bool is_stereo() const noexcept
   {
     return !!(sample_type & 0x100);
   }
 
-  constexpr bool is_default() noexcept
+  constexpr bool is_default() const noexcept
   {
     return length == 0 && loop_start == 0 && loop_length == 0 && finetune == 0 &&
       default_volume == 64 && sample_type == 8 && frequency == 8363;
@@ -379,6 +627,10 @@ public:
     memcpy(m.name, buf + DTM_module::D_T_header_length, name_len);
     m.name[name_len] = '\0';
     // FIXME: clean
+
+    if(m.output_type == 0xff)
+      m.uses[FT_MONO_MODE] = true;
+
     return modutil::SUCCESS;
   }
 };
@@ -393,6 +645,7 @@ public:
     if(m.loaded_VERS)
       format::warning("duplicate VERS chunk");
     m.loaded_VERS = true;
+    m.uses[FT_CHUNK_VERS] = true;
 
     if(len < 4)
     {
@@ -534,6 +787,7 @@ public:
     if(m.loaded_SV19)
       format::warning("duplicate SV19 chunk");
     m.loaded_SV19 = true;
+    m.uses[FT_CHUNK_SV19] = true;
 
     if(len < DTM_module::min_SV19_length ||
      len > DTM_module::max_SV19_length)
@@ -627,6 +881,22 @@ public:
     m.num_patterns = mem_u16be(buf + 2);
     m.pattern_format_version = mem_u32be(buf + 4);
 
+    switch(m.pattern_format_version)
+    {
+      case 0:
+        m.uses[FT_PATTERN_MOD] = true;
+        break;
+      case format_v204:
+        m.uses[FT_PATTERN_V204] = true;
+        break;
+      case format_v206:
+        m.uses[FT_PATTERN_V206] = true;
+        break;
+      default:
+        m.uses[FT_PATTERN_UNKNOWN] = true;
+        break;
+    }
+
     if(m.num_channels > MAX_CHANNELS)
       format::warning("PATT claims invalid channel count %d", m.num_channels);
     if(m.num_patterns > MAX_PATTERNS)
@@ -698,6 +968,7 @@ public:
       if(m.instruments[i].sample_bits() == 16)
         m.uses[FT_SAMPLE_16_BIT] = true;
       else
+      if(m.instruments[i].sample_bits() != 0)
         m.uses[FT_SAMPLE_UNKNOWN_BITS] = true;
 
       if(m.instruments[i].is_stereo())
@@ -714,8 +985,63 @@ public:
 
   static modutil::error parse(FILE *fp, size_t len, DTM_module &m)
   {
-    // FIXME: implement uniqueness check
-    // FIXME: load
+    if(len < 8)
+    {
+      format::warning("ignoring DAPT of invalid length %zu\n", len);
+      return modutil::SUCCESS;
+    }
+    uint8_t buf[MAX_CHANNELS * MAX_ROWS];
+    if(fread(buf, 1, 8, fp) < 8)
+    {
+      format::warning("read error in DAPT");
+      return modutil::SUCCESS;
+    }
+    uint32_t reserved = mem_u32be(buf + 0);
+    uint16_t num      = mem_u16be(buf + 4);
+    uint16_t length   = mem_u16be(buf + 6);
+    if(num >= MAX_PATTERNS)
+    {
+      format::warning("ignoring DAPT for invalid pattern number %d", num);
+      return modutil::SUCCESS;
+    }
+    if(length > MAX_ROWS)
+    {
+      format::warning("ignoring DAPT %d with unsupported row count %d", num, length);
+      return modutil::SUCCESS;
+    }
+
+    DTM_pattern &pat = m.patterns[num];
+    if(pat.loaded_DAPT)
+    {
+      format::warning("ignoring duplicate DAPT %d", num);
+      return modutil::SUCCESS;
+    }
+    pat.set_header(m.num_channels, reserved, length);
+
+    size_t event_size = DTM_event::size(m.pattern_format_version);
+    if(!event_size)
+    {
+      format::warning("skipping DAPT %d for unknown pattern version %zu",
+       num, (size_t)m.pattern_format_version);
+      return modutil::SUCCESS;
+    }
+
+    len = MIN(len, event_size * m.num_channels * length);
+    if(len > sizeof(buf))
+    {
+      format::warning("skipping DAPT %d of unsupported packed size %zu", num, len);
+      return modutil::SUCCESS;
+    }
+    if(fread(buf, 1, len, fp) < len)
+    {
+      format::warning("read error in DAPT %d", num);
+      return modutil::SUCCESS;
+    }
+
+    if(!pat.load(buf, len, m.pattern_format_version))
+      format::warning("error unpacking DAPT %d", num);
+
+    pat.check_features(m.uses);
     return modutil::SUCCESS;
   }
 };
@@ -776,7 +1102,8 @@ public:
     // FIXME: warn missing data
 
     format::line("Name",     "%s", m.name);
-    format::line("Version",  "%" PRIu32, m.version);
+    if(m.version)
+      format::line("Version",  "%" PRIu32, m.version);
     format::line("Speed",    "%d", m.initial_speed);
     format::line("Tempo",    "%d", m.initial_tempo);
     if(m.loaded_SV19 && m.ticks_per_beat && m.initial_bpm)
@@ -830,8 +1157,64 @@ public:
       }
     }
 
-    // FIXME: patterns, sequence, channels
+    // FIXME: channels
+    if(Config.dump_patterns)
+    {
+      format::line();
+      format::orders("Orders", m.sequence, m.num_orders);
 
+      if(!Config.dump_pattern_rows)
+        format::line();
+
+      for(size_t i = 0; i < m.num_patterns; i++)
+      {
+        DTM_pattern &p = m.patterns[i];
+
+        if(m.pattern_format_version == format_mod)
+        {
+          using EVENT = format::event<format::periodMOD, format::sample, format::effect>;
+          format::pattern<EVENT> pattern(i, m.num_channels, p.length);
+
+          if(!Config.dump_pattern_rows)
+          {
+            pattern.summary();
+            continue;
+          }
+
+          for(const DTM_event &ev : p.events)
+          {
+            format::periodMOD a{ ev.note };
+            format::sample    b{ ev.instrument };
+            format::effect    c{ ev.effect, ev.param };
+
+            pattern.insert(EVENT(a, b, c));
+          }
+          pattern.print();
+        }
+        else
+        {
+          using EVENT = format::event<format::note, format::sample, format::volume, format::effectXM>;
+          format::pattern<EVENT> pattern(i, m.num_channels, p.length);
+
+          if(!Config.dump_pattern_rows)
+          {
+            pattern.summary();
+            continue;
+          }
+
+          for(const DTM_event &ev : p.events)
+          {
+            format::note     a{ static_cast<uint8_t>(ev.note) };
+            format::sample   b{ ev.instrument };
+            format::volume   c{ ev.volume };
+            format::effectXM d{ ev.effect, ev.param };
+
+            pattern.insert(EVENT(a, b, c, d));
+          }
+          pattern.print();
+        }
+      }
+    }
     return modutil::SUCCESS;
   }
 
