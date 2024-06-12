@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <memory>
+#include <vector>
 
 #include "modutil.hpp"
 
@@ -250,20 +252,16 @@ struct XM_event
 
 struct XM_pattern
 {
-  XM_event *events = nullptr;
+  std::vector<XM_event> events;
+
   uint32_t header_size; /* should be 9 */
   uint8_t  packing_type;
   uint16_t num_rows;
   uint16_t packed_size;
 
-  ~XM_pattern()
-  {
-    delete[] events;
-  }
-
   void allocate(uint16_t channels, uint16_t rows)
   {
-    events = new XM_event[channels * rows]{};
+    events.resize(channels * rows);
   }
 };
 
@@ -294,7 +292,7 @@ struct XM_sample
 
 struct XM_instrument
 {
-  XM_sample *samples = nullptr;
+  std::vector<XM_sample> samples;
 
   /*   0 */ uint32_t header_size;
   /*   4 */ char     name[22];
@@ -323,50 +321,41 @@ struct XM_instrument
   /* 241 */ uint16_t reserved;
   /* 243 */
 
-  ~XM_instrument()
-  {
-    delete[] samples;
-  }
-
   void allocate()
   {
-    samples = new XM_sample[num_samples]{};
+    samples.resize(num_samples);
   }
 };
 
 struct XM_data
 {
-  XM_header     header;
-  XM_pattern    patterns[256];
-  XM_instrument *instruments = nullptr;
-  uint8_t       *buffer = nullptr;
+  XM_header                  header;
+  XM_pattern                 patterns[256];
+  std::vector<XM_instrument> instruments;
+
+  std::unique_ptr<uint8_t[]> buffer;
 
   char name[21];
   char tracker[21];
   size_t num_samples;
   bool uses[NUM_FEATURES];
 
-  ~XM_data()
-  {
-    delete[] instruments;
-    delete[] buffer;
-  }
-
   void allocate_buffer()
   {
-    buffer = new uint8_t[65536];
+    if(!buffer)
+      buffer = std::make_unique<uint8_t[]>(65536);
   }
 
   void allocate_instruments()
   {
-    instruments = new XM_instrument[header.num_instruments]{};
+    instruments.resize(header.num_instruments);
   }
 };
 
 
-static void check_event(XM_data &m, const XM_event *ev)
+static void check_event(XM_data &m, const XM_event &ev)
 {
-  switch(ev->effect)
+  switch(ev.effect)
   {
     case FX_ARPEGGIO:
     case FX_PORTAMENTO_UP:
@@ -442,7 +431,7 @@ static void check_event(XM_data &m, const XM_event *ev)
     // Extra effects (Exx and Xxx)
     case FX_EXTRA:
     {
-      switch(ev->param >> 4)
+      switch(ev.param >> 4)
       {
         case EX_UNUSED_0:
         case EX_FINE_PORTAMENTO_UP:
@@ -475,7 +464,7 @@ static void check_event(XM_data &m, const XM_event *ev)
 
     case FX_EXTRA_2:
     {
-      switch(ev->param >> 4)
+      switch(ev.param >> 4)
       {
         case XX_UNUSED_0:
         case XX_EXTRA_FINE_PORTAMENTO_UP:
@@ -490,7 +479,7 @@ static void check_event(XM_data &m, const XM_event *ev)
 
         case XX_SOUND_CONTROL:
           m.uses[FT_FX_MODPLUG_EXTENSION] = true;
-          if((ev->param & 0xf) >= 0xe)
+          if((ev.param & 0xf) >= 0xe)
             m.uses[FT_XX_REVERSE] = true;
           break;
 
@@ -543,29 +532,24 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
     if(!p.packed_size)
       continue;
 
-    uint8_t *buffer = m.buffer;
-    if(!fread(buffer, p.packed_size, 1, fp))
+    if(fread(m.buffer.get(), 1, p.packed_size, fp) < p.packed_size)
     {
       format::error("read error at pattern %zu", i);
       return modutil::READ_ERROR;
     }
 
-    XM_event *ev = p.events;
-    uint8_t *current = buffer;
-    uint8_t *end = buffer + p.packed_size;
+    uint8_t *current = m.buffer.get();
+    uint8_t *end = current + p.packed_size;
 
-    for(size_t row = 0; row < p.num_rows; row++)
+    for(XM_event &ev : p.events)
     {
-      for(size_t track = 0; track < m.header.num_channels; track++, ev++)
+      ev = XM_event(current, end);
+      if(current > end)
       {
-        *ev = XM_event(current, end);
-        if(current > end)
-        {
-          format::warning("invalid pattern packing for %zu", i);
-          return modutil::INVALID;
-        }
-        check_event(m, ev);
+        format::warning("invalid pattern packing for %zu", i);
+        return modutil::INVALID;
       }
+      check_event(m, ev);
     }
   }
   return modutil::SUCCESS;
@@ -598,6 +582,7 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     }
 
     memcpy(ins.name, buffer + 4, sizeof(ins.name));
+    ins.name[sizeof(ins.name) - 1] = '\0';
 
     m.num_samples += ins.num_samples;
     if(!ins.num_samples)
@@ -672,6 +657,7 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
       s.transpose   = buffer[16];
       s.reserved    = buffer[17];
       memcpy(s.name, buffer + 18, sizeof(s.name));
+      s.name[sizeof(s.name) - 1] = '\0';
 
       // Skip any remaining header.
       if(ins.sample_header_size > 40)
@@ -914,13 +900,14 @@ public:
         format::line();
         i_table.header("Instr.", i_labels);
 
-        for(size_t i = 0; i < h.num_instruments; i++)
+        size_t i = 1;
+        for(const XM_instrument &ins : m.instruments)
         {
-          XM_instrument &ins = m.instruments[i];
-          i_table.row(i + 1, ins.name, {},
+          i_table.row(i, ins.name, {},
             ins.type, ins.num_samples, ins.header_size, ins.sample_header_size, {},
             ins.num_volume_points, ins.num_pan_points, ins.fadeout, {},
             ins.vibrato_type, ins.vibrato_sweep, ins.vibrato_depth, ins.vibrato_rate);
+          i++;
         }
       }
 
@@ -929,18 +916,18 @@ public:
         format::line();
         s_table.header("Samples", s_labels);
 
+        size_t i = 1;
         size_t smp = 1;
-        for(size_t i = 0; i < h.num_instruments; i++)
+        for(const XM_instrument &ins : m.instruments)
         {
-          XM_instrument &ins = m.instruments[i];
-          for(size_t j = 0; j < ins.num_samples; j++)
+          for(const XM_sample &s : ins.samples)
           {
-            XM_sample &s = ins.samples[j];
-            s_table.row(smp, s.name, i + 1, {},
+            s_table.row(smp, s.name, i, {},
               s.length, s.loop_start, s.loop_length, {},
               s.volume, s.finetune, s.type, s.transpose);
             smp++;
           }
+          i++;
         }
       }
     }
@@ -966,18 +953,14 @@ public:
           continue;
         }
 
-        XM_event *current = p.events;
-        for(size_t row = 0; row < p.num_rows; row++)
+        for(const XM_event &ev : p.events)
         {
-          for(size_t track = 0; track < h.num_channels; track++, current++)
-          {
-            format::note     a{ current->note };
-            format::sample   b{ current->instrument };
-            format::volume   c{ current->volume };
-            format::effectXM d{ current->effect, current->param };
+          format::note     a{ ev.note };
+          format::sample   b{ ev.instrument };
+          format::volume   c{ ev.volume };
+          format::effectXM d{ ev.effect, ev.param };
 
-            pattern.insert(EVENT(a, b, c, d));
-          }
+          pattern.insert(EVENT(a, b, c, d));
         }
         pattern.print();
       }
