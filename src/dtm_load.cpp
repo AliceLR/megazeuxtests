@@ -46,6 +46,7 @@ enum DTM_feature
   FT_SAMPLE_16_BIT,
   FT_SAMPLE_UNKNOWN_BITS,
   FT_SAMPLE_STEREO,
+  FT_ROWS_96,
   FT_FX_ARPEGGIO,
   FT_FX_PORTA_UP,
   FT_FX_PORTA_DN,
@@ -96,6 +97,7 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "S:16",
   "S:??",
   "S:Stereo",
+  "Rows>96",
   "E:Arp",
   "E:PortaUp",
   "E:PortaDn",
@@ -295,6 +297,9 @@ public:
       return;
     }
 
+    if(effect == 0 && param == 0)
+      return;
+
     if(effect == 0x0E)
       uses[extended_features[param >> 4]] = true;
 
@@ -403,8 +408,10 @@ public:
   uint32_t loop_length;
   char     name[max_name_length];
   char     name_clean[max_name_length];
-  uint16_t sample_type; /* bits 0-7 = number of bits; bit 8 = stereo */
-  uint32_t note_midi; /* MIDI patch/bank? what? */
+  uint8_t  sample_stereo;
+  uint8_t  sample_bits; /* 8:8-bit, 16:16-bit, 0:deleted? */
+  uint16_t midi_note; /* "Note" field used as a transpose in later versions. */
+  uint16_t midi_unknown; /* MIDI patch/bank? what? */
   uint32_t frequency; /* C2? C4? C5? */
   /* SV19 */
   uint8_t  type; // 0=memory, 1=external file, 2=midi
@@ -414,7 +421,8 @@ public:
   constexpr DTM_instrument() noexcept: loaded_DAIT(false),
    reserved{}, length{}, finetune{}, default_volume{64},
    loop_start{}, loop_length{}, name{}, name_clean{},
-   sample_type{}, note_midi{}, frequency{}, type{}, sample_data{} {}
+   sample_stereo{}, sample_bits{}, midi_note{}, midi_unknown{},
+   frequency{}, type{}, sample_data{} {}
 
   modutil::error load(const uint8_t *data, size_t data_len) noexcept
   {
@@ -427,8 +435,10 @@ public:
     default_volume = data[9];
     loop_start     = mem_u32be(data + 10);
     loop_length    = mem_u32be(data + 14);
-    sample_type    = mem_u16be(data + 40);
-    note_midi      = mem_u32be(data + 42);
+    sample_stereo  = data[40];
+    sample_bits    = data[41];
+    midi_note      = mem_u16be(data + 42);
+    midi_unknown   = mem_u16be(data + 44);
     frequency      = mem_u32be(data + 46);
 
     memcpy(name, data + 18, max_name_length);
@@ -437,20 +447,11 @@ public:
     return modutil::SUCCESS;
   }
 
-  constexpr unsigned sample_bits() const noexcept
-  {
-    return sample_type & 0xff;
-  }
-
-  constexpr bool is_stereo() const noexcept
-  {
-    return !!(sample_type & 0x100);
-  }
-
   constexpr bool is_default() const noexcept
   {
     return length == 0 && loop_start == 0 && loop_length == 0 && finetune == 0 &&
-      default_volume == 64 && sample_type == 8 && frequency == 8363;
+      default_volume == 64 && sample_stereo == 0 && sample_bits == 8 &&
+      (frequency == 8363 || frequency == 8400);
   }
 };
 
@@ -560,13 +561,13 @@ public:
   uint16_t output_type; // FFh = Mono
   uint16_t reserved_dt;
   uint16_t initial_speed;
-  uint16_t initial_tempo; // tracker BPM
+  uint16_t initial_bpm; // tracker BPM
   uint32_t undocumented_dt;
   uint8_t  name[129];
   char     name_clean[129];
   /* SV19 */
   uint16_t ticks_per_beat;
-  uint32_t initial_bpm;
+  uint32_t initial_bpm_frac; // tracker BPM (fractional portion)
   /* S.Q. */
   uint16_t num_orders;
   uint16_t repeat_position;
@@ -620,7 +621,7 @@ public:
     m.output_type = mem_u16be(buf + 2);
     m.reserved_dt = mem_u16be(buf + 4);
     m.initial_speed = mem_u16be(buf + 6);
-    m.initial_tempo = mem_u16be(buf + 8);
+    m.initial_bpm = mem_u16be(buf + 8);
     m.undocumented_dt = mem_u32be(buf + 10);
 
     size_t name_len = len - DTM_module::D_T_header_length;
@@ -802,8 +803,8 @@ public:
       format::warning("read error in SV19, skipping");
       return modutil::SUCCESS;
     }
-    m.ticks_per_beat = mem_u16be(buf + 0);
-    m.initial_bpm    = mem_u32be(buf + 2);
+    m.ticks_per_beat   = mem_u16be(buf + 0);
+    m.initial_bpm_frac = mem_u32be(buf + 2);
 
     /* 4 (32 * 2) - initial panning table */
     size_t i;
@@ -962,16 +963,16 @@ public:
       }
       m.instruments[i].load(buf, DTM_instrument::INST_entry_length);
 
-      if(m.instruments[i].sample_bits() == 8)
+      if(m.instruments[i].sample_bits == 8)
         m.uses[FT_SAMPLE_8_BIT] = true;
       else
-      if(m.instruments[i].sample_bits() == 16)
+      if(m.instruments[i].sample_bits == 16)
         m.uses[FT_SAMPLE_16_BIT] = true;
       else
-      if(m.instruments[i].sample_bits() != 0)
+      if(m.instruments[i].sample_bits != 0)
         m.uses[FT_SAMPLE_UNKNOWN_BITS] = true;
 
-      if(m.instruments[i].is_stereo())
+      if(m.instruments[i].sample_stereo)
         m.uses[FT_SAMPLE_STEREO] = true;
     }
     return modutil::SUCCESS;
@@ -1009,6 +1010,8 @@ public:
       format::warning("ignoring DAPT %d with unsupported row count %d", num, length);
       return modutil::SUCCESS;
     }
+    if(length > 96)
+      m.uses[FT_ROWS_96] = true;
 
     DTM_pattern &pat = m.patterns[num];
     if(pat.loaded_DAPT)
@@ -1103,9 +1106,14 @@ public:
 
     format::line("Name",     "%s", m.name);
     if(m.version)
-      format::line("Version",  "%" PRIu32, m.version);
+      format::line("Version","%d.%d", (int)m.version / 10, (int)m.version % 10);
+    else
+      format::line("Version","%s", m.pattern_format_version == format_v204 ? "2.04" : "2.03");
     format::line("Speed",    "%d", m.initial_speed);
-    format::line("Tempo",    "%d", m.initial_tempo);
+    if(m.version >= 19)
+      format::line("Tempo",  "%.02f", ((double)m.initial_bpm_frac / 4294967296.0) + m.initial_bpm);
+    else
+      format::line("Tempo",    "%d", m.initial_bpm);
     if(m.loaded_SV19 && m.ticks_per_beat && m.initial_bpm)
     {
       format::line("perBeat","%d", m.ticks_per_beat);
@@ -1125,7 +1133,7 @@ public:
 
       static constexpr const char *labels[] =
       {
-        "Name", "Length", "LoopStart", "LoopLen", "Fmt", "Ch", "Freq.", "Fine", "Vol"
+        "Name", "Length", "LoopStart", "LoopLen", "Fmt", "Ch", "Freq.", "Fine", "Vol", "Note"
       };
 
       table::table<
@@ -1139,7 +1147,8 @@ public:
         table::number<2>,
         table::number<5>,
         table::number<4>,
-        table::number<4>> s_table;
+        table::number<4>,
+        table::string<4, encode::strip, table::RIGHT>> s_table;
 
       format::line();
       s_table.header("Sample", labels);
@@ -1150,10 +1159,25 @@ public:
         if(ins.is_default() && !Config.dump_samples_extra)
           continue;
 
+        char tmp[4];
+        auto notefunc = [&tmp](uint16_t midi_note)
+        {
+          static constexpr const char notes[12][3] =
+          {
+            "C-", "C#", "D-", "D#", "E-", "F-",
+            "F#", "G-", "G#", "A-", "A#", "B-",
+          };
+          if(midi_note < 120)
+            snprintf(tmp, sizeof(tmp), "%s%d", notes[midi_note % 12], midi_note / 12);
+          else
+            strcpy(tmp, "???");
+          return tmp;
+        };
+
         s_table.row(i, ins.name, {},
           ins.length, ins.loop_start, ins.loop_length, {},
-          ins.sample_bits(), ins.is_stereo() == true,
-          ins.frequency, ins.finetune, ins.default_volume);
+          ins.sample_bits, ins.sample_stereo ? 2 : 1,
+          ins.frequency, ins.finetune, ins.default_volume, notefunc(ins.midi_note));
       }
     }
 
