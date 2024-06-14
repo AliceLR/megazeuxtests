@@ -184,11 +184,6 @@ static int ice_init_buffer(struct ice_state *ice)
 	}
 
 	ice->next_seek = len - ice->next_length;
-	/*
-	if (ice->version >= VERSION_21X) {
-		ice->next_seek += 12;
-	}
-	*/
 
 	/* Attempt version filtering for ambiguous Ice! files: */
 	if (ice->version == VERSION_21X_OR_220) {
@@ -252,7 +247,9 @@ static int ice_preload_adjust(struct ice_state *ice)
 	tmp >>= 1;
 	ice->bits_left--;
 
-	tmp <<= 32 - ice->bits_left;
+	if (ice->bits_left) {
+		tmp <<= 32 - ice->bits_left;
+	}
 	ice->bits = tmp;
 	debug("  adjusted to %02x (bits left: %d)", tmp, ice->bits_left);
 	return 0;
@@ -316,7 +313,9 @@ static int ice_load32(struct ice_state *ice)
 	if ((c = ice_read_byte(ice)) < 0) return -1;
 	if ((d = ice_read_byte(ice)) < 0) return -1;
 
-	ice->bits = ((unsigned)a << 24u) | (b << 16) | (c << 8) | d;
+	/* This value is big endian in the file but was read off the
+	 * stream backwards, thus assembled as little endian here. */
+	ice->bits = ((unsigned)d << 24u) | (c << 16) | (b << 8) | a;
 	ice->bits_left = 32;
 	return 0;
 }
