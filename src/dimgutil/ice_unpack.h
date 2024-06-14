@@ -31,6 +31,7 @@ extern "C" {
 /* libxmp hacks */
 #include "../common.h"
 typedef uint8  ice_uint8;
+typedef uint16 ice_uint16;
 typedef uint32 ice_uint32;
 typedef uint64 ice_uint64;
 #define ICE_RESTRICT		LIBXMP_RESTRICT
@@ -40,6 +41,7 @@ typedef uint64 ice_uint64;
 #else
 #include <stdint.h>
 typedef uint8_t  ice_uint8;
+typedef uint16_t ice_uint16;
 typedef uint32_t ice_uint32;
 typedef uint64_t ice_uint64;
 #define ICE_RESTRICT		__restrict

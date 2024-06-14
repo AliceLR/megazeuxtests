@@ -38,6 +38,10 @@
 #define ICE_ENABLE_ICE1
 #endif
 
+#if 1
+#define ICE_TABLE_DECODING
+#endif
+
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -67,6 +71,83 @@
 #define VERSION_220		220
 #define VERSION_23X		230
 
+#ifdef ICE_TABLE_DECODING
+
+#define ENTRIES_X2(v, b)	{ (v), (b) }, { (v), (b) }
+#define ENTRIES_X4(v, b)	ENTRIES_X2((v),(b)), ENTRIES_X2((v),(b))
+#define ENTRIES_X8(v, b)	ENTRIES_X4((v),(b)), ENTRIES_X4((v),(b))
+#define ENTRIES_X16(v, b)	ENTRIES_X8((v),(b)), ENTRIES_X8((v),(b))
+#define ENTRIES_X32(v, b)	ENTRIES_X16((v),(b)), ENTRIES_X16((v),(b))
+#define ENTRIES_X64(v, b)	ENTRIES_X32((v),(b)), ENTRIES_X32((v),(b))
+#define ENTRIES_X128(v, b)	ENTRIES_X64((v),(b)), ENTRIES_X64((v),(b))
+#define ENTRIES_X256(v, b)	ENTRIES_X128((v),(b)), ENTRIES_X128((v),(b))
+
+#define LINEAR_X2(v, b)		{ (v), (b) }, { (v)+1, (b) }
+#define LINEAR_X4(v, b)		LINEAR_X2((v),(b)), LINEAR_X2((v)+2,(b))
+#define LINEAR_X8(v, b)		LINEAR_X4((v),(b)), LINEAR_X4((v)+4,(b))
+#define LINEAR_X16(v, b)	LINEAR_X8((v),(b)), LINEAR_X8((v)+8,(b))
+#define LINEAR_X32(v, b)	LINEAR_X16((v),(b)), LINEAR_X16((v)+16,(b))
+#define LINEAR_X64(v, b)	LINEAR_X32((v),(b)), LINEAR_X32((v)+32,(b))
+#define LINEAR_X128(v, b)	LINEAR_X64((v),(b)), LINEAR_X64((v)+64,(b))
+#define LINEAR_X256(v, b)	LINEAR_X128((v),(b)), LINEAR_X128((v)+128,(b))
+
+#define LINEAR_X2_X4(v, b)	ENTRIES_X4((v),(b)), ENTRIES_X4((v)+1,(b))
+#define LINEAR_X4_X4(v, b)	LINEAR_X2_X4((v),(b)), LINEAR_X2_X4((v)+2,(b))
+#define LINEAR_X8_X4(v, b)	LINEAR_X4_X4((v),(b)), LINEAR_X4_X4((v)+4,(b))
+#define LINEAR_X16_X4(v, b)	LINEAR_X8_X4((v),(b)), LINEAR_X8_X4((v)+8,(b))
+#define LINEAR_X32_X4(v, b)	LINEAR_X16_X4((v),(b)), LINEAR_X16_X4((v)+16,(b))
+
+#define VALUE_SPECIAL 65535
+
+struct ice_table_entry
+{
+	ice_uint16 value;
+	ice_uint16 bits_used;
+};
+
+static const struct ice_table_entry literal_table[512] =
+{
+	ENTRIES_X256(0, 1),		/* 0........ - length 0 */
+	ENTRIES_X128(1, 2),		/* 10....... - length 1 */
+	ENTRIES_X32(2, 4),		/* 11xx..... - length 2 + x */
+	ENTRIES_X32(3, 4),
+	ENTRIES_X32(4, 4),
+	ENTRIES_X8(5, 6),		/* 1111xx... - length 5 + x */
+	ENTRIES_X8(6, 6),
+	ENTRIES_X8(7, 6),
+	{  8, 9 },			/* 111111xxx - length 8 + x */
+	{  9, 9 },
+	{ 10, 9 },
+	{ 11, 9 },
+	{ 12, 9 },
+	{ 13, 9 },
+	{ 14, 9 },
+	{ VALUE_SPECIAL, 9 }		/* 111111111 - (read 8) + 15,
+						       (read 15 + 270) if 270 */
+};
+
+static const struct ice_table_entry length_table[64] =
+{
+	ENTRIES_X32(2, 1),		/* 0..... - length 2 */
+	ENTRIES_X16(3, 2),		/* 10.... - length 3 */
+	ENTRIES_X4(4, 4),		/* 1100.. - length 4 */
+	ENTRIES_X4(5, 4),		/* 1101.. - length 5 */
+	{ 6, 6 },			/* 1110xx - length 6 + x */
+	{ 7, 6 },
+	{ 8, 6 },
+	{ 9, 6 },
+	ENTRIES_X4(VALUE_SPECIAL, 4)	/* 1111.. - length 10 + (read 10) */
+};
+
+static const struct ice_table_entry distance_table[512] =
+{
+	LINEAR_X256(33, 9),		/* 0xxxxxxxx - distance 33 + x */
+	LINEAR_X32_X4(1, 7),		/* 10xxxxx.. - distance 1 + x */
+	ENTRIES_X128(VALUE_SPECIAL, 2)	/* 11....... - distance 289 + (read 12) */
+};
+
+#endif /* ICE_TABLE_DECODING */
+
 struct ice_state
 {
 	void *in;
@@ -79,7 +160,7 @@ struct ice_state
 	int eof;
 	int bits_left;
 	ice_uint32 bits;
-	ice_uint8 buffer[ICE_BUFFER_SIZE];
+	ice_uint8 buffer[ICE_BUFFER_SIZE + 4];
 	unsigned buffer_pos;
 	unsigned next_length;
 	long next_seek;
@@ -137,6 +218,15 @@ static int ice_check_uncompressed_size(struct ice_state *ice, size_t dest_len)
 static int ice_fill_buffer(struct ice_state *ice)
 {
 	debug("ice_fill_buffer");
+	/* Save up to 4 extra bytes to allow for peeking. */
+	if (ice->buffer_pos > 4) {
+		debug("  ice_fill_buffer with %u remaining?", ice->buffer_pos);
+		return -1;
+	}
+	if (ice->buffer_pos > 0 && ice->buffer_pos <= 4) {
+		memcpy(ice->buffer + ice->next_length, ice->buffer, 4);
+	}
+
 	if (ice->seek_fn(ice->in, ice->next_seek, SEEK_SET) < 0) {
 		debug("  failed to seek to %ld", ice->next_seek);
 		ice->eof = 1;
@@ -147,31 +237,39 @@ static int ice_fill_buffer(struct ice_state *ice)
 		ice->eof = 1;
 		return -1;
 	}
-	ice->buffer_pos = ice->next_length;
+	ice->buffer_pos += ice->next_length;
 	ice->next_seek -= ICE_BUFFER_SIZE;
 	ice->next_length = ICE_BUFFER_SIZE;
 	return 0;
 }
 
-static int ice_peek_start(struct ice_state *ice, ice_uint8 buf[4])
+static int ice_read_byte(struct ice_state *ice)
 {
-	debug("ice_peek_start");
-	if (ice->seek_fn(ice->in, (long)ice->compressed_size - 4, SEEK_SET) < 0) {
-		debug("  failed seek to %ld", (long)ice->compressed_size - 4);
-		return -1;
+	if (ice->buffer_pos < 1) {
+		if (ice_fill_buffer(ice) < 0)
+			return -1;
+		if (ice->buffer_pos < 1)
+			return -1;
 	}
-	if (ice->read_fn(buf, 4, ice->in) < 4) {
-		debug("  failed read");
-		return -1;
+	return ice->buffer[--ice->buffer_pos];
+}
+
+/* Note: 0 should never happen under normal circumstances,
+ * so it's the error return value for this function. */
+static ice_uint32 ice_peek_u32(struct ice_state *ice)
+{
+	if (ice->buffer_pos < 4) {
+		if (ice_fill_buffer(ice) < 0)
+			return 0;
+		if (ice->buffer_pos < 4)
+			return 0;
 	}
-	debug("  = %02x%02x%02x%02x", buf[0], buf[1], buf[2], buf[3]);
-	return 0;
+	return mem_u32(ice->buffer + ice->buffer_pos - 4);
 }
 
 static int ice_init_buffer(struct ice_state *ice)
 {
 	size_t len = ice->compressed_size;
-	ice_uint8 tmp[4];
 	ice->eof = 0;
 	ice->bits = 0;
 	ice->bits_left = 0;
@@ -185,31 +283,30 @@ static int ice_init_buffer(struct ice_state *ice)
 
 	ice->next_seek = len - ice->next_length;
 
+	if (ice_fill_buffer(ice) < 0) {
+		return -1;
+	}
+
 	/* Attempt version filtering for ambiguous Ice! files: */
 	if (ice->version == VERSION_21X_OR_220) {
-		if (ice_peek_start(ice, tmp) < 0) {
+		ice_uint32 peek = ice_peek_u32(ice);
+		debug("  version is ambiguous 'Ice!', trying to determine");
+		if (peek == 0) {
+			debug("  failed to peek ahead");
 			return -1;
 		}
-		if (~tmp[3] & 0x80) {
+		debug("  = %08x", peek);
+		if (~peek & 0x80u) {
 			/* 8-bit streams require a bit set here. */
+			debug("  first bit (8bit) not set, must be 32bit");
 			ice->version = VERSION_21X;
-		} else if (~tmp[0] & 0x80) {
+		} else if (~peek & 0x80000000u) {
 			/* 32-bit streams require a bit set here. */
+			debug("  first bit (32bit) not set, must be 8bit");
 			ice->version = VERSION_220;
 		}
 	}
-
-	return ice_fill_buffer(ice);
-}
-
-static int ice_read_byte(struct ice_state *ice)
-{
-	if (ice->buffer_pos == 0) {
-		if (ice_fill_buffer(ice) < 0) {
-			return -1;
-		}
-	}
-	return ice->buffer[--ice->buffer_pos];
+	return 0;
 }
 
 /* The original Pack-Ice bitstream is implemented roughly as follows:
@@ -217,7 +314,7 @@ static int ice_read_byte(struct ice_state *ice)
  * readbit():
  *   bits += bits;                 // add, output is in carry flag
  *   if(!bits)                     // the last bit is a terminating flag
- *     bits = read_char();
+ *     bits = load();
  *     bits += bits + carryflag;   // add-with-carry, output is in carry flag
  *
  * readbits(N):
@@ -266,184 +363,27 @@ static int ice_load8(struct ice_state *ice)
 	return 0;
 }
 
-static int ice_read_bits8(struct ice_state *ice, int num)
-{
-	/* NOTE: there are interleaved uncompressed bytes in the input so
-	 * this unfortunately can't be optimized very much. */
-	int ret = 0;
-	int n;
-
-#if 0
-	if (num == 1) {
-		ret = (ice->bits >> 31u);
-		ice->bits <<= 1;
-		ice->bits_left--;
-
-		if (!ice->bits_left) {
-			if (ice_load8(ice) < 0)
-				return -1;
-
-			ret = (ice->bits >> 31u);
-			ice->bits <<= 1;
-			ice->bits_left--;
-		}
-
-	} else
-#endif
-	while (num > 0) {
-		if (ice->bits_left <= 0) {
-			if (ice_load8(ice) < 0)
-				return -1;
-		}
-		n = ICE_MIN(num, ice->bits_left);
-		ret |= ice->bits >> (32 - num);
-		num -= n;
-		ice->bits <<= n;
-		ice->bits_left -= n;
-	}
-	debug("      <- %03x", ret);
-	return ret;
-}
-
 static int ice_load32(struct ice_state *ice)
 {
-	int a, b, c, d;
-	if ((a = ice_read_byte(ice)) < 0) return -1;
-	if ((b = ice_read_byte(ice)) < 0) return -1;
-	if ((c = ice_read_byte(ice)) < 0) return -1;
-	if ((d = ice_read_byte(ice)) < 0) return -1;
-
-	/* This value is big endian in the file but was read off the
-	 * stream backwards, thus assembled as little endian here. */
-	ice->bits = ((unsigned)d << 24u) | (c << 16) | (b << 8) | a;
+	ice_uint32 bits = ice_peek_u32(ice);
+	if (bits == 0) { /* EOF */
+		return -1;
+	}
+	ice->buffer_pos -= 4;
+	ice->bits = bits;
 	ice->bits_left = 32;
 	return 0;
 }
 
-static int ice_read_bits32(struct ice_state *ice, int num)
-{
-	int ret = 0;
-	int n;
+/* ice_unpack_fn8 and its helper functions. */
+#define STREAMSIZE 8
+#include "ice_unpack_fn.c"
+#undef STREAMSIZE
 
-#if 0
-	if (num == 1) {
-		ret = (ice->bits >> 31u);
-		ice->bits <<= 1;
-		ice->bits_left--;
-
-		if (!ice->bits_left) {
-			if (ice_load32(ice) < 0)
-				return -1;
-
-			ret = (ice->bits >> 31u);
-			ice->bits <<= 1;
-			ice->bits_left--;
-		}
-
-	} else
-#endif
-	while (num > 0) {
-		if (ice->bits_left <= 0) {
-			if (ice_load32(ice) < 0)
-				return -1;
-		}
-		n = ICE_MIN(num, ice->bits_left);
-		ret |= ice->bits >> (32 - num);
-		num -= n;
-		ice->bits <<= n;
-		ice->bits_left -= n;
-	}
-	debug("      <- %03x", ret);
-	return ret;
-}
-
-#define ice_output_byte(b) do { \
-	ice_uint8 byte = (b); \
-	dest[--dest_offset] = byte; \
-} while(0)
-
-#define ice_window_copy(off, len) do { \
-	size_t copy_offset = (off) + dest_offset;			\
-	size_t copy_length = (len);					\
-	debug("  (%zu remaining) window copy of %zu, dist %d",		\
-		dest_offset, copy_length, (off));			\
-	if (copy_length > dest_offset)					\
-		return -1;						\
-	if (copy_length && copy_offset > dest_len) {			\
-		size_t zero_len = copy_offset - dest_len;		\
-		zero_len = ICE_MIN(zero_len, copy_length);		\
-		memset(dest + dest_offset - zero_len, 0, zero_len);	\
-		copy_length -= zero_len;				\
-		dest_offset -= zero_len;				\
-	}								\
-	for (; copy_length > 0; copy_length--) {			\
-		ice_output_byte(dest[--copy_offset]);			\
-	}								\
-} while(0)
-
-#define ice_unpack_routine(read_fn, streamsize) do { \
-	size_t dest_offset = dest_len;					\
-	int length;							\
-	int dist;							\
-	int val;							\
-	while (dest_offset > 0) {					\
-		val = read_fn(ice, 1);					\
-		if (val ==   1) val = read_fn(ice,  1) +   1;		\
-		if (val ==   2) val = read_fn(ice,  2) +   2;		\
-		if (val ==   5) val = read_fn(ice,  2) +   5;		\
-		if (val ==   8) val = read_fn(ice,  3) +   8;		\
-		if (val ==  15) val = read_fn(ice,  8) +  15;		\
-		if (val == 270) val = read_fn(ice, 15) + 270;		\
-		if (ice->eof) return -1;				\
-		debug("  (%zu remaining) copy of %d", dest_offset, val);\
-		if ((size_t)val > dest_offset) {			\
-			return -1;					\
-		}							\
-		for (; val > 0; val--) {				\
-			int b = ice_read_byte(ice);			\
-			if (b < 0) return -1;				\
-			ice_output_byte(b);				\
-		}							\
-		if (dest_offset == 0) break;				\
-									\
-		if (read_fn(ice, 1) == 0) {				\
-			length = 2;					\
-		} else if (read_fn(ice, 1) == 0) {			\
-			length= 3;					\
-		} else if (read_fn(ice, 1) == 0) {			\
-			length = 4 + read_fn(ice, 1);			\
-		} else if (read_fn(ice, 1) == 0) {			\
-			length = 6 + read_fn(ice, 2);			\
-		} else {						\
-			length = 10 + read_fn(ice, 10);			\
-		}							\
-		if (ice->eof) return -1;				\
-		debug("    length=%d", length);				\
-									\
-		if (length == 2) {					\
-			if (read_fn(ice, 1) == 0)			\
-				dist = 1 + read_fn(ice, 6);		\
-			else 						\
-				dist = 65 + read_fn(ice, 9);		\
-		} else {						\
-			if (read_fn(ice, 1) == 0)			\
-				dist = 33 + read_fn(ice, 8);		\
-			else if (read_fn(ice, 1) == 0)			\
-				dist = 1 + read_fn(ice, 5);		\
-			else 						\
-				dist = 289 + read_fn(ice, 12);		\
-		}							\
-		if (ice->eof) return -1;				\
-		debug("    dist=%d", dist);				\
-									\
-		if (streamsize == 32)	dist = dist + length - 1;	\
-		else if (dist > 1) 	dist = dist + length - 2;	\
-		ice_window_copy(dist, length); 				\
-	}								\
-	if (ice->version >= VERSION_21X && read_fn(ice, 1) == 1) {	\
-		debug("  bitplane filter not supported yet :-(");	\
-	} \
-} while(0)
+/* ice_unpack_fn32 and its helper functions. */
+#define STREAMSIZE 32
+#include "ice_unpack_fn.c"
+#undef STREAMSIZE
 
 static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
@@ -455,8 +395,7 @@ static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 	if (ice_load8(ice) < 0 || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
-	ice_unpack_routine(ice_read_bits8, 8);
-	return 0;
+	return ice_unpack_fn8(ice, dest, dest_len);
 }
 
 static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
@@ -469,8 +408,7 @@ static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 	if (ice_load32(ice) < 0 || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
-	ice_unpack_routine(ice_read_bits32, 32);
-	return 0;
+	return ice_unpack_fn32(ice, dest, dest_len);
 }
 
 static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
