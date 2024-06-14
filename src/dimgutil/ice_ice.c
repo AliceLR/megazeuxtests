@@ -81,7 +81,7 @@ int test_and_depack(void **_out, size_t *_out_size,
 	void *out = NULL;
 	long out_size;
 
-	out_size = ice1_test(data, size);
+	out_size = ice1_unpack_test(data, size);
 	if (out_size >= 0 && out_size <= ICE_DEPACK_LIMIT) {
 		out = malloc(out_size);
 		if (!out)
@@ -94,11 +94,12 @@ int test_and_depack(void **_out, size_t *_out_size,
 		return 0;
 	}
 
-	out_size = ice2_test(data, size);
+	out_size = ice2_unpack_test(data, size);
 	if (out_size >= 0 && out_size <= ICE_DEPACK_LIMIT) {
 		out = malloc(out_size);
 		if (!out)
 			return -1;
+	for (size_t i = 0; i < 1000000; i++)
 		if (ice2_unpack(out, out_size, mem_read, mem_seek, &m, size) < 0)
 			goto err;
 

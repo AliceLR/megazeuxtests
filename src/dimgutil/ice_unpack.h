@@ -37,6 +37,10 @@ typedef uint64 ice_uint64;
 #define ICE_RESTRICT		LIBXMP_RESTRICT
 #define ICE_ATTRIB_PRINTF(x,y)	LIBXMP_ATTRIB_PRINTF(x,y)
 #define ICE_MIN(a,b)		MIN(a,b)
+#define ice1_unpack		libxmp_ice1_unpack
+#define ice2_unpack		libxmp_ice2_unpack
+#define ice1_unpack_test	libxmp_ice1_unpack_test
+#define ice2_unpack_test	libxmp_ice2_unpack_test
 /* end libxmp hacks */
 #else
 #include <stdint.h>
@@ -64,7 +68,7 @@ typedef long	(*ice_seek_fn)(void *priv, long offset, int whence);
  * @param sz            size of `end_of_file`, at least 8.
  * @return              uncompressed size of the stream if Pack-Ice v1, else -1.
  */
-long ice1_test(const void *end_of_file, size_t sz);
+long ice1_unpack_test(const void *end_of_file, size_t sz);
 
 /**
  * Unpack a Pack-Ice v1 file. Due to the design of the format, the
@@ -93,7 +97,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
  * @param sz              size of `start_of_file`, at least 12.
  * @return                uncompressed size of the stream if Pack-Ice v2, else -1.
  */
-long ice2_test(const void *start_of_file, size_t sz);
+long ice2_unpack_test(const void *start_of_file, size_t sz);
 
 /**
  * Unpack a Pack-Ice v2 file. Due to the design of the format, the

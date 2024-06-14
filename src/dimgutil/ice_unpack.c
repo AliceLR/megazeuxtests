@@ -30,7 +30,7 @@
 
 #include "ice_unpack.h"
 
-#if 1
+#if 0
 #define ICE_DEBUG
 #endif
 
@@ -40,6 +40,12 @@
 
 #if 1
 #define ICE_TABLE_DECODING
+#endif
+
+#if 0
+#define ICE_ORIGINAL_BITSTREAM
+/* The hacks required to make these compatible are too slow to be worth it. */
+#undef ICE_TABLE_DECODING
 #endif
 
 #include <limits.h>
@@ -347,8 +353,10 @@ static int ice_preload_adjust(struct ice_state *ice)
 	if (ice->bits_left) {
 		tmp <<= 32 - ice->bits_left;
 	}
+#ifndef ICE_ORIGINAL_BITSTREAM
 	ice->bits = tmp;
-	debug("  adjusted to %02x (bits left: %d)", tmp, ice->bits_left);
+#endif
+	debug("  adjusted to %02x (bits left: %d)", ice->bits, ice->bits_left);
 	return 0;
 }
 
@@ -359,7 +367,7 @@ static int ice_load8(struct ice_state *ice)
 		return -1;
 	}
 	ice->bits = (unsigned)val << 24u;
-	ice->bits_left = 8;
+	ice->bits_left += 8;
 	return 0;
 }
 
@@ -371,7 +379,7 @@ static int ice_load32(struct ice_state *ice)
 	}
 	ice->buffer_pos -= 4;
 	ice->bits = bits;
-	ice->bits_left = 32;
+	ice->bits_left += 32;
 	return 0;
 }
 
@@ -439,7 +447,7 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 }
 
 
-long ice1_test(const void *end_of_file, size_t sz)
+long ice1_unpack_test(const void *end_of_file, size_t sz)
 {
 	ice_uint8 *data = (ice_uint8 *)end_of_file;
 	ice_uint32 uncompressed_size;
@@ -472,7 +480,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	if (read_fn(buf, 8, priv) < 8) {
 		return -1;
 	}
-	if (ice1_test(buf, 8) < 0) {
+	if (ice1_unpack_test(buf, 8) < 0) {
 		return -1;
 	}
 
@@ -488,7 +496,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	return ret;
 }
 
-long ice2_test(const void *start_of_file, size_t sz)
+long ice2_unpack_test(const void *start_of_file, size_t sz)
 {
 	ice_uint8 *data = (ice_uint8 *)start_of_file;
 	ice_uint32 uncompressed_size;
@@ -528,7 +536,7 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	if (read_fn(buf, 12, priv) < 12) {
 		return -1;
 	}
-	if (ice2_test(buf, 12) < (long)dest_len) {
+	if (ice2_unpack_test(buf, 12) < (long)dest_len) {
 		return -1;
 	}
 

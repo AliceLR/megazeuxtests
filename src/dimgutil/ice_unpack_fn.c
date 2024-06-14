@@ -81,6 +81,10 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 		if (ice_load_STREAMSIZE(ice) < 0) {
 			return -1;
 		}
+#ifdef ICE_ORIGINAL_BITSTREAM
+		/* Mask off terminator bit */
+		code &= (0xffffffffu << table_bits >> num);
+#endif
 		code |= ice->bits >> (32 - table_bits + num);
 
 		e = table[code];
@@ -90,7 +94,12 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 	/* Consume used bits directly off the buffer. */
 	debug("      <- %d (bits: %03x)", e.value, code >> (table_bits - e.bits_used));
 	ice->bits <<= used;
-	ice->bits_left -= used;
+	ice->bits_left -= e.bits_used;
+
+#ifdef ICE_ORIGINAL_BITSTREAM
+	/* Inject new terminator bit */
+	ice->bits |= (1 << (31 - ice->bits_left));
+#endif
 	return e.value;
 }
 #endif /* ICE_TABLE_DECODING */
@@ -98,40 +107,59 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 {
 	/* NOTE: there are interleaved uncompressed bytes in the input so
-	 * this unfortunately can't be optimized very much. This can't really
-	 * be implemented the way it was "supposed" to since the table
-	 * decoder needs the terminator bits removed.
+	 * this unfortunately can't be optimized very much.
 	 */
 	int ret = 0;
-	int n;
 
-#if 0
+#ifdef ICE_ORIGINAL_BITSTREAM
+	/* This decoder is surprisingly fast on platforms with carry flags,
+	 * but it's not really compatible with the table decoding (faster)
+	 * and the hacks that allow it to work negate the benefits.
+	 */
+	ice_uint32 bits = ice->bits;
+#ifdef ICE_TABLE_DECODING
+	ice->bits_left -= num;
+#endif
 	while (num) {
-		int bit (ice->bits >> 31u);
-		ice->bits <<= 1;
-		if (!ice->bits) {
+		int bit = (bits >> 31u);
+		bits <<= 1;
+		if (!bits) {
 			if (ice_load_STREAMSIZE(ice) < 0)
 				return -1;
 
 			bit = (ice->bits >> 31u);
-			ice->bits = (ice->bits << 1) | 1;
+			bits = (ice->bits << 1) | (1 << (32 - STREAMSIZE));
 		}
 		ret = (ret << 1) | bit;
 		num--;
 	}
-#endif
+	ice->bits = bits;
+#else
+	int left = num - ice->bits_left;
+	ret = ice->bits >> (32 - num);
 
-	while (num > 0) {
-		if (ice->bits_left <= 0) {
-			if (ice_load_STREAMSIZE(ice) < 0)
+	ice->bits_left -= num;
+	if (left <= 0) {
+		ice->bits <<= num;
+	} else {
+#if STREAMSIZE == 8
+		while (left > 0) {
+			if (ice_load_STREAMSIZE(ice) < 0) {
 				return -1;
+			}
+			ret |= ice->bits >> (32 - left);
+			left -= 8;
 		}
-		n = ICE_MIN(num, ice->bits_left);
-		ret |= ice->bits >> (32 - num);
-		num -= n;
-		ice->bits <<= n;
-		ice->bits_left -= n;
+		ice->bits <<= (left + 8);
+#else /* STREAMSIZE == 32 */
+		if (ice_load_STREAMSIZE(ice) < 0) {
+			return -1;
+		}
+		ret |= ice->bits >> (32 - left);
+		ice->bits <<= left;
+#endif
 	}
+#endif
 	debug("      <- %03x", ret);
 	return ret;
 }
