@@ -139,7 +139,8 @@ UNARCFS_OBJS := \
 
 UNICE_EXE    := unice${BINEXT}
 UNICE_OBJS   := \
-  ${DIMG_OBJ}/ice.o \
+  ${DIMG_OBJ}/ice_ice.o \
+  ${DIMG_OBJ}/ice_unpack.o \
 
 UNLZX_EXE    := unlzx${BINEXT}
 UNLZX_OBJS   := \

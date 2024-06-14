@@ -28,6 +28,8 @@
  * https://eab.abime.net/showpost.php?p=1617809&postcount=7
  */
 
+#include "ice_unpack.h"
+
 #if 1
 #define ICE_DEBUG
 #endif
@@ -36,88 +38,20 @@
 #define ICE_ENABLE_ICE1
 #endif
 
-#if 0
-#define ICE_LIBXMP
-#include "depacker.h"
+#include <limits.h>
 #include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
-
-/* LZ77 -> no useful bound, just use the library maximum limit. */
-#define ICE_DEPACK_LIMIT	LIBXMP_DEPACK_LIMIT
-#define ICE_RESTRICT		LIBXMP_RESTRICT
-#define ICE_ATTRIB_PRINTF(x,y)	LIBXMP_ATTRIB_PRINTF(x,y)
-#else
-#include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-typedef uint8_t uint8;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-#define ICE_DEPACK_LIMIT	(1<<28)
-#define ICE_RESTRICT		__restrict
-#define ICE_ATTRIB_PRINTF(x,y)	__attribute__((__format__(gnu_printf,x,y)))
-#define MIN(a,b) ((a) < (b) ? (a) : (b))
-
-typedef struct { const uint8 *buffer; size_t len; size_t pos; } HIO_HANDLE;
-
-static inline long hio_size(HIO_HANDLE *f)
-{
-	return f->len;
-}
-
-static inline size_t hio_read(void *dest, size_t len, size_t nmemb, HIO_HANDLE *f)
-{
-	if (len == 0) return 0;
-	if ((f->len - f->pos) < len * nmemb) {
-		nmemb = (f->len - f->pos) / len;
-	}
-	memcpy(dest, f->buffer + f->pos, len * nmemb);
-	f->pos += len * nmemb;
-	return nmemb;
-}
-
-static inline long hio_tell(HIO_HANDLE *f)
-{
-	return f->pos;
-}
-
-static inline int hio_seek(HIO_HANDLE *f, long pos, int whence)
-{
-	switch (whence) {
-	case SEEK_SET:
-		break;
-	case SEEK_CUR:
-		pos += f->pos;
-		break;
-	case SEEK_END:
-		pos += f->len;
-		break;
-	default:
-		return -1;
-	}
-	if (pos < 0 || (size_t)pos > f->len) return -1;
-	f->pos = pos;
-	return 0;
-}
-
-struct depacker {
-	int (*test)(unsigned char *);
-	int (*depack)(HIO_HANDLE *, void **, long *);
-	int (*test_handle)(HIO_HANDLE *);
-};
-const struct depacker libxmp_depacker_ice1;
-const struct depacker libxmp_depacker_ice2;
-#endif
 
 /* Size of input buffer for filesystem reads. */
 #define ICE_BUFFER_SIZE		4096
 
 /* loader.h */
+#ifndef MAGIC4
 #define MAGIC4(a,b,c,d) \
-	(((uint32)(a)<<24)|((uint32)(b)<<16)|((uint32)(c)<<8)|(d))
+	(((ice_uint32)(a)<<24)|((ice_uint32)(b)<<16)|((ice_uint32)(c)<<8)|(d))
+#endif
 
 #define ICE_OLD_MAGIC		MAGIC4('I','c','e','!')
 #define ICE_NEW_MAGIC		MAGIC4('I','C','E','!')
@@ -135,15 +69,17 @@ const struct depacker libxmp_depacker_ice2;
 
 struct ice_state
 {
-	HIO_HANDLE *in;
+	void *in;
 	long in_size;
-	uint32 compressed_size;
-	uint32 uncompressed_size;
+	ice_read_fn read_fn;
+	ice_seek_fn seek_fn;
+	ice_uint32 compressed_size;
+	ice_uint32 uncompressed_size;
 	int version;
 	int eof;
 	int bits_left;
-	uint32 bits;
-	uint8 buffer[ICE_BUFFER_SIZE];
+	ice_uint32 bits;
+	ice_uint8 buffer[ICE_BUFFER_SIZE];
 	unsigned buffer_pos;
 	unsigned next_length;
 	long next_seek;
@@ -166,22 +102,33 @@ static inline void debug(const char *fmt, ...)
 }
 #endif
 
-static uint32 mem_u32(uint8 *buf)
+static ice_uint32 mem_u32(ice_uint8 *buf)
 {
 	return (buf[0] << 24UL) | (buf[1] << 16UL) | (buf[2] << 8UL) | buf[3];
 }
 
-static int ice_check_sizes(struct ice_state *ice)
+static int ice_check_compressed_size(struct ice_state *ice)
 {
-	debug("ice_check_sizes");
+	debug("ice_check_compressed_size");
 	if (ice->in_size < 12 || ice->compressed_size < 4 ||
 	    ice->compressed_size > (size_t)ice->in_size) {
 		debug("  bad compressed_size %u", (unsigned)ice->compressed_size);
 		return -1;
 	}
+	return 0;
+}
+
+static int ice_check_uncompressed_size(struct ice_state *ice, size_t dest_len)
+{
+	debug("ice_check_uncompressed_size");
 	if (ice->uncompressed_size == 0 ||
-	    ice->uncompressed_size > ICE_DEPACK_LIMIT) {
+	    ice->uncompressed_size > (size_t)INT_MAX) {
 		debug("  bad uncompressed_size %u", (unsigned)ice->uncompressed_size);
+		return -1;
+	}
+	if (ice->uncompressed_size > dest_len) {
+		debug("  uncompressed_size %u exceeds provided buffer size %u\n",
+			(unsigned)ice->uncompressed_size, (unsigned)dest_len);
 		return -1;
 	}
 	return 0;
@@ -190,12 +137,12 @@ static int ice_check_sizes(struct ice_state *ice)
 static int ice_fill_buffer(struct ice_state *ice)
 {
 	debug("ice_fill_buffer");
-	if (hio_seek(ice->in, ice->next_seek, SEEK_SET) < 0) {
+	if (ice->seek_fn(ice->in, ice->next_seek, SEEK_SET) < 0) {
 		debug("  failed to seek to %ld", ice->next_seek);
 		ice->eof = 1;
 		return -1;
 	}
-	if (hio_read(ice->buffer, 1, ice->next_length, ice->in) < ice->next_length) {
+	if (ice->read_fn(ice->buffer, ice->next_length, ice->in) < ice->next_length) {
 		debug("  failed to read %u", ice->next_length);
 		ice->eof = 1;
 		return -1;
@@ -206,14 +153,14 @@ static int ice_fill_buffer(struct ice_state *ice)
 	return 0;
 }
 
-static int ice_peek_start(struct ice_state *ice, uint8 buf[4])
+static int ice_peek_start(struct ice_state *ice, ice_uint8 buf[4])
 {
 	debug("ice_peek_start");
-	if (hio_seek(ice->in, (long)ice->compressed_size - 4, SEEK_SET) < 0) {
+	if (ice->seek_fn(ice->in, (long)ice->compressed_size - 4, SEEK_SET) < 0) {
 		debug("  failed seek to %ld", (long)ice->compressed_size - 4);
 		return -1;
 	}
-	if (hio_read(buf, 1, 4, ice->in) < 4) {
+	if (ice->read_fn(buf, 4, ice->in) < 4) {
 		debug("  failed read");
 		return -1;
 	}
@@ -224,7 +171,7 @@ static int ice_peek_start(struct ice_state *ice, uint8 buf[4])
 static int ice_init_buffer(struct ice_state *ice)
 {
 	size_t len = ice->compressed_size;
-	uint8 tmp[4];
+	ice_uint8 tmp[4];
 	ice->eof = 0;
 	ice->bits = 0;
 	ice->bits_left = 0;
@@ -351,7 +298,7 @@ static int ice_read_bits8(struct ice_state *ice, int num)
 			if (ice_load8(ice) < 0)
 				return -1;
 		}
-		n = MIN(num, ice->bits_left);
+		n = ICE_MIN(num, ice->bits_left);
 		ret |= ice->bits >> (32 - num);
 		num -= n;
 		ice->bits <<= n;
@@ -379,6 +326,7 @@ static int ice_read_bits32(struct ice_state *ice, int num)
 	int ret = 0;
 	int n;
 
+#if 0
 	if (num == 1) {
 		ret = (ice->bits >> 31u);
 		ice->bits <<= 1;
@@ -393,12 +341,14 @@ static int ice_read_bits32(struct ice_state *ice, int num)
 			ice->bits_left--;
 		}
 
-	} else while (num > 0) {
+	} else
+#endif
+	while (num > 0) {
 		if (ice->bits_left <= 0) {
 			if (ice_load32(ice) < 0)
 				return -1;
 		}
-		n = MIN(num, ice->bits_left);
+		n = ICE_MIN(num, ice->bits_left);
 		ret |= ice->bits >> (32 - num);
 		num -= n;
 		ice->bits <<= n;
@@ -409,7 +359,7 @@ static int ice_read_bits32(struct ice_state *ice, int num)
 }
 
 #define ice_output_byte(b) do { \
-	uint8 byte = (b); \
+	ice_uint8 byte = (b); \
 	dest[--dest_offset] = byte; \
 } while(0)
 
@@ -422,7 +372,7 @@ static int ice_read_bits32(struct ice_state *ice, int num)
 		return -1;						\
 	if (copy_length && copy_offset > dest_len) {			\
 		size_t zero_len = copy_offset - dest_len;		\
-		zero_len = MIN(zero_len, copy_length);			\
+		zero_len = ICE_MIN(zero_len, copy_length);		\
 		memset(dest + dest_offset - zero_len, 0, zero_len);	\
 		copy_length -= zero_len;				\
 		dest_offset -= zero_len;				\
@@ -497,7 +447,7 @@ static int ice_read_bits32(struct ice_state *ice, int num)
 } while(0)
 
 static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
-	uint8 * ICE_RESTRICT dest, size_t dest_len)
+	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack8");
 	if (ice_init_buffer(ice) < 0) {
@@ -511,7 +461,7 @@ static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 }
 
 static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
-	uint8 * ICE_RESTRICT dest, size_t dest_len)
+	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack32");
 	if (ice_init_buffer(ice) < 0) {
@@ -525,120 +475,130 @@ static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 }
 
 static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
-	void **out, long *outlen)
+	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
-	uint8 *outbuf;
-	size_t sz;
-
 	debug("ice_unpack");
-	if (ice_check_sizes(ice) < 0) {
-		return -1;
-	}
-
-	sz = ice->uncompressed_size;
-	outbuf = (uint8 *) malloc(sz);
-	if (!outbuf) {
-		debug("  alloc error");
+	if (ice_check_compressed_size(ice) < 0 ||
+	    ice_check_uncompressed_size(ice, dest_len) < 0) {
 		return -1;
 	}
 
 	if (ice->version >= VERSION_21X_OR_220) {
-		if (ice_unpack8(ice, outbuf, sz) == 0) {
-			*out = outbuf;
-			*outlen = sz;
+		if (ice_unpack8(ice, dest, dest_len) == 0) {
 			return 0;
 		}
 	}
 	if (ice->version <= VERSION_21X_OR_220) {
-		if (ice_unpack32(ice, outbuf, sz) == 0) {
-			*out = outbuf;
-			*outlen = sz;
+		if (ice_unpack32(ice, dest, dest_len) == 0) {
 			return 0;
 		}
 	}
-	*out = outbuf;
-	*outlen = sz;
-	return 0;
 
+	// FIXME:
+	return 0;
 /*
-	free(outbuf);
 	return -1;
 */
 }
 
-#ifdef ICE_ENABLE_ICE1
-static int ice1_test(HIO_HANDLE *in)
-{
-	uint8 buf[4];
 
-	if (hio_seek(in, -4, SEEK_END) < 0) {
+long ice1_test(const void *end_of_file, size_t sz)
+{
+	ice_uint8 *data = (ice_uint8 *)end_of_file;
+	ice_uint32 uncompressed_size;
+	ice_uint32 magic;
+
+	if (sz < 8) {
 		return -1;
 	}
-	if (hio_read(buf, 1, 4, in) < 4) {
-		return -1;
+	magic = mem_u32(data + sz - 4);
+	uncompressed_size = mem_u32(data + sz - 8);
+
+	if (magic == ICE_OLD_MAGIC) {
+		return (long)uncompressed_size;
 	}
-	return mem_u32(buf) == ICE_OLD_MAGIC;
+	return -1;
 }
 
-static int ice1_decrunch(HIO_HANDLE *in, void **out, long *outlen)
+int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
+	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len)
 {
 	struct ice_state ice;
-	uint8 buf[8];
+	ice_uint8 buf[8];
 	int ret;
 
 	memset(&ice, 0, sizeof(ice));
 
-	if (hio_seek(in, -8, SEEK_END) < 0) {
+	if (seek_fn(priv, -8, SEEK_END) < 0) {
 		return -1;
 	}
-	if (hio_read(buf, 1, 4, in) < 4) {
+	if (read_fn(buf, 8, priv) < 8) {
+		return -1;
+	}
+	if (ice1_test(buf, 8) < 0) {
 		return -1;
 	}
 
-	ice.in = in;
-	ice.in_size = hio_size(in);
-	ice.compressed_size = ice.in_size - 8;
+	ice.in = priv;
+	ice.in_size = in_len;
+	ice.read_fn = read_fn;
+	ice.seek_fn = seek_fn;
+	ice.compressed_size = in_len - 8;
 	ice.uncompressed_size = mem_u32(buf + 0);
 	ice.version = VERSION_113;
 
-	ret = ice_unpack(&ice, out, outlen);
+	ret = ice_unpack(&ice, (ice_uint8 *)dest, dest_len);
 	return ret;
 }
 
-const struct depacker libxmp_depacker_ice1 =
+long ice2_test(const void *start_of_file, size_t sz)
 {
-	NULL,
-	ice1_decrunch,
-	ice1_test
-};
-#endif
+	ice_uint8 *data = (ice_uint8 *)start_of_file;
+	ice_uint32 uncompressed_size;
+	ice_uint32 magic;
 
-static int ice2_test(unsigned char *data)
-{
-	uint32 magic = mem_u32(data);
-	return	magic == ICE_OLD_MAGIC ||
-		magic == ICE_NEW_MAGIC ||
-		magic == CJ_MAGIC ||
-		magic == MICK_MAGIC ||
-		magic == SHE_MAGIC ||
-		magic == TMM_MAGIC ||
-		magic == TSM_MAGIC;
+	if (sz < 12) {
+		return -1;
+	}
+	magic = mem_u32(data + 0);
+	uncompressed_size = mem_u32(data + 8);
+
+	switch (magic) {
+	case ICE_OLD_MAGIC:
+	case ICE_NEW_MAGIC:
+	case CJ_MAGIC:
+	case MICK_MAGIC:
+	case SHE_MAGIC:
+	case TMM_MAGIC:
+	case TSM_MAGIC:
+		return (long)uncompressed_size;
+	}
+	return -1;
 }
 
-static int ice2_decrunch(HIO_HANDLE *in, void **out, long *outlen)
+int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
+	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len)
 {
 	struct ice_state ice;
-	uint8 buf[12];
+	ice_uint8 buf[12];
 	int ret;
 
 	memset(&ice, 0, sizeof(ice));
 
-	if (hio_read(buf, 1, 12, in) < 12) {
+	if (seek_fn(priv, 0, SEEK_SET) < 0) {
+		return -1;
+	}
+	if (read_fn(buf, 12, priv) < 12) {
+		return -1;
+	}
+	if (ice2_test(buf, 12) < (long)dest_len) {
 		return -1;
 	}
 
-	ice.in = in;
-	ice.in_size = hio_size(in);
+	ice.in = priv;
+	ice.in_size = in_len;
+	ice.read_fn = read_fn;
+	ice.seek_fn = seek_fn;
 	ice.compressed_size = mem_u32(buf + 4);
 	ice.uncompressed_size = mem_u32(buf + 8);
 
@@ -657,108 +617,7 @@ static int ice2_decrunch(HIO_HANDLE *in, void **out, long *outlen)
 		break;
 	}
 
-	ret = ice_unpack(&ice, out, outlen);
+	ret = ice_unpack(&ice, (ice_uint8 *)dest, dest_len);
 	return ret;
 }
 
-const struct depacker libxmp_depacker_ice2 =
-{
-	ice2_test,
-	ice2_decrunch,
-	NULL
-};
-
-#ifndef ICE_LIBXMP
-#ifdef _WIN32
-#include <fcntl.h>
-#endif
-
-static const struct depacker * const d[] =
-{
-	&libxmp_depacker_ice1,
-	&libxmp_depacker_ice2,
-	NULL
-};
-
-static int depack(HIO_HANDLE *f, void **out, long *outlen)
-{
-	uint8 buf[1024];
-	int i;
-	if (hio_read(buf, 1, 1024, f) < 1024) {
-		return -1;
-	}
-	for (i = 0; d[i]; i++) {
-		if ((d[i]->test && d[i]->test(buf)) ||
-		    (d[i]->test_handle && d[i]->test_handle(f))) {
-			hio_seek(f, 0, SEEK_SET);
-			return d[i]->depack(f, out, outlen);
-		}
-	}
-	return -1;
-}
-
-#ifdef LIBFUZZER_FRONTEND
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
-	HIO_HANDLE hio = { data, 0, size };
-	void *out = NULL;
-	long out_length;
-	depack(&hio, &out, &out_length);
-	free(ret);
-	return 0;
-}
-
-#define main _main
-static __attribute__((unused))
-#endif
-
-int main(int argc, char *argv[])
-{
-	HIO_HANDLE hio;
-	FILE *f;
-	void *out;
-	long out_length;
-	void *data;
-	unsigned long file_length;
-	int ret;
-
-	if(argc < 2)
-		return -1;
-
-#ifdef _WIN32
-	/* Windows forces stdout to be text mode by default, fix it. */
-	_setmode(_fileno(stdout), _O_BINARY);
-#endif
-
-	f = fopen(argv[1], "rb");
-	if(!f)
-		return -1;
-
-	fseek(f, 0, SEEK_END);
-	file_length = ftell(f);
-	rewind(f);
-	if ((data = malloc(file_length)) == NULL) {
-		fclose(f);
-		return -1;
-	}
-	if (fread(data, 1, file_length, f) < (size_t)file_length) {
-		fclose(f);
-		return -1;
-	}
-	fclose(f);
-
-	hio.buffer = data;
-	hio.pos = 0;
-	hio.len = file_length;
-
-	ret = depack(&hio, &out, &out_length);
-	free(data);
-
-	if (ret < 0)
-		return ret;
-
-	fwrite(out, out_length, 1, stdout);
-	free(out);
-	return 0;
-}
-#endif
