@@ -99,7 +99,6 @@ int test_and_depack(void **_out, size_t *_out_size,
 		out = malloc(out_size);
 		if (!out)
 			return -1;
-	for (size_t i = 0; i < 1000000; i++)
 		if (ice2_unpack(out, out_size, mem_read, mem_seek, &m, size) < 0)
 			goto err;
 

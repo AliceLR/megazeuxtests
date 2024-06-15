@@ -143,21 +143,22 @@ static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 		ice->bits <<= num;
 	} else {
 #if STREAMSIZE == 8
-		while (left > 0) {
-			if (ice_load_STREAMSIZE(ice) < 0) {
+		if (left > 8) {
+			/* Can load two bytes safely in this case--due to the
+			 * backwards stream order they're read little endian. */
+			if (ice_load16le(ice) < 0)
 				return -1;
-			}
-			ret |= ice->bits >> (32 - left);
-			left -= 8;
+		} else {
+			if (ice_load_STREAMSIZE(ice) < 0)
+				return -1;
 		}
-		ice->bits <<= (left + 8);
 #else /* STREAMSIZE == 32 */
 		if (ice_load_STREAMSIZE(ice) < 0) {
 			return -1;
 		}
+#endif
 		ret |= ice->bits >> (32 - left);
 		ice->bits <<= left;
-#endif
 	}
 #endif
 	debug("      <- %03x", ret);

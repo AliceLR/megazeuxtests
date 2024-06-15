@@ -189,9 +189,14 @@ static inline void debug(const char *fmt, ...)
 }
 #endif
 
-static ice_uint32 mem_u32(ice_uint8 *buf)
+static inline ice_uint16 mem_u16le(ice_uint8 *buf)
 {
-	return (buf[0] << 24UL) | (buf[1] << 16UL) | (buf[2] << 8UL) | buf[3];
+	return buf[0] | (buf[1] << 8u);
+}
+
+static inline ice_uint32 mem_u32(ice_uint8 *buf)
+{
+	return (buf[0] << 24u) | (buf[1] << 16u) | (buf[2] << 8u) | buf[3];
 }
 
 static int ice_check_compressed_size(struct ice_state *ice)
@@ -258,6 +263,18 @@ static int ice_read_byte(struct ice_state *ice)
 			return -1;
 	}
 	return ice->buffer[--ice->buffer_pos];
+}
+
+static inline int ice_read_u16le(struct ice_state *ice)
+{
+	if (ice->buffer_pos < 2) {
+		if (ice_fill_buffer(ice) < 0)
+			return -1;
+		if (ice->buffer_pos < 2)
+			return -1;
+	}
+	ice->buffer_pos -= 2;
+	return mem_u16le(ice->buffer + ice->buffer_pos);
 }
 
 /* Note: 0 should never happen under normal circumstances,
@@ -368,6 +385,17 @@ static int ice_load8(struct ice_state *ice)
 	}
 	ice->bits = (unsigned)val << 24u;
 	ice->bits_left += 8;
+	return 0;
+}
+
+static inline int ice_load16le(struct ice_state *ice)
+{
+	int val = ice_read_u16le(ice);
+	if (val < 0) {
+		return -1;
+	}
+	ice->bits = (unsigned)val << 16u;
+	ice->bits_left += 16;
 	return 0;
 }
 
