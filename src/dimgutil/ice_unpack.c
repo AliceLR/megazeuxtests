@@ -30,29 +30,33 @@
 
 #include "ice_unpack.h"
 
-#if 0
-#define ICE_DEBUG
-#endif
-
-#if 1
-#define ICE_ENABLE_ICE1
-#endif
-
-#if 1
-#define ICE_TABLE_DECODING
-#endif
-
-#if 0
-#define ICE_ORIGINAL_BITSTREAM
-/* The hacks required to make these compatible are too slow to be worth it. */
-#undef ICE_TABLE_DECODING
-#endif
-
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Enable debug output to stderr. */
+#if 0
+#define ICE_DEBUG
+#endif
+
+/* Enable table decoding, which is a ~30% performance increase over the
+ * default bitstream and a ~10% performance increase over the original
+ * bitstream. This performance increase should be higher, but the format
+ * sabotages this kind of optimization by interleaving uncompressed bytes
+ * into the stream. It's also possible I am just bad at optimizing this.
+ * It should only be used with the default bitstream. */
+#if 1
+#define ICE_TABLE_DECODING
+#endif
+
+/* Enable the original bitstream, which is ~10% slower than table decoding.
+ * This shouldn't be used at the same time as table decoding because it the
+ * extra hacks needed slow things down further. */
+#if 0
+#define ICE_ORIGINAL_BITSTREAM
+#endif
 
 /* Size of input buffer for filesystem reads. */
 #define ICE_BUFFER_SIZE		4096
@@ -466,12 +470,7 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 			return 0;
 		}
 	}
-
-	// FIXME:
-	return 0;
-/*
 	return -1;
-*/
 }
 
 
@@ -593,4 +592,3 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	ret = ice_unpack(&ice, (ice_uint8 *)dest, dest_len);
 	return ret;
 }
-
