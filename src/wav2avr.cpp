@@ -139,6 +139,18 @@ static const IFF<
   data_handler> WAV_parser(Endian::LITTLE, IFFPadding::WORD);
 
 
+#ifdef LIBFUZZER_FRONTEND
+extern "C" {
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+	/* TODO: not implemented */
+	return -1;
+}
+}
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main(int argc, char *argv[])
 {
   WAV_file wav{};

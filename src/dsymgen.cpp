@@ -494,6 +494,19 @@ static bool read_line(dsym &m, FILE *in)
   return true;
 }
 
+#ifdef LIBFUZZER_FRONTEND
+extern "C" {
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+	/* TODO: unimplemented */
+	return -1;
+}
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main()
 {
   static dsym m{};

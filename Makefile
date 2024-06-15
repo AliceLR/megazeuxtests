@@ -27,6 +27,10 @@ ifeq (${SANITIZE},undefined)
 COMMON_FLAGS += -fno-sanitize-recover=all -fno-sanitize=shift-base
 TAG := ${TAG}U
 endif
+ifeq (${SANITIZE},address,undefined)
+COMMON_FLAGS += -fno-sanitize-recover=all -fno-sanitize=shift-base
+TAG := ${TAG}AU
+endif
 endif
 
 COMMON_FLAGS += ${WARNING_FLAGS}
@@ -258,8 +262,8 @@ clean:
 #
 # Build all sanitizers/fuzzers (recursive).
 #
-BATCH_SANITIZE := address memory undefined
-BATCH_FUZZER := address memory undefined
+BATCH_SANITIZE := address,undefined memory
+BATCH_FUZZER := address,undefined memory
 
 batch:
 	@${MAKE}
