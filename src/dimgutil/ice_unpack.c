@@ -30,7 +30,6 @@
 
 #include "ice_unpack.h"
 
-#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -217,8 +216,7 @@ static int ice_check_compressed_size(struct ice_state *ice)
 static int ice_check_uncompressed_size(struct ice_state *ice, size_t dest_len)
 {
 	debug("ice_check_uncompressed_size");
-	if (ice->uncompressed_size == 0 ||
-	    ice->uncompressed_size > (size_t)INT_MAX) {
+	if (ice->uncompressed_size == 0) {
 		debug("  bad uncompressed_size %u", (unsigned)ice->uncompressed_size);
 		return -1;
 	}
@@ -318,12 +316,11 @@ static int ice_init_buffer(struct ice_state *ice)
 	if (ice->version == VERSION_21X_OR_220) {
 		ice_uint32 peek = ice_peek_u32(ice);
 		debug("  version is ambiguous 'Ice!', trying to determine");
-		if (peek == 0) {
-			debug("  failed to peek ahead");
-			return -1;
-		}
 		debug("  = %08x", peek);
-		if (~peek & 0x80u) {
+		if (peek == 0) {
+			debug("  failed to peek ahead 32 bits, must be 8bit");
+			ice->version = VERSION_220;
+		} else if (~peek & 0x80u) {
 			/* 8-bit streams require a bit set here. */
 			debug("  first bit (8bit) not set, must be 32bit");
 			ice->version = VERSION_21X;
@@ -360,7 +357,8 @@ static int ice_preload_adjust(struct ice_state *ice)
 
 	debug("ice_preload_adjust of %02x (bits left: %d)", tmp, ice->bits_left);
 
-	if (!tmp) {
+	if (~ice->bits & 0x80000000u) {
+		debug("  first bit not set; stream is invalid at this size");
 		return -1;
 	}
 	while (~tmp & 1) {
@@ -429,9 +427,6 @@ static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack8");
-	if (ice_init_buffer(ice) < 0) {
-		return -1;
-	}
 	if (ice_load8(ice) < 0 || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
@@ -442,9 +437,6 @@ static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack32");
-	if (ice_init_buffer(ice) < 0) {
-		return -1;
-	}
 	if (ice_load32(ice) < 0 || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
@@ -456,7 +448,8 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 {
 	debug("ice_unpack");
 	if (ice_check_compressed_size(ice) < 0 ||
-	    ice_check_uncompressed_size(ice, dest_len) < 0) {
+	    ice_check_uncompressed_size(ice, dest_len) < 0 ||
+	    ice_init_buffer(ice) < 0) {
 		return -1;
 	}
 
@@ -464,6 +457,11 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 		if (ice_unpack8(ice, dest, dest_len) == 0) {
 			return 0;
 		}
+	}
+	/* Ambiguous version: reset buffer to try again. */
+	if (ice->version == VERSION_21X_OR_220 &&
+	    ice_init_buffer(ice) < 0) {
+		return -1;
 	}
 	if (ice->version <= VERSION_21X_OR_220) {
 		if (ice_unpack32(ice, dest, dest_len) == 0) {
