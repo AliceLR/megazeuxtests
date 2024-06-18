@@ -192,14 +192,25 @@ static inline void debug(const char *fmt, ...)
 }
 #endif
 
-static inline ice_uint16 mem_u16le(ice_uint8 *buf)
+static inline ice_uint16 mem_u16le(const ice_uint8 *buf)
 {
 	return buf[0] | (buf[1] << 8u);
 }
 
-static inline ice_uint32 mem_u32(ice_uint8 *buf)
+static inline ice_uint16 mem_u16be(const ice_uint8 *buf)
+{
+	return (buf[0] << 8u) | buf[1];
+}
+
+static inline ice_uint32 mem_u32(const ice_uint8 *buf)
 {
 	return (buf[0] << 24u) | (buf[1] << 16u) | (buf[2] << 8u) | buf[3];
+}
+
+static inline void put_u16be(ice_uint8 *buf, int val)
+{
+	buf[0] = (val >> 8) & 0xff;
+	buf[1] = val & 0xff;
 }
 
 static int ice_check_compressed_size(struct ice_state *ice)
@@ -390,7 +401,7 @@ static int ice_load8(struct ice_state *ice)
 	return 0;
 }
 
-static inline int ice_load16le(struct ice_state *ice)
+static int ice_load16le(struct ice_state *ice)
 {
 	int val = ice_read_u16le(ice);
 	if (val < 0) {
@@ -410,6 +421,45 @@ static int ice_load32(struct ice_state *ice)
 	ice->buffer_pos -= 4;
 	ice->bits = bits;
 	ice->bits_left += 32;
+	return 0;
+}
+
+static int ice_bitplane_filter(struct ice_state *ice,
+	ice_uint8 * ICE_RESTRICT dest, size_t dest_len, int stored_size)
+{
+	ice_uint8 *pos = dest + dest_len;
+	ice_uint8 *end;
+	unsigned plane0, plane1, plane2, plane3;
+	unsigned i, j;
+	unsigned x;
+
+	if (stored_size < 0 || (size_t)stored_size * 8 > dest_len) {
+		debug("  invalid bitplane length: %d\n", stored_size);
+		return -1;
+	}
+	end = pos - (size_t)stored_size * 8;
+
+	plane0 = plane1 = plane2 = plane3 = 0;
+	while (pos > end) {
+		for (i = 0; i < 4; i++) {
+			pos -= 2;
+			x = (unsigned)mem_u16be(pos) << 16u;
+			for (j = 0; j < 4; j++) {
+				plane0 = (plane0 << 1) | (x >> 31u);
+				x <<= 1;
+				plane1 = (plane1 << 1) | (x >> 31u);
+				x <<= 1;
+				plane2 = (plane2 << 1) | (x >> 31u);
+				x <<= 1;
+				plane3 = (plane3 << 1) | (x >> 31u);
+				x <<= 1;
+			}
+		}
+		put_u16be(pos + 0, plane0);
+		put_u16be(pos + 2, plane1);
+		put_u16be(pos + 4, plane2);
+		put_u16be(pos + 6, plane3);
+	}
 	return 0;
 }
 
