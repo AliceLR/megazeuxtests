@@ -66,8 +66,8 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 	int code;
 	int num;
 	/* Need at least 1 bit in the buffer. */
-	if (ice->bits_left <= 0 && ice_load_STREAMSIZE(ice) < 0) {
-		return -1;
+	if (ice->bits_left <= 0) {
+		ice_load_STREAMSIZE(ice);
 	}
 
 	code = ice->bits >> (32 - table_bits);
@@ -80,14 +80,12 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 		 * 8-bit reads, but this implementation doesn't use any.
 		 */
 		num = ice->bits_left;
-		if (ice_load_STREAMSIZE(ice) < 0) {
-			return -1;
-		}
+		ice_load_STREAMSIZE(ice);
 #ifdef ICE_ORIGINAL_BITSTREAM
 		/* Mask off terminator bit */
-		code &= (0xffffffffu << table_bits >> num);
+		code &= (0xffffffffu << table_bits) >> num;
 #endif
-		code |= ice->bits >> (32 - table_bits + num);
+		code |= ice->bits >> ((32 - table_bits) + num);
 
 		e = table[code];
 		used = e.bits_used - num;
@@ -126,8 +124,7 @@ static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 		int bit = (bits >> 31u);
 		bits <<= 1;
 		if (!bits) {
-			if (ice_load_STREAMSIZE(ice) < 0)
-				return -1;
+			ice_load_STREAMSIZE(ice);
 
 			bit = (ice->bits >> 31u);
 			bits = (ice->bits << 1) | (1 << (32 - STREAMSIZE));
@@ -136,7 +133,7 @@ static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 		num--;
 	}
 	ice->bits = bits;
-#else
+#else /* !ICE_ORIGINAL_BITSTREAM */
 	int left = num - ice->bits_left;
 	ret = ice->bits >> (32 - num);
 
@@ -148,21 +145,16 @@ static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 		if (left > 8) {
 			/* Can load two bytes safely in this case--due to the
 			 * backwards stream order they're read little endian. */
-			if (ice_load16le(ice) < 0)
-				return -1;
-		} else {
-			if (ice_load_STREAMSIZE(ice) < 0)
-				return -1;
-		}
-#else /* STREAMSIZE == 32 */
-		if (ice_load_STREAMSIZE(ice) < 0) {
-			return -1;
-		}
+			ice_load16le(ice);
+		} else
 #endif
+		{
+			ice_load_STREAMSIZE(ice);
+		}
 		ret |= ice->bits >> (32 - left);
 		ice->bits <<= left;
 	}
-#endif
+#endif /* !ICE_ORIGINAL_BITSTREAM */
 	debug("      <- %03x", ret);
 	return ret;
 }
@@ -279,7 +271,7 @@ static inline int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
 	size_t start = 12;
 #endif
 
-#if ICE_ORIGINAL_BITSTREAM
+#ifdef ICE_ORIGINAL_BITSTREAM
 	return offset == start && ice->bits == 0x80000000u;
 #else
 	return offset == start && ice->bits_left <= 0;
@@ -327,8 +319,11 @@ static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 			return -1;
 		}
 
+		/* The distance value is relative to the last byte written,
+		 * not the current position. The copied word never overlaps
+		 * the area being written unless dist == 0 (RLE). */
 		if (STREAMSIZE == 32)	dist = dist + length - 1;
-		else if (dist > 1) 	dist = dist + length - 2;
+		else if (dist > 1)	dist = dist + length - 2;
 
 		debug("  (%zu remaining) window copy of %u, dist %d",
 			dest_offset, length, dist);

@@ -239,15 +239,15 @@ static int ice_check_uncompressed_size(struct ice_state *ice, size_t dest_len)
 	return 0;
 }
 
-static int ice_fill_buffer(struct ice_state *ice)
+static int ice_fill_buffer(struct ice_state *ice, unsigned required)
 {
 	debug("ice_fill_buffer");
-	/* Save up to 4 extra bytes to allow for peeking. */
+	/* Save up to 4 extra bytes for unaligned reads. */
 	if (ice->buffer_pos > 4) {
 		debug("  ice_fill_buffer with %u remaining?", ice->buffer_pos);
 		return -1;
 	}
-	if (ice->buffer_pos > 0 && ice->buffer_pos <= 4) {
+	if (ice->buffer_pos > 0) {
 		memcpy(ice->buffer + ice->next_length, ice->buffer, 4);
 	}
 
@@ -264,15 +264,19 @@ static int ice_fill_buffer(struct ice_state *ice)
 	ice->buffer_pos += ice->next_length;
 	ice->next_seek -= ICE_BUFFER_SIZE;
 	ice->next_length = ICE_BUFFER_SIZE;
+
+	if (ice->buffer_pos < required) {
+		debug("  less than required after fill: %u < %u",
+		 ice->buffer_pos, required);
+		return -1;
+	}
 	return 0;
 }
 
-static int ice_read_byte(struct ice_state *ice)
+static inline int ice_read_byte(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 1) {
-		if (ice_fill_buffer(ice) < 0)
-			return -1;
-		if (ice->buffer_pos < 1)
+		if (ice_fill_buffer(ice, 1) < 0)
 			return -1;
 	}
 	return ice->buffer[--ice->buffer_pos];
@@ -281,23 +285,17 @@ static int ice_read_byte(struct ice_state *ice)
 static inline int ice_read_u16le(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 2) {
-		if (ice_fill_buffer(ice) < 0)
-			return -1;
-		if (ice->buffer_pos < 2)
+		if (ice_fill_buffer(ice, 2) < 0)
 			return -1;
 	}
 	ice->buffer_pos -= 2;
 	return mem_u16le(ice->buffer + ice->buffer_pos);
 }
 
-/* Note: 0 should never happen under normal circumstances,
- * so it's the error return value for this function. */
-static ice_uint32 ice_peek_u32(struct ice_state *ice)
+static inline ice_uint32 ice_peek_u32(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 4) {
-		if (ice_fill_buffer(ice) < 0)
-			return 0;
-		if (ice->buffer_pos < 4)
+		if (ice_fill_buffer(ice, 4) < 0)
 			return 0;
 	}
 	return mem_u32(ice->buffer + ice->buffer_pos - 4);
@@ -319,7 +317,7 @@ static int ice_init_buffer(struct ice_state *ice)
 
 	ice->next_seek = len - ice->next_length;
 
-	if (ice_fill_buffer(ice) < 0) {
+	if (ice_fill_buffer(ice, 1) < 0) {
 		return -1;
 	}
 
@@ -390,38 +388,24 @@ static int ice_preload_adjust(struct ice_state *ice)
 	return 0;
 }
 
-static int ice_load8(struct ice_state *ice)
+/* Can skip return value checks with these, check ice->eof after instead. */
+static inline void ice_load8(struct ice_state *ice)
 {
-	int val = ice_read_byte(ice);
-	if (val < 0) {
-		return -1;
-	}
-	ice->bits = (unsigned)val << 24u;
+	ice->bits = (unsigned)ice_read_byte(ice) << 24u;
 	ice->bits_left += 8;
-	return 0;
 }
 
-static int ice_load16le(struct ice_state *ice)
+static inline void ice_load16le(struct ice_state *ice)
 {
-	int val = ice_read_u16le(ice);
-	if (val < 0) {
-		return -1;
-	}
-	ice->bits = (unsigned)val << 16u;
+	ice->bits = (unsigned)ice_read_u16le(ice) << 16u;
 	ice->bits_left += 16;
-	return 0;
 }
 
-static int ice_load32(struct ice_state *ice)
+static inline void ice_load32(struct ice_state *ice)
 {
-	ice_uint32 bits = ice_peek_u32(ice);
-	if (bits == 0) { /* EOF */
-		return -1;
-	}
+	ice->bits = ice_peek_u32(ice);
 	ice->buffer_pos -= 4;
-	ice->bits = bits;
 	ice->bits_left += 32;
-	return 0;
 }
 
 static int ice_bitplane_filter(struct ice_state *ice,
@@ -477,7 +461,8 @@ static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack8");
-	if (ice_load8(ice) < 0 || ice_preload_adjust(ice) < 0) {
+	ice_load8(ice);
+	if (ice->eof || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
 	return ice_unpack_fn8(ice, dest, dest_len);
@@ -487,7 +472,8 @@ static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack32");
-	if (ice_load32(ice) < 0 || ice_preload_adjust(ice) < 0) {
+	ice_load32(ice);
+	if (ice->eof || ice_preload_adjust(ice) < 0) {
 		return -1;
 	}
 	return ice_unpack_fn32(ice, dest, dest_len);
