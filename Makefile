@@ -15,6 +15,7 @@ ifneq (${SANITIZE},)
 CC  ?= clang
 CXX ?= clang++
 COMMON_FLAGS := -O3 "-fsanitize=${F_SANITIZE}" -fno-omit-frame-pointer -g
+LDFLAGS += -fuse-ld=lld
 TAG := _san
 ifeq (${SANITIZE},address)
 TAG := ${TAG}A
@@ -30,6 +31,10 @@ endif
 ifeq (${SANITIZE},address,undefined)
 COMMON_FLAGS += -fno-sanitize-recover=all -fno-sanitize=shift-base
 TAG := ${TAG}AU
+endif
+ifeq (${SANITIZE},hwaddress,undefined)
+COMMON_FLAGS += -fno-sanitize-recover=all -fno-sanitize=shift-base
+TAG := ${TAG}HAU
 endif
 endif
 
@@ -264,6 +269,12 @@ clean:
 #
 BATCH_SANITIZE := address,undefined memory
 BATCH_FUZZER := address,undefined memory
+
+# These will compile on x86_64 but are currently only useful for ARM.
+ifeq ($(shell uname -m),aarch64)
+BATCH_SANITIZE += hwaddress,undefined
+BATCH_FUZZER += hwaddress,undefined
+endif
 
 batch:
 	@${MAKE}
