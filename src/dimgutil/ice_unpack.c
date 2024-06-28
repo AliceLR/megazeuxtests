@@ -57,6 +57,13 @@
 #define ICE_ORIGINAL_BITSTREAM
 #endif
 
+/* Enable 64-bit integer bitplanes decoding, which is much faster than the
+ * version of the carry flag based bitplane decoder implemented here.
+ * This should be much faster even non-64-bit architectures. */
+#if 1
+#define ICE_FAST_BITPLANES
+#endif
+
 /* Size of input buffer for filesystem reads. */
 #define ICE_BUFFER_SIZE		4096
 
@@ -211,6 +218,18 @@ static inline void put_u16be(ice_uint8 *buf, int val)
 {
 	buf[0] = (val >> 8) & 0xff;
 	buf[1] = val & 0xff;
+}
+
+static inline void put_u64be(ice_uint8 *buf, ice_uint64 val)
+{
+	buf[0] = (val >> 56) & 0xff;
+	buf[1] = (val >> 48) & 0xff;
+	buf[2] = (val >> 40) & 0xff;
+	buf[3] = (val >> 32) & 0xff;
+	buf[4] = (val >> 24) & 0xff;
+	buf[5] = (val >> 16) & 0xff;
+	buf[6] = (val >> 8) & 0xff;
+	buf[7] = val & 0xff;
 }
 
 static int ice_check_compressed_size(struct ice_state *ice)
@@ -411,16 +430,57 @@ static inline void ice_load32(struct ice_state *ice)
 static int ice_bitplane_filter(struct ice_state *ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len, int stored_size)
 {
-	ice_uint8 *pos = dest + dest_len;
+#ifdef ICE_FAST_BITPLANES
+	static const ice_uint64 bit_conv[16] = {
+		0x0000000000000000, 0x0000000000000001,
+		0x0000000000010000, 0x0000000000010001,
+		0x0000000100000000, 0x0000000100000001,
+		0x0000000100010000, 0x0000000100010001,
+		0x0001000000000000, 0x0001000000000001,
+		0x0001000000010000, 0x0001000000010001,
+		0x0001000100000000, 0x0001000100000001,
+		0x0001000100010000, 0x0001000100010001
+	};
+#endif
+	ice_uint8 *pos;
 	ice_uint8 *end;
-	unsigned plane0, plane1, plane2, plane3;
-	unsigned i, j;
-	unsigned x;
 
 	if (stored_size < 0 || (size_t)stored_size * 8 > dest_len) {
 		debug("  invalid bitplane length: %d\n", stored_size);
 		return -1;
 	}
+
+#ifdef ICE_FAST_BITPLANES
+	end = dest + dest_len;
+	pos = end - (size_t)stored_size * 8;
+
+	for (; pos < end; pos += 8) {
+		ice_uint64 planes = 0;
+		planes |= bit_conv[pos[6] >> 4] << 15;
+		planes |= bit_conv[pos[6] & 15] << 14;
+		planes |= bit_conv[pos[7] >> 4] << 13;
+		planes |= bit_conv[pos[7] & 15] << 12;
+		planes |= bit_conv[pos[4] >> 4] << 11;
+		planes |= bit_conv[pos[4] & 15] << 10;
+		planes |= bit_conv[pos[5] >> 4] <<  9;
+		planes |= bit_conv[pos[5] & 15] <<  8;
+		planes |= bit_conv[pos[2] >> 4] <<  7;
+		planes |= bit_conv[pos[2] & 15] <<  6;
+		planes |= bit_conv[pos[3] >> 4] <<  5;
+		planes |= bit_conv[pos[3] & 15] <<  4;
+		planes |= bit_conv[pos[0] >> 4] <<  3;
+		planes |= bit_conv[pos[0] & 15] <<  2;
+		planes |= bit_conv[pos[1] >> 4] <<  1;
+		planes |= bit_conv[pos[1] & 15];
+		put_u64be(pos, planes);
+	}
+#else
+	{
+	unsigned plane0, plane1, plane2, plane3;
+	unsigned i, j;
+	unsigned x;
+
+	pos = dest + dest_len;
 	end = pos - (size_t)stored_size * 8;
 
 	plane0 = plane1 = plane2 = plane3 = 0;
@@ -444,16 +504,21 @@ static int ice_bitplane_filter(struct ice_state *ice,
 		put_u16be(pos + 4, plane2);
 		put_u16be(pos + 6, plane3);
 	}
+	}
+#endif
 	return 0;
 }
 
-/* ice_unpack_fn8 and its helper functions. */
+/* ice_unpack_fn8 and its helper functions.
+ * On most tested platforms this is faster with tables. */
 #define STREAMSIZE 8
 #include "ice_unpack_fn.c"
 #undef STREAMSIZE
 
-/* ice_unpack_fn32 and its helper functions. */
+/* ice_unpack_fn32 and its helper functions.
+ * On most tested platforms this is faster WITHOUT tables. */
 #define STREAMSIZE 32
+//#undef ICE_TABLE_DECODING
 #include "ice_unpack_fn.c"
 #undef STREAMSIZE
 
