@@ -64,6 +64,11 @@
 #define ICE_FAST_BITPLANES
 #endif
 
+/* Unpack using pointers instead of offsets. May or may not help anything. */
+#if 0
+#define ICE_UNPACK_POINTERS
+#endif
+
 /* Size of input buffer for filesystem reads. */
 #define ICE_BUFFER_SIZE		4096
 

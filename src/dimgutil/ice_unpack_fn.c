@@ -281,6 +281,74 @@ static inline int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
 static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
+#ifdef ICE_UNPACK_POINTERS
+	ice_uint8 *pos = dest + dest_len;
+	ice_uint8 *window_pos;
+	int length;
+	int dist;
+
+	/* Don't terminate here--streams ending with a window copy expect
+	 * a final zero-length literal block. Ending here breaks the
+	 * bitplane filter check. */
+	while (1) {
+		length = ice_read_literal_length_STREAMSIZE(ice);
+		if (length < 0) {
+			return -1;
+		}
+		debug("  (%zu remaining) copy of %d", pos - dest, length);
+		if (length > pos - dest) {
+			debug("  ERROR: copy would write past start of file");
+			return -1;
+		}
+		for (; length > 0; length--) {
+			int b = ice_read_byte(ice);
+			if (b < 0) {
+				return -1;
+			}
+			*(--pos) = b;
+		}
+		if (pos == dest) {
+			break;
+		}
+
+		length = ice_read_window_length_STREAMSIZE(ice);
+		if (length <= 0) {
+			return -1;
+		}
+		dist = ice_read_window_distance_STREAMSIZE(ice, length);
+		if (dist <= 0) {
+			return -1;
+		}
+
+		/* The distance value is relative to the last byte written,
+		 * not the current position. The copied word never overlaps
+		 * the area being written unless dist == 0 (RLE). */
+		if (STREAMSIZE == 32)	dist = dist + length - 1;
+		else if (dist > 1)	dist = dist + length - 2;
+
+		debug("  (%zu remaining) window copy of %u, dist %d",
+			pos - dest, length, dist);
+		if (length > pos - dest) {
+			debug("  ERROR: copy would write past start of file");
+			return -1;
+		}
+
+		window_pos = dist + pos;
+		if (window_pos > dest + dest_len) {
+			/* Haven't found a valid Pack-Ice file that does this. */
+			size_t zero_len = window_pos - dest - dest_len;
+			zero_len = ICE_MIN(zero_len, (size_t)length);
+			memset(pos - zero_len, 0, zero_len);
+			window_pos -= zero_len;
+			pos -= zero_len;
+			length -= zero_len;
+			debug("    (window copy is in suffix zone)");
+		}
+		for (; length > 0; length--) {
+			*(--pos) = *(--window_pos);
+		}
+	}
+#else
 	size_t dest_offset = dest_len;
 	size_t window_offset;
 	int length;
@@ -347,6 +415,7 @@ static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 			dest[--dest_offset] = dest[--window_offset];
 		}
 	}
+#endif
 
 	/* Bitplane filter (optional). */
 	if (ice->version >= VERSION_21X &&
