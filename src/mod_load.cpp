@@ -113,6 +113,38 @@ enum MOD_features
   FT_RETRIGGER_ZERO,
   FT_SOUNDTRACKER_JUNK_ORDERS,
   FT_E_SPEED_HIGH,
+  FT_FX_ARPEGGIO,
+  FT_FX_PORTAMENTO_UP,
+  FT_FX_PORTAMENTO_DOWN,
+  FT_FX_TONE_PORTAMENTO,
+  FT_FX_VIBRATO,
+  FT_FX_TONE_PORTAMENTO_VOLSLIDE,
+  FT_FX_VIBRATO_VOLSLIDE,
+  FT_FX_TREMOLO,
+  FT_FX_SET_PANNING_8XX,
+  FT_FX_OFFSET,
+  FT_FX_VOLSLIDE,
+  FT_FX_POSITION_JUMP,
+  FT_FX_SET_VOLUME,
+  FT_FX_PATTERN_BREAK,
+  FT_FX_SPEED,
+  FT_FX_SET_FILTER,
+  FT_FX_FINE_PORTAMENTO_UP,
+  FT_FX_FINE_PORTAMENTO_DOWN,
+  FT_FX_GLISSANDO_CONTROL,
+  FT_FX_SET_VIBRATO_WAVEFORM,
+  FT_FX_SET_FINETUNE,
+  FT_FX_LOOP,
+  FT_FX_SET_TREMOLO_WAVEFORM,
+  FT_FX_SET_PANNING_E8X,
+  FT_FX_RETRIGGER_NOTE,
+  FT_FX_FINE_VOLSLIDE_UP,
+  FT_FX_FINE_VOLSLIDE_DOWN,
+  FT_FX_NOTE_CUT,
+  FT_FX_NOTE_DELAY,
+  FT_FX_PATTERN_DELAY,
+  FT_FX_INVERT_LOOP,
+  FT_FX_UNKNOWN,
   NUM_FEATURES
 };
 
@@ -123,6 +155,38 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "Retrig0",
   "ST:JunkOrd",
   "E:FxxHigh",
+  "E:Arp",
+  "E:PortaUp",
+  "E:PortaDn",
+  "E:Toneporta",
+  "E:Vibrato",
+  "E:ToneportaVol",
+  "E:VibratoVol",
+  "E:Tremolo",
+  "E:Pan8xx",
+  "E:Offset",
+  "E:Volslide",
+  "E:Jump",
+  "E:Volume",
+  "E:Break",
+  "E:Tempo",
+  "E:Filter",
+  "E:FinePortaUp",
+  "E:FinePortaDn",
+  "E:Glissando",
+  "E:VibratoWF",
+  "E:Finetune",
+  "E:Loop",
+  "E:TremoloWF",
+  "E:PanE8x",
+  "E:Retrig",
+  "E:FineVolUp",
+  "E:FineVolDn",
+  "E:NoteCut",
+  "E:NoteDelay",
+  "E:PattDelay",
+  "E:InvLoop",
+  "E:???",
 };
 
 enum MOD_effects
@@ -143,21 +207,22 @@ enum MOD_effects
   E_PATTERN_BREAK,
   E_EXTENDED,
   E_SPEED,
-  EX_SET_FILTER           = 0x00,
-  EX_FINE_PORTAMENTO_UP   = 0x10,
-  EX_FINE_PORTAMENTO_DOWN = 0x20,
-  EX_GLISSANDO_CONTROL    = 0x30,
-  EX_SET_VIBRATO_WAVEFORM = 0x40,
-  EX_SET_FINETUNE         = 0x50,
-  EX_LOOP                 = 0x60,
-  EX_SET_TREMOLO_WAVEFORM = 0x70,
-  EX_RETRIGGER_NOTE       = 0x90,
-  EX_FINE_VOLSLIDE_UP     = 0xA0,
-  EX_FINE_VOLSLIDE_DOWN   = 0xB0,
-  EX_NOTE_CUT             = 0xC0,
-  EX_NOTE_DELAY           = 0xD0,
-  EX_PATTERN_DELAY        = 0xE0,
-  EX_INVERT_LOOP          = 0xF0
+  EX_SET_FILTER           = 0x0,
+  EX_FINE_PORTAMENTO_UP   = 0x1,
+  EX_FINE_PORTAMENTO_DOWN = 0x2,
+  EX_GLISSANDO_CONTROL    = 0x3,
+  EX_SET_VIBRATO_WAVEFORM = 0x4,
+  EX_SET_FINETUNE         = 0x5,
+  EX_LOOP                 = 0x6,
+  EX_SET_TREMOLO_WAVEFORM = 0x7,
+  EX_SET_PANNING          = 0x8,
+  EX_RETRIGGER_NOTE       = 0x9,
+  EX_FINE_VOLSLIDE_UP     = 0xA,
+  EX_FINE_VOLSLIDE_DOWN   = 0xB,
+  EX_NOTE_CUT             = 0xC,
+  EX_NOTE_DELAY           = 0xD,
+  EX_PATTERN_DELAY        = 0xE,
+  EX_INVERT_LOOP          = 0xF
 };
 
 
@@ -489,6 +554,70 @@ static modutil::error MOD_read_sample(MOD_data &m, size_t sample_num, FILE *fp)
   return modutil::SUCCESS;
 }
 
+static MOD_features MOD_effect_type_feature(const MOD_note *note)
+{
+  /* Only call here if effect OR param is set. */
+  switch(note->effect)
+  {
+    default:                          return FT_FX_UNKNOWN; // Should be unreachable
+    case E_ARPEGGIO:                  return FT_FX_ARPEGGIO;
+    case E_PORTAMENTO_UP:             return FT_FX_PORTAMENTO_UP;
+    case E_PORTAMENTO_DOWN:           return FT_FX_PORTAMENTO_DOWN;
+    case E_TONE_PORTAMENTO:           return FT_FX_TONE_PORTAMENTO;
+    case E_VIBRATO:                   return FT_FX_VIBRATO;
+    case E_TONE_PORTAMENTO_VOLSLIDE:  return FT_FX_TONE_PORTAMENTO_VOLSLIDE;
+    case E_VIBRATO_VOLSLIDE:          return FT_FX_VIBRATO_VOLSLIDE;
+    case E_TREMOLO:                   return FT_FX_TREMOLO;
+    case E_SET_PANNING:               return FT_FX_SET_PANNING_8XX;
+    case E_OFFSET:                    return FT_FX_OFFSET;
+    case E_VOLSLIDE:                  return FT_FX_VOLSLIDE;
+    case E_POSITION_JUMP:             return FT_FX_POSITION_JUMP;
+    case E_SET_VOLUME:                return FT_FX_SET_VOLUME;
+    case E_PATTERN_BREAK:             return FT_FX_PATTERN_BREAK;
+    case E_SPEED:                     return FT_FX_SPEED;
+
+    case E_EXTENDED:
+      break;
+  }
+  switch(note->param >> 4)
+  {
+    default:                          return FT_FX_UNKNOWN; // Should be unreachable
+    case EX_SET_FILTER:               return FT_FX_SET_FILTER;
+    case EX_FINE_PORTAMENTO_UP:       return FT_FX_FINE_PORTAMENTO_UP;
+    case EX_FINE_PORTAMENTO_DOWN:     return FT_FX_FINE_PORTAMENTO_DOWN;
+    case EX_GLISSANDO_CONTROL:        return FT_FX_GLISSANDO_CONTROL;
+    case EX_SET_VIBRATO_WAVEFORM:     return FT_FX_SET_VIBRATO_WAVEFORM;
+    case EX_SET_FINETUNE:             return FT_FX_SET_FINETUNE;
+    case EX_LOOP:                     return FT_FX_LOOP;
+    case EX_SET_TREMOLO_WAVEFORM:     return FT_FX_SET_TREMOLO_WAVEFORM;
+    case EX_SET_PANNING:              return FT_FX_SET_PANNING_E8X;
+    case EX_RETRIGGER_NOTE:           return FT_FX_RETRIGGER_NOTE;
+    case EX_FINE_VOLSLIDE_UP:         return FT_FX_FINE_VOLSLIDE_UP;
+    case EX_FINE_VOLSLIDE_DOWN:       return FT_FX_FINE_VOLSLIDE_DOWN;
+    case EX_NOTE_CUT:                 return FT_FX_NOTE_CUT;
+    case EX_NOTE_DELAY:               return FT_FX_NOTE_DELAY;
+    case EX_PATTERN_DELAY:            return FT_FX_PATTERN_DELAY;
+    case EX_INVERT_LOOP:              return FT_FX_INVERT_LOOP;
+  }
+}
+
+static void MOD_effect_features(MOD_data &m, const MOD_note *note)
+{
+  if(note->effect || note->param)
+    m.use(MOD_effect_type_feature(note));
+
+  if(note->effect == E_EXTENDED &&
+   (note->param >> 4) == EX_RETRIGGER_NOTE)
+  {
+    if(!note->note && (note->param & 0x0F))
+      m.use(FT_RETRIGGER_NO_NOTE);
+    if(!(note->param & 0xF))
+      m.use(FT_RETRIGGER_ZERO);
+  }
+  if(note->effect == E_SPEED && note->param >= 0x20)
+   m.use(FT_E_SPEED_HIGH);
+}
+
 static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp)
 {
   if(!m.pattern_buffer)
@@ -513,16 +642,7 @@ static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp
       note->effect = (current[2] & 0x0F);
       note->param  = current[3];
 
-      if(note->effect == E_EXTENDED &&
-       (note->param & 0xF0) == EX_RETRIGGER_NOTE)
-      {
-        if(!note->note && (note->param & 0x0F))
-          m.use(FT_RETRIGGER_NO_NOTE);
-        if(!(note->param & 0xF))
-          m.use(FT_RETRIGGER_ZERO);
-      }
-      if(note->effect == E_SPEED && note->param >= 0x20)
-        m.use(FT_E_SPEED_HIGH);
+      MOD_effect_features(m, note);
 
       current += 4;
       note++;
