@@ -41,7 +41,9 @@ enum DTM_feature
   FT_PATTERN_V204,
   FT_PATTERN_V206,
   FT_PATTERN_UNKNOWN,
-  FT_MONO_MODE,
+  FT_MODE_OLD_STEREO,
+  FT_MODE_PANORAMIC_STEREO,
+  FT_MODE_UNKNOWN_STEREO,
   FT_SAMPLE_8_BIT,
   FT_SAMPLE_16_BIT,
   FT_SAMPLE_UNKNOWN_BITS,
@@ -92,7 +94,9 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "P:2.04",
   "P:2.06",
   "P:???",
-  "M:Mono",
+  "M:OldStereo",
+  "M:Panoramic",
+  "M:???",
   "S:8",
   "S:16",
   "S:??",
@@ -540,6 +544,8 @@ public:
   static constexpr size_t min_SV19_length = 4 + 2 * MAX_CHANNELS;
   static constexpr size_t max_SV19_length = min_SV19_length + MAX_INSTRUMENTS;
   static constexpr size_t max_PATT_length = 8;
+  static constexpr unsigned old_stereo = 0;
+  static constexpr unsigned panoramic_stereo = 0xff;
 
   bool     loaded_D_T_;
   bool     loaded_VERS;
@@ -558,11 +564,12 @@ public:
   uint32_t version;
   /* D.T. */
   uint16_t file_type; // ??
-  uint16_t output_type; // FFh = Mono
+  uint8_t  stereo_mode; // 00h = old stereo, FFh = panoramic stereo
+  uint8_t  global_sample_depth; // 2.03
   uint16_t reserved_dt;
   uint16_t initial_speed;
   uint16_t initial_bpm; // tracker BPM
-  uint32_t undocumented_dt;
+  uint32_t global_sample_rate; // 2.03
   uint8_t  name[129];
   char     name_clean[129];
   /* SV19 */
@@ -618,19 +625,30 @@ public:
     }
 
     m.file_type = mem_u16be(buf + 0);
-    m.output_type = mem_u16be(buf + 2);
+    m.stereo_mode = buf[2];
+    m.global_sample_depth = buf[3]; /* 2.03 only */
     m.reserved_dt = mem_u16be(buf + 4);
     m.initial_speed = mem_u16be(buf + 6);
     m.initial_bpm = mem_u16be(buf + 8);
-    m.undocumented_dt = mem_u32be(buf + 10);
+    m.global_sample_rate = mem_u32be(buf + 10); /* 2.03 only */
 
     size_t name_len = len - DTM_module::D_T_header_length;
     memcpy(m.name, buf + DTM_module::D_T_header_length, name_len);
     m.name[name_len] = '\0';
     // FIXME: clean
 
-    if(m.output_type == 0xff)
-      m.uses[FT_MONO_MODE] = true;
+    switch(m.stereo_mode)
+    {
+      case DTM_module::old_stereo:
+        m.uses[FT_MODE_OLD_STEREO] = true;
+        break;
+      case DTM_module::panoramic_stereo:
+        m.uses[FT_MODE_PANORAMIC_STEREO] = true;
+        break;
+      default:
+        m.uses[FT_MODE_UNKNOWN_STEREO] = true;
+        break;
+    }
 
     return modutil::SUCCESS;
   }
@@ -1123,6 +1141,8 @@ public:
     format::line("Patterns", "%d", m.num_patterns);
     format::line("Channels", "%d", m.num_channels);
     format::line("Instr.",   "%d", m.num_instruments);
+    if(m.global_sample_rate > 0)
+      format::line("InsConf.","%d-bit %" PRIu32 "Hz", m.global_sample_depth, m.global_sample_rate);
     format::uses(m.uses, FEATURE_STR);
 
     // FIXME: comments
@@ -1174,7 +1194,7 @@ public:
           return tmp;
         };
 
-        s_table.row(i, ins.name, {},
+        s_table.row(i + 1, ins.name, {},
           ins.length, ins.loop_start, ins.loop_length, {},
           ins.sample_bits, ins.sample_stereo ? 2 : 1,
           ins.frequency, ins.finetune, ins.default_volume, notefunc(ins.midi_note));
