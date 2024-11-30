@@ -109,6 +109,7 @@ static constexpr uint32_t pattern_size(uint32_t num_channels)
 enum MOD_features
 {
   FT_SAMPLE_ADPCM,
+  FT_INSTRUMENT_WITHOUT_NOTE,
   FT_RETRIGGER_NO_NOTE,
   FT_RETRIGGER_ZERO,
   FT_SOUNDTRACKER_JUNK_ORDERS,
@@ -151,6 +152,7 @@ enum MOD_features
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
   "S:ADPCM",
+  "I:NoNote",
   "RetrigNoNote",
   "Retrig0",
   "ST:JunkOrd",
@@ -601,8 +603,11 @@ static MOD_features MOD_effect_type_feature(const MOD_note *note)
   }
 }
 
-static void MOD_effect_features(MOD_data &m, const MOD_note *note)
+static void MOD_event_features(MOD_data &m, const MOD_note *note)
 {
+  if(note->note == 0 && note->sample != 0)
+    m.use(FT_INSTRUMENT_WITHOUT_NOTE);
+
   if(note->effect || note->param)
     m.use(MOD_effect_type_feature(note));
 
@@ -642,7 +647,7 @@ static modutil::error MOD_read_pattern(MOD_data &m, size_t pattern_num, FILE *fp
       note->effect = (current[2] & 0x0F);
       note->param  = current[3];
 
-      MOD_effect_features(m, note);
+      MOD_event_features(m, note);
 
       current += 4;
       note++;
