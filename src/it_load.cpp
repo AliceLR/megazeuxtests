@@ -447,6 +447,22 @@ struct IT_data
   std::vector<uint8_t>       workbuf;
 };
 
+/* Char 0 displays identically to a space (32) in name fields, but
+ * not in filename fields.
+ *
+ * The string fields provide one extra uneditable char, presumably for
+ * a terminator (even though char 0 doesn't terminate prior).
+ */
+template<int LEN>
+static void IT_string_fix(char (&name)[LEN])
+{
+  for(int i = 0; i < LEN - 1; i++)
+    if(name[i] == '\0')
+      name[i] = ' ';
+
+  name[LEN - 1] = '\0';
+}
+
 static bool IT_scan_compressed_sample(FILE *fp, IT_data &m, IT_sample &s)
 {
   bool is_16_bit = !!(s.flags & SAMPLE_16_BIT);
@@ -593,7 +609,7 @@ static modutil::error IT_read_sample(FILE *fp, IT_sample &s)
 
   if(!fread(s.name, 26, 1, fp))
     return modutil::READ_ERROR;
-  s.name[25] = '\0';
+  IT_string_fix(s.name);
 
   s.convert            = fgetc(fp);
   s.default_pan        = fgetc(fp);
@@ -670,7 +686,7 @@ static modutil::error IT_read_instrument(FILE *fp, IT_instrument &ins)
 
   if(!fread(ins.name, 26, 1, fp))
     return modutil::READ_ERROR;
-  ins.name[25] = '\0';
+  IT_string_fix(ins.name);
 
   ins.init_filter_cutoff    = fgetc(fp);
   ins.init_filter_resonance = fgetc(fp);
@@ -739,7 +755,7 @@ static modutil::error IT_read_old_instrument(FILE *fp, IT_instrument &ins)
 
   if(!fread(ins.name, 26, 1, fp))
     return modutil::READ_ERROR;
-  ins.name[25] = '\0';
+  IT_string_fix(ins.name);
   fgetc(fp);
   fgetc(fp);
   fgetc(fp);
@@ -947,7 +963,7 @@ static modutil::error IT_read(FILE *fp)
 
   if(!fread(h.name, 26, 1, fp))
     return modutil::READ_ERROR;
-  h.name[25] = '\0';
+  IT_string_fix(h.name);
 
   h.highlight        = fget_u16le(fp);
   h.num_orders       = fget_u16le(fp);
