@@ -45,6 +45,7 @@ enum S3M_features
   FT_SAMPLE_STEREO,
   FT_SAMPLE_16,
   FT_SAMPLE_ADPCM,
+  FT_SBX_SAME_LINE,
   NUM_FEATURES
 };
 
@@ -63,6 +64,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "S:Stereo",
   "S:16",
   "S:ADPCM",
+  "E:SBxSameLine",
 };
 
 static const char S3M_MAGIC[] = "SCRM";
@@ -514,13 +516,13 @@ public:
     for(size_t i = 0; i < h.num_patterns; i++)
     {
       S3M_pattern &p = m.patterns[i];
+      p.allocate(MAX_CHANNELS, 64);
+
       if(!p.pattern_segment)
         continue;
 
       if(fseek(fp, p.pattern_segment << 4, SEEK_SET))
         return modutil::SEEK_ERROR;
-
-      p.allocate(MAX_CHANNELS, 64);
 
       p.packed_size = fget_u16le(fp);
       if(!p.packed_size)
@@ -535,18 +537,27 @@ public:
       const uint8_t *pos = m.buffer;
       const uint8_t *end = m.buffer + p.packed_size;
       size_t row = 0;
+      int row_sbx_count = 0;
       while(pos < end && row < 64)
       {
         uint8_t flg = *(pos++);
         if(!flg)
         {
           row++;
+          row_sbx_count = 0;
           continue;
         }
 
         uint8_t chn = flg & 0x1f;
         S3M_event *ev = &(p.events[row * MAX_CHANNELS + chn]);
         *ev = S3M_event(flg, pos, end);
+
+        if(ev->effect == 19 && (ev->param & 0xf0) == 0xb0) // FIXME
+        {
+          row_sbx_count++;
+          if(row_sbx_count >= 2)
+            m.uses[FT_SBX_SAME_LINE] = true;
+        }
 
         if(pos > end)
         {
