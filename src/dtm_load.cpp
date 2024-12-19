@@ -410,8 +410,8 @@ public:
   uint8_t  default_volume; // actually default?
   uint32_t loop_start;
   uint32_t loop_length;
-  char     name[max_name_length];
-  char     name_clean[max_name_length];
+  char     name[max_name_length + 1];
+  char     name_clean[max_name_length + 1];
   uint8_t  sample_stereo;
   uint8_t  sample_bits; /* 8:8-bit, 16:16-bit, 0:deleted? */
   uint16_t midi_note; /* "Note" field used as a transpose in later versions. */
@@ -446,7 +446,7 @@ public:
     frequency      = mem_u32be(data + 46);
 
     memcpy(name, data + 18, max_name_length);
-    name[max_name_length - 1] = '\0';
+    name[max_name_length] = '\0';
     // FIXME: clean
     return modutil::SUCCESS;
   }
@@ -565,11 +565,11 @@ public:
   /* D.T. */
   uint16_t file_type; // ??
   uint8_t  stereo_mode; // 00h = old stereo, FFh = panoramic stereo
-  uint8_t  global_sample_depth; // 2.03
+  uint8_t  global_sample_depth; // pre-2.04
   uint16_t reserved_dt;
   uint16_t initial_speed;
   uint16_t initial_bpm; // tracker BPM
-  uint32_t global_sample_rate; // 2.03
+  uint32_t global_sample_rate; // pre-2.04
   uint8_t  name[129];
   char     name_clean[129];
   /* SV19 */
@@ -626,11 +626,11 @@ public:
 
     m.file_type = mem_u16be(buf + 0);
     m.stereo_mode = buf[2];
-    m.global_sample_depth = buf[3]; /* 2.03 only */
+    m.global_sample_depth = buf[3]; /* pre-2.04 only */
     m.reserved_dt = mem_u16be(buf + 4);
     m.initial_speed = mem_u16be(buf + 6);
     m.initial_bpm = mem_u16be(buf + 8);
-    m.global_sample_rate = mem_u32be(buf + 10); /* 2.03 only */
+    m.global_sample_rate = mem_u32be(buf + 10); /* pre-2.04 only */
 
     size_t name_len = len - DTM_module::D_T_header_length;
     memcpy(m.name, buf + DTM_module::D_T_header_length, name_len);
@@ -1126,7 +1126,8 @@ public:
     if(m.version)
       format::line("Version","%d.%d", (int)m.version / 10, (int)m.version % 10);
     else
-      format::line("Version","%s", m.pattern_format_version == format_v204 ? "2.04" : "2.03");
+      format::line("Version","%s", m.pattern_format_version == format_v204 ? "2.04" :
+                                   m.global_sample_depth > 0 ? "2.03" : "2.015");
     format::line("Speed",    "%d", m.initial_speed);
     if(m.version >= 19)
       format::line("Tempo",  "%.02f", ((double)m.initial_bpm_frac / 4294967296.0) + m.initial_bpm);
@@ -1141,8 +1142,11 @@ public:
     format::line("Patterns", "%d", m.num_patterns);
     format::line("Channels", "%d", m.num_channels);
     format::line("Instr.",   "%d", m.num_instruments);
-    if(m.global_sample_rate > 0)
+    if(m.global_sample_rate > 0 && m.global_sample_depth > 0)
       format::line("InsConf.","%d-bit %" PRIu32 "Hz", m.global_sample_depth, m.global_sample_rate);
+    else
+    if(m.global_sample_rate > 0)
+      format::line("InsConf.","%" PRIu32 "Hz", m.global_sample_rate);
     format::uses(m.uses, FEATURE_STR);
 
     // FIXME: comments
@@ -1157,7 +1161,7 @@ public:
       };
 
       table::table<
-        table::string<20>,
+        table::string<22>,
         table::spacer,
         table::number<10>,
         table::number<10>,
