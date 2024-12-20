@@ -812,7 +812,7 @@ namespace format
       const EVENT *ev = events.data();
       for(unsigned int row = 0; row < rows; row++)
       {
-        char rowstr[8];
+        char rowstr[10];
         sprintf(rowstr, "%02x", row);
         O_("%6.6s  :", rowstr);
         for(unsigned int track = 0; track < columns; track++, ev++)

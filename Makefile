@@ -91,6 +91,7 @@ MODULEDIAG_OBJS := \
   ${OBJ}/dtt_load.o \
   ${OBJ}/far_load.o \
   ${OBJ}/gdm_load.o \
+  ${OBJ}/liqno_load.o \
   ${OBJ}/med_load.o \
   ${OBJ}/mtm_load.o \
   ${OBJ}/musx_load.o \
