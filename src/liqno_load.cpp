@@ -133,7 +133,7 @@ struct NO_data
 class NO_loader : public modutil::loader
 {
 public:
-  NO_loader(): modutil::loader("LIQ", "liqno", "Liquid Tracker beta") {}
+  NO_loader(): modutil::loader("LIQ", "liqno", "Liquid Tracker NO") {}
 
   virtual modutil::error load(FILE *fp, long file_length) const override
   {
