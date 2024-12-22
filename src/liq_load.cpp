@@ -245,6 +245,7 @@ struct LIQ_pattern
   /* 44 */
 
   unsigned num_channels;
+  /* Note: events are stored in tracks rather than in rows. */
   std::vector<LIQ_event> events;
 
   modutil::error load(size_t num, size_t chn, std::vector<uint8_t> &data, FILE *fp,
@@ -274,7 +275,8 @@ struct LIQ_pattern
     packed_bytes  = mem_u32le(buf + 36);
     reserved      = mem_u32le(buf + 40);
     num_channels  = chn;
-    events.resize(num_rows * num_channels);
+    size_t num_events = num_rows * num_channels;
+    events.resize(num_events);
 
     if(static_cast<int64_t>(packed_bytes) > file_length)
     {
@@ -286,7 +288,6 @@ struct LIQ_pattern
     if(fread(data.data(), 1, packed_bytes, fp) < packed_bytes)
       return modutil::READ_ERROR;
 
-    chn = 0;
     size_t row = 0;
     for(size_t pos = 0; pos < packed_bytes; )
     {
@@ -298,9 +299,10 @@ struct LIQ_pattern
       /* Stop track decoding */
       if(value == 0xa0)
       {
-        chn++;
+        chn = (row / num_rows) + 1;
         if(chn >= num_channels)
           break;
+        row = chn * num_rows;
         continue;
       }
       /* Skip xx empty notes */
@@ -324,10 +326,11 @@ struct LIQ_pattern
         if(packed_bytes - pos < 1)
           return modutil::BAD_PACKING;
 
+        chn = row / num_rows;
         chn += data[pos++] + 1;
-        row = 0;
         if(chn >= num_channels)
           break;
+        row = chn * num_rows;
         continue;
       }
 
@@ -337,12 +340,11 @@ struct LIQ_pattern
       if(value > 0xc0 && value < 0xe0)
       {
         unsigned num = tmp.unpack(data, pos, value);
-        if(num == 0 || row >= num_rows)
+        if(num == 0 || row >= num_events)
           return modutil::BAD_PACKING;
 
-        events[row * num_channels + chn] = tmp;
+        events[row++] = tmp;
         pos += num;
-        row++;
       }
       else
 
@@ -356,12 +358,11 @@ struct LIQ_pattern
         while(count > 0)
         {
           unsigned num = tmp.unpack(data, pos, value);
-          if(num == 0 || row >= num_rows)
+          if(num == 0 || row >= num_events)
             return modutil::BAD_PACKING;
 
-          events[row * num_channels + chn] = tmp;
+          events[row++] = tmp;
           pos += num;
-          row++;
           count--;
         }
       }
@@ -375,26 +376,24 @@ struct LIQ_pattern
 
         unsigned count = data[pos++] + 1;
         unsigned num = tmp.unpack(data, pos, value);
-        if(num == 0 || row + count >= num_rows)
+        if(num == 0 || row + count > num_events)
           return modutil::BAD_PACKING;
 
         pos += num;
         while(count > 0)
         {
-          events[row * num_channels + chn] = tmp;
-          row++;
+          events[row++] = tmp;
           count--;
         }
       }
       else /* Unpacked event */
       {
-        unsigned num = tmp.load(data, pos);
-        if(num == 0 || row >= num_rows)
+        unsigned num = tmp.load(data, pos - 1);
+        if(num == 0 || row >= num_events)
           return modutil::BAD_PACKING;
 
-        events[row * num_channels + chn] = tmp;
-        pos += num;
-        row++;
+        events[row++] = tmp;
+        pos += num - 1;
       }
     }
     return modutil::SUCCESS;
@@ -870,15 +869,15 @@ done:
           continue;
         }
 
-        LIQ_event *current = p.events.data();
         for(size_t row = 0; row < p.num_rows; row++)
         {
-          for(size_t track = 0; track < p.num_channels; track++, current++)
+          for(size_t track = 0; track < p.num_channels; track++)
           {
-            format::note      a{ current->note };
-            format::sample    b{ current->instrument };
-            format::volume    c{ current->volume };
-            format::effectIT  d{ current->effect, current->param };
+            LIQ_event &current = p.events[track * p.num_rows + row];
+            format::note      a{ current.note };
+            format::sample    b{ current.instrument };
+            format::volume    c{ current.volume };
+            format::effectIT  d{ current.effect, current.param };
             pattern.insert(EVENT(a, b, c, d));
           }
         }
