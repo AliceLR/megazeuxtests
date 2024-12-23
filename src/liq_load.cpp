@@ -30,6 +30,7 @@ enum LIQ_features
   SAMPLE_UNSIGNED,
   SAMPLE_16BIT,
   SAMPLE_STEREO,
+  NOTE_OCTAVE_8_9,
   NUM_FEATURES
 };
 
@@ -39,6 +40,7 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "S:U",
   "S:16",
   "S:Stereo",
+  "N:Oct8-9",
 };
 
 static const char LIQ_MAGIC[]             = "Liquid Module:";
@@ -186,14 +188,25 @@ struct LIQ_header
 };
 
 /* Note- the -1=none fields get shifted up by 1 since the formatter expects
- * 0 for none. */
+ * 0 for none. No LIQ I've found contains the -1 code for effects, as the
+ * pattern packer never seems to emit it. */
 struct LIQ_event
 {
   uint8_t note;       /* 0-107 C-1 thru B-9 (?), -1=none, -2=note off */
   uint8_t instrument; /* -1=none */
   uint8_t volume;     /* -1=none */
-  uint8_t effect;     /* 0-25=A-Z, -1=none */
+  uint8_t effect;     /* 65-90=A-Z, -1=none */
   uint8_t param;
+
+  unsigned octave() const
+  {
+    return note && note != (0xfe + 1) ? (note - 1) / 12 : 0;
+  }
+
+  uint8_t fix_effect(uint8_t fx)
+  {
+    return fx != 0xff ? fx - '@' : 0;
+  }
 
   unsigned load(const std::vector<uint8_t> data, size_t pos)
   {
@@ -203,7 +216,7 @@ struct LIQ_event
     note          = data[pos + 0] + 1;
     instrument    = data[pos + 1] + 1;
     volume        = data[pos + 2] + 1;
-    effect        = data[pos + 3] + 1;
+    effect        = fix_effect(data[pos + 3]);
     param         = data[pos + 4];
     return 5;
   }
@@ -228,7 +241,7 @@ struct LIQ_event
     if(mask & 4)
       volume      = data[pos++] + 1;
     if(mask & 8)
-      effect      = data[pos++] + 1;
+      effect      = fix_effect(data[pos++]);
     if(mask & 16)
       param       = data[pos++];
     return num;
@@ -727,6 +740,11 @@ public:
         if(err != modutil::BAD_PACKING)
           goto done;
       }
+      for(const LIQ_event &event : p.events)
+      {
+        if(event.octave() >= 8)
+          m.uses[NOTE_OCTAVE_8_9] = true;
+      }
     }
 
     /* Instruments */
@@ -769,6 +787,7 @@ done:
     format::line("Instr.",    "%d", h.num_instruments);
     format::line("Speed",     "%d", h.initial_speed);
     format::line("BPM",       "%d", h.initial_bpm);
+    format::line("NoteRng.",  "%d to %d", h.lowest_note, h.highest_note);
     if(h.format_version >= 0x102)
       format::line("Ampl.",   "%d", h.amplification);
     format::uses(m.uses, FEATURE_STR);
