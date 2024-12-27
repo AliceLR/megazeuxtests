@@ -128,6 +128,10 @@ MOD2LIQ2_EXE := mod2liq2${BINEXT}
 MOD2LIQ2_OBJS := \
   ${OBJ}/mod2liq2.o
 
+S3M2LIQ_EXE := s3m2liq${BINEXT}
+S3M2LIQ_OBJS := \
+  ${OBJ}/s3m2liq.o
+
 WAV2AVR_EXE  := wav2avr${BINEXT}
 WAV2AVR_OBJS := \
   ${OBJ}/wav2avr.o \
@@ -176,6 +180,9 @@ ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
 -include ${MOD2LIQ2_OBJS:.o=.d}
 ${MOD2LIQ2_EXE}: ${MOD2LIQ2_OBJS}
 
+-include ${S3M2LIQ_OBJS:.o=.d}
+${S3M2LIQ_EXE}: ${S3M2LIQ_OBJS}
+
 -include ${WAV2AVR_OBJS:.o=.d}
 ${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
 
@@ -203,6 +210,7 @@ ALL_EXES := \
   ${MODULEUNPACK_EXE} \
   ${DSYMGEN_EXE} \
   ${MOD2LIQ2_EXE} \
+  ${S3M2LIQ_EXE} \
   ${WAV2AVR_EXE} \
   ${IFFDUMP_EXE} \
   ${UNARC_EXE} \
@@ -240,6 +248,10 @@ ${MOD2LIQ2_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${MOD2LIQ2_OBJS} ${LDLIBS}
 
+${S3M2LIQ_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${S3M2LIQ_OBJS} ${LDLIBS}
+
 ${WAV2AVR_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${WAV2AVR_OBJS} ${LDLIBS}
@@ -272,6 +284,7 @@ clean:
 	rm -f dimgutil dimgutil.exe dimgutil_san*
 	rm -f dsymgen dsymgen.exe dsymgen_san*
 	rm -f mod2liq2 mod2liq2.exe mod2liq2_san*
+	rm -f s3m2liq s3m2liq.exe s3m2liq_san*
 	rm -rf wav2avr wav2avr.exe wav2avr_san*
 	rm -f iffdump iffdump.exe iffdump_san*
 	rm -f unarc unarc.exe unarc_san*
