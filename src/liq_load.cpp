@@ -826,7 +826,7 @@ done:
         table::string<20>,
         table::string<20>,
         table::string<MAX_SOUNDBOARD_STRING>,
-        table::number<8, table::HEX | table::ZEROS>> d_table;
+        table::number<8, table::HEX | table::ZEROS | table::RIGHT>> d_table;
 
       s_table.header("Samples", s_labels);
 
@@ -840,6 +840,7 @@ done:
 
       if(Config.dump_samples_extra)
       {
+        format::line();
         d_table.header("Samples", d_labels);
         for(i = 0; i < h.num_instruments; i++)
         {
