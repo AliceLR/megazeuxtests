@@ -26,6 +26,9 @@ static int total_liq = 0;
 
 enum LIQ_features
 {
+  MODE_LIQ,
+  MODE_S3M,
+  MODE_CUT_ON_LIMIT,
   SAMPLE_SIGNED,
   SAMPLE_UNSIGNED,
   SAMPLE_16BIT,
@@ -36,6 +39,9 @@ enum LIQ_features
 
 static const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "M:LIQ",
+  "M:S3M",
+  "M:CutOnLimit",
   "S:+",
   "S:U",
   "S:16",
@@ -582,6 +588,13 @@ public:
       num_orders_to_load = 256;
     }
 
+    if(h.flags & LIQ_CUT_ON_LIMIT)
+      m.uses[MODE_CUT_ON_LIMIT] = true;
+    if(h.flags & LIQ_ST3_COMPATIBILITY)
+      m.uses[MODE_S3M] = true;
+    else
+      m.uses[MODE_LIQ] = true;
+
     if(h.num_channels > MAX_CHANNELS)
     {
       format::warning("invalid channel count %u, stopping", h.num_channels);
@@ -803,7 +816,7 @@ done:
       };
       static const char *d_labels[] =
       {
-        "Filename", "Author", "Software", "Sound Board", "CRC-32"
+        "Filename", "Author", "Software", "Sound Board", "CRC-32", "Ver."
       };
 
       namespace table = format::table;
@@ -826,7 +839,8 @@ done:
         table::string<20>,
         table::string<20>,
         table::string<MAX_SOUNDBOARD_STRING>,
-        table::number<8, table::HEX | table::ZEROS | table::RIGHT>> d_table;
+        table::number<8, table::HEX | table::ZEROS | table::RIGHT>,
+        table::string<4>> d_table;
 
       s_table.header("Samples", s_labels);
 
@@ -840,13 +854,17 @@ done:
 
       if(Config.dump_samples_extra)
       {
+        char tmp[32];
         format::line();
         d_table.header("Samples", d_labels);
         for(i = 0; i < h.num_instruments; i++)
         {
           LIQ_instrument &ins = m.instruments[i];
+          snprintf(tmp, sizeof(tmp), "%d.%02x",
+            ins.format_version >> 8, ins.format_version & 0xff);
+
           d_table.row(i, ins.filename, ins.author_name, ins.software_name,
-            LIQ_soundboard_string(ins.sound_board_id), ins.crc32);
+            LIQ_soundboard_string(ins.sound_board_id), ins.crc32, tmp);
         }
       }
     }
