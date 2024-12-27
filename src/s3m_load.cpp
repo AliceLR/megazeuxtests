@@ -163,9 +163,9 @@ struct S3M_instrument
   /*  0 */ uint8_t  type;
   /*  1 */ char     filename[12];
   /* 13 */ uint8_t  _sample_segment[3];/* sample only, paragraph pointer to sample data, 24-bits */
-  /* 16 */ uint32_t length;       /* sample only, bytes */
-  /* 20 */ uint32_t loop_start;   /* sample only, bytes */
-  /* 24 */ uint32_t loop_end;     /* sample only, bytes */
+  /* 16 */ uint32_t length;       /* sample only, sample frames */
+  /* 20 */ uint32_t loop_start;   /* sample only, sample frames */
+  /* 24 */ uint32_t loop_end;     /* sample only, sample frames */
   /* 28 */ uint8_t  default_volume;
   /* 29 */ uint8_t  dsk;          /* AdLib only; not specified by the format documentation. */
   /* 30 */ uint8_t  packing;      /* sample only */
