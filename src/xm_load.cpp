@@ -34,6 +34,7 @@ static int num_xms;
 
 enum XM_features
 {
+  FT_PATTERN_EARLY_END,
   FT_SAMPLE_STEREO,
   FT_SAMPLE_16,
   FT_SAMPLE_ADPCM,
@@ -63,6 +64,7 @@ enum XM_features
 
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
+  "P:Trunc",
   "S:Stereo",
   "S:16",
   "S:ADPCM",
@@ -540,17 +542,34 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
 
     uint8_t *current = m.buffer.get();
     uint8_t *end = current + p.packed_size;
+    XM_event *pos = p.events.data();
 
-    for(XM_event &ev : p.events)
+    for(size_t j = 0; j < p.num_rows; j++)
     {
-      ev = XM_event(current, end);
-      if(current > end)
+      for(size_t k = 0; k < m.header.num_channels; k++, pos++)
       {
-        format::warning("invalid pattern packing for %zu", i);
-        return modutil::INVALID;
+        /* Some modules have patterns that end early on an event boundary.
+         * Not clear what tracker(s) do this or why. */
+        if(current == end)
+        {
+          m.uses[FT_PATTERN_EARLY_END] = true;
+          goto break_current_pattern;
+        }
+
+        *pos = XM_event(current, end);
+        if(current > end)
+        {
+          format::warning("invalid pattern packing for %zu", i);
+          format::warning("attempted to read %zd past end; ch %zu of %u, row %zu of %u",
+            current - end, k, m.header.num_channels, j, p.num_rows
+          );
+          goto break_current_pattern;
+        }
+        check_event(m, *pos);
       }
-      check_event(m, ev);
     }
+break_current_pattern:
+    ;
   }
   return modutil::SUCCESS;
 }
