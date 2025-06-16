@@ -144,6 +144,11 @@ IFFDUMP_OBJS := \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
 
+ICODIAG_EXE  := icodiag${BINEXT}
+ICODIAG_OBJS := \
+  ${OBJ}/icodiag.o \
+  ${OBJ}/Config.o
+
 UNARC_EXE    := unarc${BINEXT}
 UNARC_OBJS   := \
   ${DIMG_OBJ}/arc_arc.o \
@@ -189,6 +194,9 @@ ${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
 
+-include ${ICODIAG_OBJS:.o=.d}
+${ICODIAG_EXE}: ${ICODIAG_OBJS}
+
 -include ${UNARC_OBJS:.o=.d}
 ${UNARC_EXE}: ${UNARC_OBJS}
 ${UNARC_OBJS}: | ${DIMG_OBJ}
@@ -213,6 +221,7 @@ ALL_EXES := \
   ${S3M2LIQ_EXE} \
   ${WAV2AVR_EXE} \
   ${IFFDUMP_EXE} \
+  ${ICODIAG_EXE} \
   ${UNARC_EXE} \
   ${UNARCFS_EXE} \
   ${UNICE_EXE} \
@@ -260,6 +269,10 @@ ${IFFDUMP_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${IFFDUMP_OBJS} ${LDLIBS}
 
+${ICODIAG_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${ICODIAG_OBJS} ${LDLIBS}
+
 ${UNARC_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCC} ${LDFLAGS} -o $@ ${UNARC_OBJS} ${LDLIBS}
@@ -287,6 +300,7 @@ clean:
 	rm -f s3m2liq s3m2liq.exe s3m2liq_san*
 	rm -rf wav2avr wav2avr.exe wav2avr_san*
 	rm -f iffdump iffdump.exe iffdump_san*
+	rm -f icodiag icodiag.exe icodiag_san*
 	rm -f unarc unarc.exe unarc_san*
 	rm -f unarcfs unarcfs.exe unarcfs_san*
 	rm -f unice unice.exe unice_san*
