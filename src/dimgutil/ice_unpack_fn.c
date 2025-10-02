@@ -1,5 +1,5 @@
 /* Extended Module Player
- * Copyright (C) 2024 Alice Rowan <petrifiedrowan@gmail.com>
+ * Copyright (C) 2024-2025 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -281,8 +281,8 @@ static inline int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
 static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
-	size_t dest_offset = dest_len;
-	size_t window_offset;
+	ice_uint8 *pos = dest + dest_len;
+	ice_uint8 *window_pos;
 	int length;
 	int dist;
 
@@ -294,8 +294,8 @@ static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 		if (length < 0) {
 			return -1;
 		}
-		debug("  (%zu remaining) copy of %d", dest_offset, length);
-		if ((size_t)length > dest_offset) {
+		debug("  (%zu remaining) copy of %d", pos - dest, length);
+		if (length > pos - dest) {
 			debug("  ERROR: copy would write past start of file");
 			return -1;
 		}
@@ -304,9 +304,9 @@ static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 			if (b < 0) {
 				return -1;
 			}
-			dest[--dest_offset] = b;
+			*(--pos) = b;
 		}
-		if (dest_offset == 0) {
+		if (pos == dest) {
 			break;
 		}
 
@@ -326,25 +326,25 @@ static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 		else if (dist > 1)	dist = dist + length - 2;
 
 		debug("  (%zu remaining) window copy of %u, dist %d",
-			dest_offset, length, dist);
-		if ((size_t)length > dest_offset) {
+			pos - dest, length, dist);
+		if (length > pos - dest) {
 			debug("  ERROR: copy would write past start of file");
 			return -1;
 		}
 
-		window_offset = dist + dest_offset;
-		if (window_offset > dest_len) {
+		window_pos = dist + pos;
+		if (window_pos > dest + dest_len) {
 			/* Haven't found a valid Pack-Ice file that does this. */
-			size_t zero_len = window_offset - dest_len;
+			size_t zero_len = window_pos - dest - dest_len;
 			zero_len = ICE_MIN(zero_len, (size_t)length);
-			memset(dest + dest_offset - zero_len, 0, zero_len);
-			window_offset -= zero_len;
-			dest_offset -= zero_len;
+			memset(pos - zero_len, 0, zero_len);
+			window_pos -= zero_len;
+			pos -= zero_len;
 			length -= zero_len;
 			debug("    (window copy is in suffix zone)");
 		}
 		for (; length > 0; length--) {
-			dest[--dest_offset] = dest[--window_offset];
+			*(--pos) = *(--window_pos);
 		}
 	}
 

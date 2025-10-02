@@ -1,5 +1,5 @@
 /* Extended Module Player
- * Copyright (C) 2024 Alice Rowan <petrifiedrowan@gmail.com>
+ * Copyright (C) 2024-2025 Alice Rowan <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -30,6 +30,7 @@
 
 #include "ice_unpack.h"
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,27 +41,29 @@
 #define ICE_DEBUG
 #endif
 
-/* Enable table decoding, which is a ~30% performance increase over the
- * default bitstream and a ~10% performance increase over the original
- * bitstream. This performance increase should be higher, but the format
+/* Enable table decoding. For older compilers and clang this is
+ * a significant performance improvement over the default bitstream;
+ * for newer versions of GCC, it seems to be slightly slower (but still
+ * faster than clang). This would be higher, except the format
  * sabotages this kind of optimization by interleaving uncompressed bytes
- * into the stream. It's also possible I am just bad at optimizing this.
- * It should only be used with the default bitstream. */
+ * into the stream. */
 #if 1
 #define ICE_TABLE_DECODING
 #endif
 
-/* Enable the original bitstream, which is ~10% slower than table decoding.
+/* Enable the original bitstream, which is slower than table decoding for
+ * GCC. For clang, this is sometimes faster due to lack of optimization.
  * This shouldn't be used at the same time as table decoding because it the
  * extra hacks needed slow things down further. */
 #if 0
 #define ICE_ORIGINAL_BITSTREAM
+#undef ICE_TABLE_DECODING
 #endif
 
 /* Enable 64-bit integer bitplanes decoding, which is much faster than the
  * version of the carry flag based bitplane decoder implemented here.
- * This should be much faster even non-64-bit architectures. */
-#if 1
+ * This is slower than the original algorithm on 32-bit hardware. */
+#if SIZE_MAX > 4294967295ul
 #define ICE_FAST_BITPLANES
 #endif
 
@@ -204,22 +207,27 @@ static inline ice_uint16 mem_u16le(const ice_uint8 *buf)
 	return buf[0] | (buf[1] << 8u);
 }
 
+#ifndef ICE_FAST_BITPLANES
 static inline ice_uint16 mem_u16be(const ice_uint8 *buf)
 {
 	return (buf[0] << 8u) | buf[1];
 }
+#endif
 
 static inline ice_uint32 mem_u32(const ice_uint8 *buf)
 {
 	return (buf[0] << 24u) | (buf[1] << 16u) | (buf[2] << 8u) | buf[3];
 }
 
+#ifndef ICE_FAST_BITPLANES
 static inline void put_u16be(ice_uint8 *buf, int val)
 {
 	buf[0] = (val >> 8) & 0xff;
 	buf[1] = val & 0xff;
 }
+#endif
 
+#ifdef ICE_FAST_BITPLANES
 static inline void put_u64be(ice_uint8 *buf, ice_uint64 val)
 {
 	buf[0] = (val >> 56) & 0xff;
@@ -231,6 +239,7 @@ static inline void put_u64be(ice_uint8 *buf, ice_uint64 val)
 	buf[6] = (val >> 8) & 0xff;
 	buf[7] = val & 0xff;
 }
+#endif
 
 static int ice_check_compressed_size(struct ice_state *ice)
 {
