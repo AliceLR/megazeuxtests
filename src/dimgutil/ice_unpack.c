@@ -63,7 +63,7 @@
 /* Enable 64-bit integer bitplanes decoding, which is much faster than the
  * version of the carry flag based bitplane decoder implemented here.
  * This is slower than the original algorithm on 32-bit hardware. */
-#if SIZE_MAX > 4294967295ul
+#if ICE_ARCH_IS_64_BITS
 #define ICE_FAST_BITPLANES
 #endif
 
@@ -518,16 +518,13 @@ static int ice_bitplane_filter(struct ice_state *ice,
 	return 0;
 }
 
-/* ice_unpack_fn8 and its helper functions.
- * On most tested platforms this is faster with tables. */
+/* ice_unpack_fn8 and its helper functions. */
 #define STREAMSIZE 8
 #include "ice_unpack_fn.c"
 #undef STREAMSIZE
 
-/* ice_unpack_fn32 and its helper functions.
- * On most tested platforms this is faster WITHOUT tables. */
+/* ice_unpack_fn32 and its helper functions. */
 #define STREAMSIZE 32
-//#undef ICE_TABLE_DECODING
 #include "ice_unpack_fn.c"
 #undef STREAMSIZE
 

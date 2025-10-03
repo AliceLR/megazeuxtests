@@ -34,6 +34,11 @@ typedef uint8  ice_uint8;
 typedef uint16 ice_uint16;
 typedef uint32 ice_uint32;
 typedef uint64 ice_uint64;
+#ifdef SIZEOF_SIZE_T
+#define ICE_ARCH_IS_64_BITS	(SIZEOF_SIZE_T >= 8)
+#else
+#define ICE_ARCH_IS_64_BITS	0
+#endif
 #define ICE_RESTRICT		LIBXMP_RESTRICT
 #define ICE_ATTRIB_PRINTF(x,y)	LIBXMP_ATTRIB_PRINTF(x,y)
 #define ICE_MIN(a,b)		MIN(a,b)
@@ -41,6 +46,7 @@ typedef uint64 ice_uint64;
 #define ice2_unpack		libxmp_ice2_unpack
 #define ice1_unpack_test	libxmp_ice1_unpack_test
 #define ice2_unpack_test	libxmp_ice2_unpack_test
+
 /* end libxmp hacks */
 #else
 #include <stdint.h>
@@ -48,6 +54,7 @@ typedef uint8_t  ice_uint8;
 typedef uint16_t ice_uint16;
 typedef uint32_t ice_uint32;
 typedef uint64_t ice_uint64;
+#define ICE_ARCH_IS_64_BITS	(SIZE_MAX > UINT32_MAX)
 #define ICE_RESTRICT		__restrict
 #define ICE_ATTRIB_PRINTF(x,y)	__attribute__((__format__(printf,x,y)))
 #define ICE_MIN(a,b)		((a) < (b) ? (a) : (b))
