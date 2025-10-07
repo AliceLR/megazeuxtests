@@ -60,6 +60,20 @@ typedef uint64_t ice_uint64;
 #define ICE_MIN(a,b)		((a) < (b) ? (a) : (b))
 #endif
 
+/* clang (as of 20.x) makes really bad inlining decisions in the
+ * unpacking code and needs to be encouraged to optimize things
+ * correctly (up to 40% improvement measured). */
+#if defined(_MSC_VER) && (_MSC_VER >= 1200)
+#define ICE_INLINE		__forceinline
+#elif defined(_MSC_VER)
+#define ICE_INLINE		__inline
+#elif (defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 302)) || \
+      defined(__clang__)
+#define ICE_INLINE		inline __attribute__((always_inline))
+#else
+#define ICE_INLINE		inline
+#endif
+
 #include <stdlib.h>
 
 typedef size_t	(*ice_read_fn)(void * ICE_RESTRICT dest, size_t num, void *priv);

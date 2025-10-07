@@ -51,10 +51,9 @@
 #define ICE_TABLE_DECODING
 #endif
 
-/* Enable the original bitstream, which is slower than table decoding for
- * GCC. For clang, this is sometimes faster due to lack of optimization.
- * This shouldn't be used at the same time as table decoding because it the
- * extra hacks needed slow things down further. */
+/* Enable the original bitstream, which is slower than the replacement.
+ * It is provided for reference, and shouldn't be used at the same time as
+ * table decoding, as the extra hacks needed slow things down further. */
 #if 0
 #define ICE_ORIGINAL_BITSTREAM
 #undef ICE_TABLE_DECODING
@@ -202,25 +201,25 @@ static inline void debug(const char *fmt, ...)
 }
 #endif
 
-static inline ice_uint16 mem_u16le(const ice_uint8 *buf)
+static ICE_INLINE ice_uint16 mem_u16le(const ice_uint8 *buf)
 {
 	return buf[0] | (buf[1] << 8u);
 }
 
 #ifndef ICE_FAST_BITPLANES
-static inline ice_uint16 mem_u16be(const ice_uint8 *buf)
+static ICE_INLINE ice_uint16 mem_u16be(const ice_uint8 *buf)
 {
 	return (buf[0] << 8u) | buf[1];
 }
 #endif
 
-static inline ice_uint32 mem_u32(const ice_uint8 *buf)
+static ICE_INLINE ice_uint32 mem_u32(const ice_uint8 *buf)
 {
 	return (buf[0] << 24u) | (buf[1] << 16u) | (buf[2] << 8u) | buf[3];
 }
 
 #ifndef ICE_FAST_BITPLANES
-static inline void put_u16be(ice_uint8 *buf, int val)
+static ICE_INLINE void put_u16be(ice_uint8 *buf, int val)
 {
 	buf[0] = (val >> 8) & 0xff;
 	buf[1] = val & 0xff;
@@ -228,7 +227,7 @@ static inline void put_u16be(ice_uint8 *buf, int val)
 #endif
 
 #ifdef ICE_FAST_BITPLANES
-static inline void put_u64be(ice_uint8 *buf, ice_uint64 val)
+static ICE_INLINE void put_u64be(ice_uint8 *buf, ice_uint64 val)
 {
 	buf[0] = (val >> 56) & 0xff;
 	buf[1] = (val >> 48) & 0xff;
@@ -301,7 +300,7 @@ static int ice_fill_buffer(struct ice_state *ice, unsigned required)
 	return 0;
 }
 
-static inline int ice_read_byte(struct ice_state *ice)
+static ICE_INLINE int ice_read_byte(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 1) {
 		if (ice_fill_buffer(ice, 1) < 0)
@@ -310,7 +309,7 @@ static inline int ice_read_byte(struct ice_state *ice)
 	return ice->buffer[--ice->buffer_pos];
 }
 
-static inline int ice_read_u16le(struct ice_state *ice)
+static ICE_INLINE int ice_read_u16le(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 2) {
 		if (ice_fill_buffer(ice, 2) < 0)
@@ -320,7 +319,7 @@ static inline int ice_read_u16le(struct ice_state *ice)
 	return mem_u16le(ice->buffer + ice->buffer_pos);
 }
 
-static inline ice_uint32 ice_peek_u32(struct ice_state *ice)
+static ICE_INLINE ice_uint32 ice_peek_u32(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 4) {
 		if (ice_fill_buffer(ice, 4) < 0)
@@ -417,19 +416,19 @@ static int ice_preload_adjust(struct ice_state *ice)
 }
 
 /* Can skip return value checks with these, check ice->eof after instead. */
-static inline void ice_load8(struct ice_state *ice)
+static ICE_INLINE void ice_load8(struct ice_state *ice)
 {
 	ice->bits = (unsigned)ice_read_byte(ice) << 24u;
 	ice->bits_left += 8;
 }
 
-static inline void ice_load16le(struct ice_state *ice)
+static ICE_INLINE void ice_load16le(struct ice_state *ice)
 {
 	ice->bits = (unsigned)ice_read_u16le(ice) << 16u;
 	ice->bits_left += 16;
 }
 
-static inline void ice_load32(struct ice_state *ice)
+static ICE_INLINE void ice_load32(struct ice_state *ice)
 {
 	ice->bits = ice_peek_u32(ice);
 	ice->buffer_pos -= 4;

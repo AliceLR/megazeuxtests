@@ -58,7 +58,7 @@
 
 /* Skip the read function and read values and bit counts off a table.
  */
-static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
+static ICE_INLINE int ice_read_table_STREAMSIZE(struct ice_state *ice,
  const struct ice_table_entry *table, int table_bits)
 {
 	struct ice_table_entry e;
@@ -104,7 +104,7 @@ static inline int ice_read_table_STREAMSIZE(struct ice_state *ice,
 }
 #endif /* ICE_TABLE_DECODING */
 
-static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
+static ICE_INLINE int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 {
 	/* NOTE: there are interleaved uncompressed bytes in the input so
 	 * this unfortunately can't be optimized very much.
@@ -161,7 +161,7 @@ static inline int ice_read_bits_STREAMSIZE(struct ice_state *ice, int num)
 
 /* Split off from the main function since 1.x does something else and it's
  * also the same with and without table decoding. */
-static inline int ice_read_literal_length_ext_STREAMSIZE(struct ice_state *ice)
+static ICE_INLINE int ice_read_literal_length_ext_STREAMSIZE(struct ice_state *ice)
 {
 	int length;
 #if STREAMSIZE == 32
@@ -176,7 +176,7 @@ static inline int ice_read_literal_length_ext_STREAMSIZE(struct ice_state *ice)
 	return length;
 }
 
-static inline int ice_read_literal_length_STREAMSIZE(struct ice_state *ice)
+static ICE_INLINE int ice_read_literal_length_STREAMSIZE(struct ice_state *ice)
 {
 	int length;
 #ifdef ICE_TABLE_DECODING
@@ -198,7 +198,7 @@ static inline int ice_read_literal_length_STREAMSIZE(struct ice_state *ice)
 	return length;
 }
 
-static inline int ice_read_window_length_STREAMSIZE(struct ice_state *ice)
+static ICE_INLINE int ice_read_window_length_STREAMSIZE(struct ice_state *ice)
 {
 	int length;
 #ifdef ICE_TABLE_DECODING
@@ -226,7 +226,7 @@ static inline int ice_read_window_length_STREAMSIZE(struct ice_state *ice)
 	return length;
 }
 
-static inline int ice_read_window_distance_STREAMSIZE(struct ice_state *ice, int length)
+static ICE_INLINE int ice_read_window_distance_STREAMSIZE(struct ice_state *ice, int length)
 {
 	int dist;
 	if (length == 2) {
@@ -262,7 +262,7 @@ static inline int ice_read_window_distance_STREAMSIZE(struct ice_state *ice, int
 	return dist;
 }
 
-static inline int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
+static ICE_INLINE int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
 	size_t offset)
 {
 #if STREAMSIZE == 32
@@ -278,7 +278,7 @@ static inline int ice_at_stream_start_STREAMSIZE(struct ice_state *ice,
 #endif
 }
 
-static inline int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
+static ICE_INLINE int ice_unpack_fn_STREAMSIZE(struct ice_state *ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	ice_uint8 *pos = dest + dest_len;
