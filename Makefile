@@ -2,7 +2,7 @@
 all:
 
 COMMON_FLAGS := -O3 -g
-WARNING_FLAGS := -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-gnu-zero-variadic-macro-arguments
+WARNING_FLAGS ?= -Wall -W -pedantic -Wno-unused-parameter
 TAG :=
 
 F_SANITIZE = ${SANITIZE}
@@ -174,44 +174,51 @@ UNLZX_OBJS   := \
 
 -include ${MODULEDIAG_OBJS:.o=.d}
 ${MODULEDIAG_EXE}: ${MODULEDIAG_OBJS}
+${MODULEDIAG_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${MODULEUNPACK_OBJS:.o=.d}
 ${MODULEUNPACK_EXE}: ${MODULEUNPACK_OBJS}
-${MODULEUNPACK_OBJS}: | ${MODULEUNPACK_OBJ}
+${MODULEUNPACK_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 -include ${DSYMGEN_OBJS:.o=.d}
 ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
+${DSYMGEN_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${MOD2LIQ2_OBJS:.o=.d}
 ${MOD2LIQ2_EXE}: ${MOD2LIQ2_OBJS}
+${MOD2LIQ2_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${S3M2LIQ_OBJS:.o=.d}
 ${S3M2LIQ_EXE}: ${S3M2LIQ_OBJS}
+${S3M2LIQ_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${WAV2AVR_OBJS:.o=.d}
 ${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
+${WAV2AVR_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
+${IFFDUMP_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${ICODIAG_OBJS:.o=.d}
 ${ICODIAG_EXE}: ${ICODIAG_OBJS}
+${ICODIAG_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
 -include ${UNARC_OBJS:.o=.d}
 ${UNARC_EXE}: ${UNARC_OBJS}
-${UNARC_OBJS}: | ${DIMG_OBJ}
+${UNARC_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 -include ${UNARCFS_OBJS:.o=.d}
 ${UNARCFS_EXE}: ${UNARCFS_OBJS}
-${UNARCFS_OBJS}: | ${DIMG_OBJ}
+${UNARCFS_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 -include ${UNICE_OBJS:.o=.d}
 ${UNICE_EXE}: ${UNICE_OBJS}
-${UNICE_OBJS}: | ${DIMG_OBJ}
+${UNICE_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 -include ${UNLZX_OBJS:.o=.d}
 ${UNLZX_EXE}: ${UNLZX_OBJS}
-${UNLZX_OBJS}: | ${DIMG_OBJ}
+${UNLZX_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 ALL_EXES := \
   ${MODULEDIAG_EXE}  \
@@ -233,11 +240,11 @@ ${OBJ} ${OBJ}/dimgutil:
 	$(if ${V},,@echo " MKDIR   " $@)
 	@mkdir -p "$@"
 
-${OBJ}/%.o: ${SRC}/%.c | ${OBJ}
+${OBJ}/%.o: ${SRC}/%.c
 	$(if ${V},,@echo " CC      " $<)
 	${CC} -MD ${CFLAGS} -c $< -o $@
 
-${OBJ}/%.o: ${SRC}/%.cpp | ${OBJ}
+${OBJ}/%.o: ${SRC}/%.cpp
 	$(if ${V},,@echo " CXX     " $<)
 	${CXX} -MD ${CXXFLAGS} -c $< -o $@
 
