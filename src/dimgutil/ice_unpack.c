@@ -176,8 +176,6 @@ struct ice_state
 	ice_uint32 uncompressed_size;
 	int version;
 	int eof;
-	int bits_left;
-	ice_uint32 bits;
 	ice_uint8 buffer[ICE_BUFFER_SIZE + 4];
 	unsigned buffer_pos;
 	unsigned next_length;
@@ -201,10 +199,12 @@ static inline void debug(const char *fmt, ...)
 }
 #endif
 
+#ifndef ICE_ORIGINAL_BITSTREAM
 static ICE_INLINE ice_uint16 mem_u16le(const ice_uint8 *buf)
 {
 	return buf[0] | (buf[1] << 8u);
 }
+#endif
 
 #ifndef ICE_FAST_BITPLANES
 static ICE_INLINE ice_uint16 mem_u16be(const ice_uint8 *buf)
@@ -309,6 +309,7 @@ static ICE_INLINE int ice_read_byte(struct ice_state *ice)
 	return ice->buffer[--ice->buffer_pos];
 }
 
+#ifndef ICE_ORIGINAL_BITSTREAM
 static ICE_INLINE int ice_read_u16le(struct ice_state *ice)
 {
 	if (ice->buffer_pos < 2) {
@@ -318,6 +319,7 @@ static ICE_INLINE int ice_read_u16le(struct ice_state *ice)
 	ice->buffer_pos -= 2;
 	return mem_u16le(ice->buffer + ice->buffer_pos);
 }
+#endif
 
 static ICE_INLINE ice_uint32 ice_peek_u32(struct ice_state *ice)
 {
@@ -332,8 +334,6 @@ static int ice_init_buffer(struct ice_state *ice)
 {
 	size_t len = ice->compressed_size;
 	ice->eof = 0;
-	ice->bits = 0;
-	ice->bits_left = 0;
 
 	debug("ice_init_buffer");
 
@@ -344,6 +344,7 @@ static int ice_init_buffer(struct ice_state *ice)
 
 	ice->next_seek = len - ice->next_length;
 
+	ice->buffer_pos = 0;
 	if (ice_fill_buffer(ice, 1) < 0) {
 		return -1;
 	}
@@ -387,55 +388,61 @@ static int ice_init_buffer(struct ice_state *ice)
  * the preloaded byte(s) will be used as a terminating bit instead.
  * This function readjusts the initial bit count to reflect this.
  */
-static int ice_preload_adjust(struct ice_state *ice)
+static int ice_preload_adjust(struct ice_state * ICE_RESTRICT ice,
+	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
-	unsigned tmp = ice->bits >> (unsigned)(32 - ice->bits_left);
+	unsigned tmp = *bits >> (unsigned)(32 - *bits_left);
 
-	debug("ice_preload_adjust of %02x (bits left: %d)", tmp, ice->bits_left);
+	debug("ice_preload_adjust of %02x (bits left: %d)", tmp, *bits_left);
 
-	if (~ice->bits & 0x80000000u) {
+	if (~(*bits) & 0x80000000u) {
 		debug("  first bit not set; stream is invalid at this size");
 		return -1;
 	}
 	while (~tmp & 1) {
 		tmp >>= 1;
-		ice->bits_left--;
+		(*bits_left)--;
 	}
 	/* Last valid bit is also discarded. */
 	tmp >>= 1;
-	ice->bits_left--;
+	(*bits_left)--;
 
-	if (ice->bits_left) {
-		tmp <<= 32 - ice->bits_left;
+	if (*bits_left) {
+		tmp <<= 32 - *bits_left;
 	}
 #ifndef ICE_ORIGINAL_BITSTREAM
-	ice->bits = tmp;
+	*bits = tmp;
 #endif
-	debug("  adjusted to %02x (bits left: %d)", ice->bits, ice->bits_left);
+	debug("  adjusted to %02x (bits left: %d)", *bits, *bits_left);
 	return 0;
 }
 
-/* Can skip return value checks with these, check ice->eof after instead. */
-static ICE_INLINE void ice_load8(struct ice_state *ice)
+/* Check ice->eof after to detect early end-of-stream. */
+static ICE_INLINE void ice_load8(struct ice_state * ICE_RESTRICT ice,
+	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
-	ice->bits = (unsigned)ice_read_byte(ice) << 24u;
-	ice->bits_left += 8;
+	*bits = (unsigned)ice_read_byte(ice) << 24u;
+	*bits_left += 8;
 }
 
-static ICE_INLINE void ice_load16le(struct ice_state *ice)
+#ifndef ICE_ORIGINAL_BITSTREAM
+static ICE_INLINE void ice_load16le(struct ice_state * ICE_RESTRICT ice,
+	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
-	ice->bits = (unsigned)ice_read_u16le(ice) << 16u;
-	ice->bits_left += 16;
+	*bits = (unsigned)ice_read_u16le(ice) << 16u;
+	*bits_left += 16;
 }
+#endif
 
-static ICE_INLINE void ice_load32(struct ice_state *ice)
+static ICE_INLINE void ice_load32(struct ice_state * ICE_RESTRICT ice,
+	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
-	ice->bits = ice_peek_u32(ice);
+	*bits = ice_peek_u32(ice);
+	*bits_left += 32;
 	ice->buffer_pos -= 4;
-	ice->bits_left += 32;
 }
 
-static int ice_bitplane_filter(struct ice_state *ice,
+static int ice_bitplane_filter(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len, int stored_size)
 {
 #ifdef ICE_FAST_BITPLANES
@@ -530,29 +537,37 @@ static int ice_bitplane_filter(struct ice_state *ice,
 static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
+	ice_uint32 bits = 0;
+	int bits_left = 0;
+
 	debug("ice_unpack8");
-	ice_load8(ice);
-	if (ice->eof || ice_preload_adjust(ice) < 0) {
+	ice_load8(ice, &bits, &bits_left);
+	if (ice->eof || ice_preload_adjust(ice, &bits, &bits_left) < 0) {
 		return -1;
 	}
-	return ice_unpack_fn8(ice, dest, dest_len);
+	return ice_unpack_fn8(ice, &bits, &bits_left, dest, dest_len);
 }
 
 static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
+	ice_uint32 bits = 0;
+	int bits_left = 0;
+
 	debug("ice_unpack32");
-	ice_load32(ice);
-	if (ice->eof || ice_preload_adjust(ice) < 0) {
+	ice_load32(ice, &bits, &bits_left);
+	if (ice->eof || ice_preload_adjust(ice, &bits, &bits_left) < 0) {
 		return -1;
 	}
-	return ice_unpack_fn32(ice, dest, dest_len);
+	return ice_unpack_fn32(ice, &bits, &bits_left, dest, dest_len);
 }
 
 static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 	ice_uint8 * ICE_RESTRICT dest, size_t dest_len)
 {
 	debug("ice_unpack");
+	/* ice_init_buffer may filter ambiguous versions, so
+	 * initialize before entering the unpackX functions. */
 	if (ice_check_compressed_size(ice) < 0 ||
 	    ice_check_uncompressed_size(ice, dest_len) < 0 ||
 	    ice_init_buffer(ice) < 0) {
