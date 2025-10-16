@@ -169,7 +169,7 @@ static const struct ice_table_entry distance_table[512] =
 struct ice_state
 {
 	void *in;
-	long in_size;
+	size_t in_size;
 	ice_read_fn read_fn;
 	ice_seek_fn seek_fn;
 	ice_uint32 compressed_size;
@@ -195,6 +195,8 @@ static inline void debug(const char *fmt, ...)
 	fprintf(stderr, "\n");
 	fflush(stderr);
 	va_end(args);
+#else
+	(void)fmt;
 #endif
 }
 #endif
@@ -244,7 +246,7 @@ static int ice_check_compressed_size(struct ice_state *ice)
 {
 	debug("ice_check_compressed_size");
 	if (ice->in_size < 12 || ice->compressed_size < 4 ||
-	    ice->compressed_size > (size_t)ice->in_size) {
+	    ice->compressed_size > ice->in_size) {
 		debug("  bad compressed_size %u", (unsigned)ice->compressed_size);
 		return -1;
 	}
@@ -342,7 +344,7 @@ static int ice_init_buffer(struct ice_state *ice)
 		ice->next_length = ICE_BUFFER_SIZE;
 	}
 
-	ice->next_seek = len - ice->next_length;
+	ice->next_seek = (long)(len - ice->next_length); /* MSVC C4267 */
 
 	ice->buffer_pos = 0;
 	if (ice_fill_buffer(ice, 1) < 0) {
@@ -388,7 +390,7 @@ static int ice_init_buffer(struct ice_state *ice)
  * the preloaded byte(s) will be used as a terminating bit instead.
  * This function readjusts the initial bit count to reflect this.
  */
-static int ice_preload_adjust(struct ice_state * ICE_RESTRICT ice,
+static int ice_preload_adjust(
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
 	unsigned tmp = *bits >> (unsigned)(32 - *bits_left);
@@ -666,7 +668,7 @@ static int ice_unpack8(struct ice_state * ICE_RESTRICT ice,
 
 	debug("ice_unpack8");
 	ice_load8(ice, &bits, &bits_left);
-	if (ice->eof || ice_preload_adjust(ice, &bits, &bits_left) < 0) {
+	if (ice->eof || ice_preload_adjust(&bits, &bits_left) < 0) {
 		return -1;
 	}
 	return ice_unpack_fn8(ice, &bits, &bits_left, dest, dest_len);
@@ -680,7 +682,7 @@ static int ice_unpack32(struct ice_state * ICE_RESTRICT ice,
 
 	debug("ice_unpack32");
 	ice_load32(ice, &bits, &bits_left);
-	if (ice->eof || ice_preload_adjust(ice, &bits, &bits_left) < 0) {
+	if (ice->eof || ice_preload_adjust(&bits, &bits_left) < 0) {
 		return -1;
 	}
 	return ice_unpack_fn32(ice, &bits, &bits_left, dest, dest_len);
@@ -744,6 +746,9 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 
 	memset(&ice, 0, sizeof(ice));
 
+	if (in_len < 8 || in_len >= (ice_uint32)-1) {
+		return -1;
+	}
 	if (seek_fn(priv, -8, SEEK_END) < 0) {
 		return -1;
 	}
@@ -758,7 +763,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	ice.in_size = in_len;
 	ice.read_fn = read_fn;
 	ice.seek_fn = seek_fn;
-	ice.compressed_size = in_len - 8;
+	ice.compressed_size = (ice_uint32)in_len - 8; /* MSVC C4267 */
 	ice.uncompressed_size = mem_u32(buf + 0);
 	ice.version = VERSION_113;
 

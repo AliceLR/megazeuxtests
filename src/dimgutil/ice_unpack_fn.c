@@ -284,6 +284,9 @@ static ICE_INLINE int ice_at_stream_start_SZ(
 #else
 	size_t start = 12;
 #endif
+	/* Uses one or the other based on config; suppress both. */
+	(void)bits;
+	(void)bits_left;
 
 #ifdef ICE_ORIGINAL_BITSTREAM
 	return offset == start && *bits == 0x80000000u;
@@ -320,7 +323,7 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 			if (b < 0) {
 				return -1;
 			}
-			*(--pos) = b;
+			*(--pos) = (ice_uint8)b; /* MSVC hallucinates C4244 */
 		}
 		if (pos == dest) {
 			break;
@@ -356,7 +359,7 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 			memset(pos - zero_len, 0, zero_len);
 			window_pos -= zero_len;
 			pos -= zero_len;
-			length -= zero_len;
+			length -= (int)zero_len; /* MSVC C4267 */
 			debug("    (window copy is in suffix zone)");
 		}
 		for (; length > 0; length--) {
