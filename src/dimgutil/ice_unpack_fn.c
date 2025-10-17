@@ -135,7 +135,8 @@ static ICE_INLINE int ice_read_bits_SZ(
 		ret = (ret << 1) | bit;
 		num--;
 	}
-#else /* !ICE_ORIGINAL_BITSTREAM */
+/* !ICE_ORIGINAL_BITSTREAM */
+#elif STREAMSIZE == 32
 	int left = num - *bits_left;
 	ret = *bits >> (32 - num);
 
@@ -143,20 +144,26 @@ static ICE_INLINE int ice_read_bits_SZ(
 	if (left <= 0) {
 		*bits <<= num;
 	} else {
-#if STREAMSIZE == 8
-		if (left > 8) {
-			/* Can load two bytes safely in this case--due to the
-			 * backwards stream order they're read little endian. */
-			ice_load16le(ice, bits, bits_left);
-		} else
-#endif
-		{
-			ice_load_SZ(ice, bits, bits_left);
-		}
+		ice_load32(ice, bits, bits_left);
 		ret |= *bits >> (32 - left);
 		*bits <<= left;
 	}
-#endif /* !ICE_ORIGINAL_BITSTREAM */
+#else /* STREAMSIZE == 8 */
+	if (num > *bits_left) {
+		if (num > 8 && num - 8 > *bits_left) {
+			/* Can load two bytes safely in this case--due to the
+			 * backwards stream order they're read little endian. */
+			*bits |= (unsigned)ice_read_u16le(ice) << (16u - *bits_left);
+			*bits_left += 16;
+		} else {
+			*bits |= (unsigned)ice_read_byte(ice) << (24u - *bits_left);
+			*bits_left += 8;
+		}
+	}
+	ret = *bits >> (32 - num);
+	*bits <<= num;
+	*bits_left -= num;
+#endif
 	debug("      <- %03x", ret);
 	return ret;
 }
@@ -341,8 +348,13 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 		/* The distance value is relative to the last byte written,
 		 * not the current position. The copied word never overlaps
 		 * the area being written unless dist == 0 (RLE). */
-		if (STREAMSIZE == 32)	dist = dist + length - 1;
-		else if (dist > 1)	dist = dist + length - 2;
+#if STREAMSIZE == 32
+		dist = dist + length - 1;
+#else
+		if (dist > 1) {
+			dist = dist + length - 2;
+		}
+#endif
 
 		debug("  (%zu remaining) window copy of %u, dist %d",
 			pos - dest, length, dist);

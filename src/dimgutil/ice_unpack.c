@@ -427,15 +427,6 @@ static ICE_INLINE void ice_load8(struct ice_state * ICE_RESTRICT ice,
 	*bits_left += 8;
 }
 
-#ifndef ICE_ORIGINAL_BITSTREAM
-static ICE_INLINE void ice_load16le(struct ice_state * ICE_RESTRICT ice,
-	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
-{
-	*bits = (unsigned)ice_read_u16le(ice) << 16u;
-	*bits_left += 16;
-}
-#endif
-
 static ICE_INLINE void ice_load32(struct ice_state * ICE_RESTRICT ice,
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
