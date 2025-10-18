@@ -35,7 +35,6 @@
 #define JOIN(a, b) JOIN_2(a, b)
 
 #define ice_load_SZ			JOIN(ice_load,STREAMSIZE)
-#define ice_read_table_SZ		JOIN(ice_read_table,STREAMSIZE)
 #define ice_read_bits_SZ		JOIN(ice_read_bits,STREAMSIZE)
 #define ice_read_literal_length_ext_SZ	JOIN(ice_read_literal_length_ext,STREAMSIZE)
 #define ice_read_literal_length_SZ	JOIN(ice_read_literal_length,STREAMSIZE)
@@ -43,68 +42,6 @@
 #define ice_read_window_distance_SZ	JOIN(ice_read_window_distance,STREAMSIZE)
 #define ice_at_stream_start_SZ		JOIN(ice_at_stream_start,STREAMSIZE)
 #define ice_unpack_fn_SZ		JOIN(ice_unpack_fn,STREAMSIZE)
-
-/* If ICE_TABLE_DECODING is defined, use the optimization tables a la
- * DEFLATE to reduce the number of single bit reads. Due to the janky way
- * this format is implemented this can't be optimized to the same degree
- * as DEFLATE or Amiga LZX.
- *
- * Otherwise, read the packed data mostly the intended (slow) way.
- * The length-2 distances reads are somewhat optimized regardless.
- * Also see the table generator in ice_unpack.c.
- */
-
-#ifdef ICE_TABLE_DECODING
-
-/* Skip the read function and read values and bit counts off a table.
- */
-static ICE_INLINE int ice_read_table_SZ(
-	struct ice_state * ICE_RESTRICT ice,
-	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left,
-	const struct ice_table_entry *table, int table_bits)
-{
-	struct ice_table_entry e;
-	int used;
-	int code;
-	int num;
-	/* Need at least 1 bit in the buffer. */
-	if (*bits_left <= 0) {
-		ice_load_SZ(ice, bits, bits_left);
-	}
-
-	code = *bits >> (32 - table_bits);
-	e = table[code];
-	used = e.bits_used;
-
-	if (*bits_left < used) {
-		/* Treat the bits in the buffer as consumed and load more.
-		 * Note: tables >9 bits would require a second load for
-		 * 8-bit reads, but this implementation doesn't use any.
-		 */
-		num = *bits_left;
-		ice_load_SZ(ice, bits, bits_left);
-#ifdef ICE_ORIGINAL_BITSTREAM
-		/* Mask off terminator bit */
-		code &= (0xffffffffu << table_bits) >> num;
-#endif
-		code |= *bits >> ((32 - table_bits) + num);
-
-		e = table[code];
-		used = e.bits_used - num;
-	}
-
-	/* Consume used bits directly off the buffer. */
-	debug("      <- %d (bits: %03x)", e.value, code >> (table_bits - e.bits_used));
-	*bits <<= used;
-	*bits_left -= e.bits_used;
-
-#ifdef ICE_ORIGINAL_BITSTREAM
-	/* Inject new terminator bit */
-	*bits |= (1 << (31 - *bits_left));
-#endif
-	return e.value;
-}
-#endif /* ICE_TABLE_DECODING */
 
 static ICE_INLINE int ice_read_bits_SZ(
 	struct ice_state * ICE_RESTRICT ice,
@@ -116,13 +53,6 @@ static ICE_INLINE int ice_read_bits_SZ(
 	int ret = 0;
 
 #ifdef ICE_ORIGINAL_BITSTREAM
-	/* This decoder is surprisingly fast on platforms with carry flags,
-	 * but it's not really compatible with the table decoding (faster)
-	 * and the hacks that allow it to work negate the benefits.
-	 */
-#ifdef ICE_TABLE_DECODING
-	*bits_left -= num;
-#endif
 	while (num) {
 		int bit = (*bits >> 31u);
 		*bits <<= 1;
@@ -168,8 +98,7 @@ static ICE_INLINE int ice_read_bits_SZ(
 	return ret;
 }
 
-/* Split off from the main function since 1.x does something else and it's
- * also the same with and without table decoding. */
+/* Split off from the main function since 1.x does something else. */
 static ICE_INLINE int ice_read_literal_length_ext_SZ(
 	struct ice_state * ICE_RESTRICT ice,
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
@@ -191,20 +120,12 @@ static ICE_INLINE int ice_read_literal_length_SZ(
 	struct ice_state * ICE_RESTRICT ice,
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
-	int length;
-#ifdef ICE_TABLE_DECODING
-	length = ice_read_table_SZ(ice, bits, bits_left, literal_table, 9);
-	if (length == VALUE_SPECIAL) {
-		length = ice_read_literal_length_ext_SZ(ice, bits, bits_left);
-	}
-#else
-	length = ice_read_bits_SZ(ice, bits, bits_left, 1);
+	int length = ice_read_bits_SZ(ice, bits, bits_left, 1);
 	if (length ==  1) length = ice_read_bits_SZ(ice, bits, bits_left, 1) + 1;
 	if (length ==  2) length = ice_read_bits_SZ(ice, bits, bits_left, 2) + 2;
 	if (length ==  5) length = ice_read_bits_SZ(ice, bits, bits_left, 2) + 5;
 	if (length ==  8) length = ice_read_bits_SZ(ice, bits, bits_left, 3) + 8;
 	if (length == 15) length = ice_read_literal_length_ext_SZ(ice, bits, bits_left);
-#endif
 	if (ice->eof) {
 		return -1;
 	}
@@ -216,12 +137,6 @@ static ICE_INLINE int ice_read_window_length_SZ(
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left)
 {
 	int length;
-#ifdef ICE_TABLE_DECODING
-	length = ice_read_table_SZ(ice, bits, bits_left, length_table, 6);
-	if (length == VALUE_SPECIAL) {
-		length = 10 + ice_read_bits_SZ(ice, bits, bits_left, 10);
-	}
-#else
 	if (ice_read_bits_SZ(ice, bits, bits_left, 1) == 0) {
 		length = 2;
 	} else if (ice_read_bits_SZ(ice, bits, bits_left, 1) == 0) {
@@ -233,7 +148,6 @@ static ICE_INLINE int ice_read_window_length_SZ(
 	} else {
 		length = 10 + ice_read_bits_SZ(ice, bits, bits_left, 10);
 	}
-#endif
 	if (ice->eof) {
 		return -1;
 	}
@@ -260,19 +174,12 @@ static ICE_INLINE int ice_read_window_distance_SZ(
 				ice_read_bits_SZ(ice, bits, bits_left, 3);
 		}
 	} else {
-#ifdef ICE_TABLE_DECODING
-		dist = ice_read_table_SZ(ice, bits, bits_left, distance_table, 9);
-		if (dist == VALUE_SPECIAL) {
-			dist = 289 + ice_read_bits_SZ(ice, bits, bits_left, 12);
-		}
-#else
 		if (ice_read_bits_SZ(ice, bits, bits_left, 1) == 0)
 			dist = 33 + ice_read_bits_SZ(ice, bits, bits_left, 8);
 		else if (ice_read_bits_SZ(ice, bits, bits_left, 1) == 0)
 			dist = 1 + ice_read_bits_SZ(ice, bits, bits_left, 5);
 		else
 			dist = 289 + ice_read_bits_SZ(ice, bits, bits_left, 12);
-#endif
 	}
 	if (ice->eof) {
 		return -1;
@@ -409,7 +316,6 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 }
 
 #undef ice_load_SZ
-#undef ice_read_table_SZ
 #undef ice_read_bits_SZ
 #undef ice_read_literal_length_ext_SZ
 #undef ice_read_literal_length_SZ

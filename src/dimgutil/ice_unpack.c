@@ -41,22 +41,10 @@
 #define ICE_DEBUG
 #endif
 
-/* Enable table decoding. For older compilers and clang this is
- * a significant performance improvement over the default bitstream;
- * for newer versions of GCC, it seems to be slightly slower (but still
- * faster than clang). This would be higher, except the format
- * sabotages this kind of optimization by interleaving uncompressed bytes
- * into the stream. */
-#if 1
-#define ICE_TABLE_DECODING
-#endif
-
 /* Enable the original bitstream, which is slower than the replacement.
- * It is provided for reference, and shouldn't be used at the same time as
- * table decoding, as the extra hacks needed slow things down further. */
+ * It is provided for reference. */
 #if 0
 #define ICE_ORIGINAL_BITSTREAM
-#undef ICE_TABLE_DECODING
 #endif
 
 /* Enable 64-bit integer bitplanes decoding, which is much faster than the
@@ -88,83 +76,6 @@
 #define VERSION_21X_OR_220	215
 #define VERSION_220		220
 #define VERSION_23X		230
-
-#ifdef ICE_TABLE_DECODING
-
-#define ENTRIES_X2(v, b)	{ (v), (b) }, { (v), (b) }
-#define ENTRIES_X4(v, b)	ENTRIES_X2((v),(b)), ENTRIES_X2((v),(b))
-#define ENTRIES_X8(v, b)	ENTRIES_X4((v),(b)), ENTRIES_X4((v),(b))
-#define ENTRIES_X16(v, b)	ENTRIES_X8((v),(b)), ENTRIES_X8((v),(b))
-#define ENTRIES_X32(v, b)	ENTRIES_X16((v),(b)), ENTRIES_X16((v),(b))
-#define ENTRIES_X64(v, b)	ENTRIES_X32((v),(b)), ENTRIES_X32((v),(b))
-#define ENTRIES_X128(v, b)	ENTRIES_X64((v),(b)), ENTRIES_X64((v),(b))
-#define ENTRIES_X256(v, b)	ENTRIES_X128((v),(b)), ENTRIES_X128((v),(b))
-
-#define LINEAR_X2(v, b)		{ (v), (b) }, { (v)+1, (b) }
-#define LINEAR_X4(v, b)		LINEAR_X2((v),(b)), LINEAR_X2((v)+2,(b))
-#define LINEAR_X8(v, b)		LINEAR_X4((v),(b)), LINEAR_X4((v)+4,(b))
-#define LINEAR_X16(v, b)	LINEAR_X8((v),(b)), LINEAR_X8((v)+8,(b))
-#define LINEAR_X32(v, b)	LINEAR_X16((v),(b)), LINEAR_X16((v)+16,(b))
-#define LINEAR_X64(v, b)	LINEAR_X32((v),(b)), LINEAR_X32((v)+32,(b))
-#define LINEAR_X128(v, b)	LINEAR_X64((v),(b)), LINEAR_X64((v)+64,(b))
-#define LINEAR_X256(v, b)	LINEAR_X128((v),(b)), LINEAR_X128((v)+128,(b))
-
-#define LINEAR_X2_X4(v, b)	ENTRIES_X4((v),(b)), ENTRIES_X4((v)+1,(b))
-#define LINEAR_X4_X4(v, b)	LINEAR_X2_X4((v),(b)), LINEAR_X2_X4((v)+2,(b))
-#define LINEAR_X8_X4(v, b)	LINEAR_X4_X4((v),(b)), LINEAR_X4_X4((v)+4,(b))
-#define LINEAR_X16_X4(v, b)	LINEAR_X8_X4((v),(b)), LINEAR_X8_X4((v)+8,(b))
-#define LINEAR_X32_X4(v, b)	LINEAR_X16_X4((v),(b)), LINEAR_X16_X4((v)+16,(b))
-
-#define VALUE_SPECIAL 65535
-
-struct ice_table_entry
-{
-	ice_uint16 value;
-	ice_uint16 bits_used;
-};
-
-static const struct ice_table_entry literal_table[512] =
-{
-	ENTRIES_X256(0, 1),		/* 0........ - length 0 */
-	ENTRIES_X128(1, 2),		/* 10....... - length 1 */
-	ENTRIES_X32(2, 4),		/* 11xx..... - length 2 + x */
-	ENTRIES_X32(3, 4),
-	ENTRIES_X32(4, 4),
-	ENTRIES_X8(5, 6),		/* 1111xx... - length 5 + x */
-	ENTRIES_X8(6, 6),
-	ENTRIES_X8(7, 6),
-	{  8, 9 },			/* 111111xxx - length 8 + x */
-	{  9, 9 },
-	{ 10, 9 },
-	{ 11, 9 },
-	{ 12, 9 },
-	{ 13, 9 },
-	{ 14, 9 },
-	{ VALUE_SPECIAL, 9 }		/* 111111111 - (read 8) + 15,
-						       (read 15 + 270) if 270 */
-};
-
-static const struct ice_table_entry length_table[64] =
-{
-	ENTRIES_X32(2, 1),		/* 0..... - length 2 */
-	ENTRIES_X16(3, 2),		/* 10.... - length 3 */
-	ENTRIES_X4(4, 4),		/* 1100.. - length 4 */
-	ENTRIES_X4(5, 4),		/* 1101.. - length 5 */
-	{ 6, 6 },			/* 1110xx - length 6 + x */
-	{ 7, 6 },
-	{ 8, 6 },
-	{ 9, 6 },
-	ENTRIES_X4(VALUE_SPECIAL, 4)	/* 1111.. - length 10 + (read 10) */
-};
-
-static const struct ice_table_entry distance_table[512] =
-{
-	LINEAR_X256(33, 9),		/* 0xxxxxxxx - distance 33 + x */
-	LINEAR_X32_X4(1, 7),		/* 10xxxxx.. - distance 1 + x */
-	ENTRIES_X128(VALUE_SPECIAL, 2)	/* 11....... - distance 289 + (read 12) */
-};
-
-#endif /* ICE_TABLE_DECODING */
 
 struct ice_state
 {
