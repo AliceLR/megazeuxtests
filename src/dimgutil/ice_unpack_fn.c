@@ -144,7 +144,7 @@ static ICE_INLINE int ice_read_bits_SZ(
 	if (left <= 0) {
 		*bits <<= num;
 	} else {
-		ice_load32(ice, bits, bits_left);
+		ice_load_SZ(ice, bits, bits_left);
 		ret |= *bits >> (32 - left);
 		*bits <<= left;
 	}
