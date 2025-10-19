@@ -39,6 +39,7 @@
 /* Enable debug output to stderr. */
 #if 0
 #define ICE_DEBUG
+#include <inttypes.h> /* PRId64 */
 #endif
 
 /* Enable the original bitstream, which is slower than the replacement.
@@ -80,7 +81,7 @@
 struct ice_state
 {
 	void *in;
-	size_t in_size;
+	ice_uint32 in_size;
 	ice_read_fn read_fn;
 	ice_seek_fn seek_fn;
 	ice_uint32 compressed_size;
@@ -90,7 +91,7 @@ struct ice_state
 	ice_uint8 buffer[ICE_BUFFER_SIZE + 4];
 	unsigned buffer_pos;
 	unsigned next_length;
-	long next_seek;
+	ice_int64 next_seek;
 };
 
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(ICE_DEBUG)
@@ -192,7 +193,7 @@ static int ice_fill_buffer(struct ice_state *ice, unsigned required)
 	}
 
 	if (ice->seek_fn(ice->in, ice->next_seek, SEEK_SET) < 0) {
-		debug("  failed to seek to %ld", ice->next_seek);
+		debug("  failed to seek to %" PRId64, ice->next_seek);
 		ice->eof = 1;
 		return -1;
 	}
@@ -245,7 +246,7 @@ static ICE_INLINE ice_uint32 ice_peek_u32(struct ice_state *ice)
 
 static int ice_init_buffer(struct ice_state *ice)
 {
-	size_t len = ice->compressed_size;
+	ice_uint32 len = ice->compressed_size;
 	ice->eof = 0;
 
 	debug("ice_init_buffer");
@@ -255,7 +256,7 @@ static int ice_init_buffer(struct ice_state *ice)
 		ice->next_length = ICE_BUFFER_SIZE;
 	}
 
-	ice->next_seek = (long)(len - ice->next_length); /* MSVC C4267 */
+	ice->next_seek = (ice_int64)len - ice->next_length;
 
 	ice->buffer_pos = 0;
 	if (ice_fill_buffer(ice, 1) < 0) {
@@ -621,7 +622,7 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 }
 
 
-long ice1_unpack_test(const void *end_of_file, size_t sz)
+ice_int64 ice1_unpack_test(const void *end_of_file, size_t sz)
 {
 	ice_uint8 *data = (ice_uint8 *)end_of_file;
 	ice_uint32 uncompressed_size;
@@ -634,13 +635,13 @@ long ice1_unpack_test(const void *end_of_file, size_t sz)
 	uncompressed_size = mem_u32(data + sz - 8);
 
 	if (magic == ICE_OLD_MAGIC) {
-		return (long)uncompressed_size;
+		return (ice_int64)uncompressed_size;
 	}
 	return -1;
 }
 
 int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
-	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len)
+	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, ice_uint32 in_len)
 {
 	struct ice_state ice;
 	ice_uint8 buf[8];
@@ -648,7 +649,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 
 	memset(&ice, 0, sizeof(ice));
 
-	if (in_len < 8 || in_len >= (ice_uint32)-1) {
+	if (in_len < 8) {
 		return -1;
 	}
 	if (seek_fn(priv, -8, SEEK_END) < 0) {
@@ -673,7 +674,7 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	return ret;
 }
 
-long ice2_unpack_test(const void *start_of_file, size_t sz)
+ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz)
 {
 	ice_uint8 *data = (ice_uint8 *)start_of_file;
 	ice_uint32 uncompressed_size;
@@ -693,13 +694,13 @@ long ice2_unpack_test(const void *start_of_file, size_t sz)
 	case SHE_MAGIC:
 	case TMM_MAGIC:
 	case TSM_MAGIC:
-		return (long)uncompressed_size;
+		return (ice_int64)uncompressed_size;
 	}
 	return -1;
 }
 
 int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
-	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len)
+	ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, ice_uint32 in_len)
 {
 	struct ice_state ice;
 	ice_uint8 buf[12];
@@ -713,7 +714,7 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	if (read_fn(buf, 12, priv) < 12) {
 		return -1;
 	}
-	if (ice2_unpack_test(buf, 12) < (long)dest_len) {
+	if (ice2_unpack_test(buf, 12) < 0) {
 		return -1;
 	}
 

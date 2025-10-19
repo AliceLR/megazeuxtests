@@ -34,6 +34,7 @@ typedef uint8  ice_uint8;
 typedef uint16 ice_uint16;
 typedef uint32 ice_uint32;
 typedef uint64 ice_uint64;
+typedef int64  ice_int64;
 #define ICE_RESTRICT		LIBXMP_RESTRICT
 #define ICE_ATTRIB_PRINTF(x,y)	LIBXMP_ATTRIB_PRINTF(x,y)
 #define ICE_MIN(a,b)		MIN(a,b)
@@ -49,6 +50,7 @@ typedef uint8_t  ice_uint8;
 typedef uint16_t ice_uint16;
 typedef uint32_t ice_uint32;
 typedef uint64_t ice_uint64;
+typedef int64_t  ice_int64;
 #define ICE_RESTRICT		__restrict
 #define ICE_ATTRIB_PRINTF(x,y)	__attribute__((__format__(printf,x,y)))
 #define ICE_MIN(a,b)		((a) < (b) ? (a) : (b))
@@ -76,7 +78,7 @@ typedef uint64_t ice_uint64;
 #include <stdlib.h>
 
 typedef size_t	(*ice_read_fn)(void * ICE_RESTRICT dest, size_t num, void *priv);
-typedef long	(*ice_seek_fn)(void *priv, long offset, int whence);
+typedef int	(*ice_seek_fn)(void *priv, ice_int64 offset, int whence);
 
 /**
  * Test the LAST EIGHT BYTES of an input file to determine if it is a
@@ -86,9 +88,10 @@ typedef long	(*ice_seek_fn)(void *priv, long offset, int whence);
  *                      END of the file. Only the last eight bytes of this
  *                      buffer will be read. The whole file can be passed here.
  * @param sz            size of `end_of_file`, at least 8.
- * @return              uncompressed size of the stream if Pack-Ice v1, else -1.
+ * @return              uncompressed size of the stream if Pack-Ice v1, between
+ *                      0 and UINT32_MAX, else -1.
  */
-long ice1_unpack_test(const void *end_of_file, size_t sz);
+ice_int64 ice1_unpack_test(const void *end_of_file, size_t sz);
 
 /**
  * Unpack a Pack-Ice v1 file. Due to the design of the format, the
@@ -105,7 +108,7 @@ long ice1_unpack_test(const void *end_of_file, size_t sz);
  *                  written to only if this function returns 0.
  */
 int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
- ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len);
+ ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, ice_uint32 in_len);
 
 /**
  * Test the FIRST 12 BYTES of an input file to determine if it is a
@@ -115,9 +118,10 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
  *                        START of the file. Only the first 12 bytes of this
  *                        buffer will be read. The whole file can be passed here.
  * @param sz              size of `start_of_file`, at least 12.
- * @return                uncompressed size of the stream if Pack-Ice v2, else -1.
+ * @return                uncompressed size of the stream if Pack-Ice v2, between
+ *                        0 and UINT32_MAX, else -1.
  */
-long ice2_unpack_test(const void *start_of_file, size_t sz);
+ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz);
 
 /**
  * Unpack a Pack-Ice v2 file. Due to the design of the format, the
@@ -134,7 +138,7 @@ long ice2_unpack_test(const void *start_of_file, size_t sz);
  *                  written to only if this function returns 0.
  */
 int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
- ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, size_t in_len);
+ ice_read_fn read_fn, ice_seek_fn seek_fn, void *priv, ice_uint32 in_len);
 
 #ifdef __cplusplus
 }

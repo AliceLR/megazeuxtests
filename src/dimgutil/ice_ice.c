@@ -57,17 +57,17 @@ size_t mem_read(void * ICE_RESTRICT dest, size_t num, void *priv)
 	return num;
 }
 
-long mem_seek(void *priv, long offset, int whence)
+int mem_seek(void *priv, ice_int64 offset, int whence)
 {
 	struct mem *m = (struct mem *)priv;
 	switch (whence) {
 	case SEEK_SET:
 		break;
 	case SEEK_CUR:
-		offset += (long)m->pos;
+		offset += (ice_int64)m->pos;
 		break;
 	case SEEK_END:
-		offset += (long)m->size;
+		offset += (ice_int64)m->size;
 		break;
 	default:
 		return -1; /* EINVAL */
@@ -80,12 +80,12 @@ long mem_seek(void *priv, long offset, int whence)
 }
 
 __attribute__((noinline))
-int test_and_depack(void **_out, size_t *_out_size,
- const uint8_t *data, size_t size, size_t repeat_times)
+int test_and_depack(void **_out, ice_uint32 *_out_size,
+ const uint8_t *data, ice_uint32 size, size_t repeat_times)
 {
 	struct mem m = { data, size, 0 };
 	void *out = NULL;
-	long out_size;
+	ice_int64 out_size;
 	size_t i;
 
 	out_size = ice1_unpack_test(data, size);
@@ -147,7 +147,9 @@ err:
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
 	void *out = NULL;
-	size_t out_size;
+	ice_uint32 out_size;
+	if (size >= UINT32_MAX)
+		return -1;
 	if (test_and_depack(&out, &out_size, data, size, 1) == 0)
 		free(out);
 	return 0;
@@ -161,9 +163,9 @@ int main(int argc, char *argv[])
 {
 	FILE *f;
 	void *out;
-	size_t out_size;
+	ice_uint32 out_size;
 	void *data;
-	unsigned long file_length;
+	long file_length;
 	size_t repeats = 1;
 	int ret;
 
@@ -195,6 +197,11 @@ int main(int argc, char *argv[])
 	fseek(f, 0, SEEK_END);
 	file_length = ftell(f);
 	rewind(f);
+	if (file_length < 0 || (ice_int64)file_length >= UINT32_MAX) {
+		ICE_OUTPUT("invalid size (Pack-Ice files can not exceed 4GiB)");
+		fclose(f);
+		return -1;
+	}
 	if ((data = malloc(file_length)) == NULL) {
 		ICE_OUTPUT("alloc error on input\n");
 		fclose(f);
@@ -207,7 +214,8 @@ int main(int argc, char *argv[])
 	}
 	fclose(f);
 
-	ret = test_and_depack(&out, &out_size, (uint8_t *)data, file_length, repeats);
+	ret = test_and_depack(&out, &out_size,
+		(uint8_t *)data, (ice_uint32)file_length, repeats);
 	free(data);
 
 	if (ret < 0 || repeats > 1) {
