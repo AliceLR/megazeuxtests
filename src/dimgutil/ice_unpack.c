@@ -193,7 +193,9 @@ static int ice_fill_buffer(struct ice_state *ice, unsigned required)
 	}
 
 	if (ice->seek_fn(ice->in, ice->next_seek, SEEK_SET) < 0) {
+#ifdef ICE_DEBUG
 		debug("  failed to seek to %" PRId64, ice->next_seek);
+#endif
 		ice->eof = 1;
 		return -1;
 	}
