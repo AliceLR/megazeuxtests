@@ -272,14 +272,14 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 
 		window_pos = dist + pos;
 		if (window_pos > dest + dest_len) {
-			/* Haven't found a valid Pack-Ice file that does this. */
-			size_t zero_len = window_pos - dest - dest_len;
-			zero_len = ICE_MIN(zero_len, (size_t)length);
-			memset(pos - zero_len, 0, zero_len);
-			window_pos -= zero_len;
-			pos -= zero_len;
-			length -= (int)zero_len; /* MSVC C4267 */
-			debug("    (window copy is in suffix zone)");
+			/* This is an out-of-bounds access in the real
+			 * Pack-Ice routines, which isn't worth emulating
+			 * (does not use a zero-initialized ring buffer
+			 * sliding window like DEFLATE). This branch may be
+			 * encountered by ambiguous-version "Ice!" streams
+			 * when attempting to decode in the wrong mode. */
+			debug("  ERROR: copy would read past end of file");
+			return -1;
 		}
 		for (; length > 0; length--) {
 			*(--pos) = *(--window_pos);
@@ -291,6 +291,9 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 	    ice_read_bits_SZ(ice, bits, bits_left, 1) == 1) {
 		debug("  bitplane filter used");
 		length = 320 * 200 / 16;
+		/* Note: variable length bitplane filtering was added in 2.34(?)
+		 * and can only be packed/unpacked with that version, as 2.4
+		 * broke filter unpacking/verification entirely. */
 		if (!ice_at_stream_start_SZ(ice, bits, bits_left, ice->buffer_pos) &&
 		    ice_read_bits_SZ(ice, bits, bits_left, 1) == 1) {
 			length = ice_read_bits_SZ(ice, bits, bits_left, 16) + 1;

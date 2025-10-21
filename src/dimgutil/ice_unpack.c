@@ -274,11 +274,14 @@ static int ice_init_buffer(struct ice_state *ice)
 			debug("  failed to peek ahead 32 bits, must be 8bit");
 			ice->version = VERSION_220;
 		} else if (~peek & 0x80u) {
-			/* 8-bit streams require a bit set here. */
+			/* 8-bit streams require a bit set here.
+			 * 32-bit streams have a high chance of this bit
+			 * NOT being set. */
 			debug("  first bit (8bit) not set, must be 32bit");
 			ice->version = VERSION_21X;
 		} else if (~peek & 0x80000000u) {
-			/* 32-bit streams require a bit set here. */
+			/* 32-bit streams require a bit set here.
+			 * 8-bit streams will often also have it set. */
 			debug("  first bit (32bit) not set, must be 8bit");
 			ice->version = VERSION_220;
 		}
@@ -605,6 +608,10 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 		return -1;
 	}
 
+	/* If the version is not ambiguous, only a single
+	 * unpack for the correct version will be attempted.
+	 * Ambiguous files should be unpacked as 8-bit first,
+	 * as 32-bit streams are less likely to be ambiguous. */
 	if (ice->version >= VERSION_21X_OR_220) {
 		if (ice_unpack8(ice, dest, dest_len) == 0) {
 			return 0;
