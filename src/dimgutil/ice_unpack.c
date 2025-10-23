@@ -265,23 +265,28 @@ static int ice_init_buffer(struct ice_state *ice)
 		return -1;
 	}
 
-	/* Attempt version filtering for ambiguous Ice! files: */
+	/* Attempt version filtering for ambiguous Ice! files.
+	 * The initial read of the stream (either 8-bits or 32-bits)
+	 * must have the first bit set, indicating an initial literal
+	 * string or terminator. When peeking at the first 32-bit big
+	 * endian word of the stream, bit 31 will be set for 32-bit
+	 * streams and bit 7 will be set for 8-bit streams.
+	 *
+	 * Because most 32-bit streams do not have bit 7 set (as the
+	 * final few bits are usually unused), this disambiguates most
+	 * 32-bit streams. 8-bit streams are more likely to have bit 31
+	 * set, but this sometimes still disambiguates them. Since 8-bit
+	 * streams are far more common and harder to disambiguate, the
+	 * unpacking routine for ambiguous files should attempt 8-bit first.
+	 */
 	if (ice->version == VERSION_21X_OR_220) {
 		ice_uint32 peek = ice_peek_u32(ice);
 		debug("  version is ambiguous 'Ice!', trying to determine");
 		debug("  = %08x", peek);
-		if (peek == 0) {
-			debug("  failed to peek ahead 32 bits, must be 8bit");
-			ice->version = VERSION_220;
-		} else if (~peek & 0x80u) {
-			/* 8-bit streams require a bit set here.
-			 * 32-bit streams have a high chance of this bit
-			 * NOT being set. */
+		if ((~peek & 0x80u) && (peek & 0x80000000u)) {
 			debug("  first bit (8bit) not set, must be 32bit");
 			ice->version = VERSION_21X;
-		} else if (~peek & 0x80000000u) {
-			/* 32-bit streams require a bit set here.
-			 * 8-bit streams will often also have it set. */
+		} else if ((peek & 0x80u) && (~peek & 0x80000000u)) {
 			debug("  first bit (32bit) not set, must be 8bit");
 			ice->version = VERSION_220;
 		}
