@@ -81,6 +81,16 @@ typedef size_t	(*ice_read_fn)(void * ICE_RESTRICT dest, size_t num, void *priv);
 typedef int	(*ice_seek_fn)(void *priv, ice_int64 offset, int whence);
 
 /**
+ * Bound the size of an uncompressed Pack-Ice file expanded from a given
+ * compressed filesize. This is a very rough upper bound only intended
+ * to help filter bad files before allocating a buffer.
+ *
+ * @param in_len        filesize of input file, including header/footer.
+ * @return              maximum possible filesize that could be written.
+ */
+ice_int64 ice_uncompressed_bound(ice_uint32 in_len);
+
+/**
  * Test the LAST EIGHT BYTES of an input file to determine if it is a
  * Pack-Ice v1 file.
  *

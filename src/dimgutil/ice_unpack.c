@@ -154,24 +154,9 @@ static ICE_INLINE void put_u64be(ice_uint8 *buf, ice_uint64 val)
 }
 #endif
 
-static int ice_check_compressed_size(struct ice_state *ice)
-{
-	debug("ice_check_compressed_size");
-	if (ice->in_size < 12 || ice->compressed_size < 4 ||
-	    ice->compressed_size > ice->in_size) {
-		debug("  bad compressed_size %u", (unsigned)ice->compressed_size);
-		return -1;
-	}
-	return 0;
-}
-
 static int ice_check_uncompressed_size(struct ice_state *ice, size_t dest_len)
 {
 	debug("ice_check_uncompressed_size");
-	if (ice->uncompressed_size == 0) {
-		debug("  bad uncompressed_size %u", (unsigned)ice->uncompressed_size);
-		return -1;
-	}
 	if (ice->uncompressed_size > dest_len) {
 		debug("  uncompressed_size %u exceeds provided buffer size %u\n",
 			(unsigned)ice->uncompressed_size, (unsigned)dest_len);
@@ -607,9 +592,7 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 	debug("ice_unpack");
 	/* ice_init_buffer may filter ambiguous versions, so
 	 * initialize before entering the unpackX functions. */
-	if (ice_check_compressed_size(ice) < 0 ||
-	    ice_check_uncompressed_size(ice, dest_len) < 0 ||
-	    ice_init_buffer(ice) < 0) {
+	if (ice_init_buffer(ice) < 0) {
 		return -1;
 	}
 
@@ -636,12 +619,23 @@ static int ice_unpack(struct ice_state * ICE_RESTRICT ice,
 }
 
 
+ice_int64 ice_uncompressed_bound(ice_uint32 in_len)
+{
+	/* Best compression: dictionary lookup of length 1033, encoded in
+	 * 14 bits, plus a mandatory dictionary distance of 7 bits minimum.
+	 * This is an extremely optimistic limit. */
+	static const int best_factor = (int)((1033u * 8u + 20u) / (14u + 7u));
+
+	return (ice_int64)in_len * best_factor;
+}
+
 ice_int64 ice1_unpack_test(const void *end_of_file, size_t sz)
 {
 	ice_uint8 *data = (ice_uint8 *)end_of_file;
 	ice_uint32 uncompressed_size;
 	ice_uint32 magic;
 
+	debug("ice1_unpack_test");
 	if (sz < 8) {
 		return -1;
 	}
@@ -659,10 +653,11 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 {
 	struct ice_state ice;
 	ice_uint8 buf[8];
-	int ret;
 
+	debug("ice1_unpack");
 	memset(&ice, 0, sizeof(ice));
 
+	/* Note: these checks should not fail outside of API misuse. */
 	if (in_len < 8) {
 		return -1;
 	}
@@ -680,12 +675,16 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	ice.in_size = in_len;
 	ice.read_fn = read_fn;
 	ice.seek_fn = seek_fn;
-	ice.compressed_size = (ice_uint32)in_len - 8; /* MSVC C4267 */
+	ice.compressed_size = in_len - 8u;
 	ice.uncompressed_size = mem_u32(buf + 0);
 	ice.version = VERSION_113;
 
-	ret = ice_unpack(&ice, (ice_uint8 *)dest, dest_len);
-	return ret;
+	if (ice_check_uncompressed_size(&ice, dest_len) < 0) {
+		return -1;
+	}
+
+	/* Only use the portion of the provided buffer that is needed. */
+	return ice_unpack(&ice, (ice_uint8 *)dest, ice.uncompressed_size);
 }
 
 ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz)
@@ -694,6 +693,7 @@ ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz)
 	ice_uint32 uncompressed_size;
 	ice_uint32 magic;
 
+	debug("ice2_unpack_test");
 	if (sz < 12) {
 		return -1;
 	}
@@ -718,10 +718,14 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 {
 	struct ice_state ice;
 	ice_uint8 buf[12];
-	int ret;
 
+	debug("ice2_unpack");
 	memset(&ice, 0, sizeof(ice));
 
+	/* Note: these checks should not fail outside of API misuse. */
+	if (in_len < 12) {
+		return -1;
+	}
 	if (seek_fn(priv, 0, SEEK_SET) < 0) {
 		return -1;
 	}
@@ -739,6 +743,15 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	ice.compressed_size = mem_u32(buf + 4);
 	ice.uncompressed_size = mem_u32(buf + 8);
 
+	if (ice.compressed_size != in_len) {
+		debug("  bad compressed_size: %u",
+			(unsigned)ice.compressed_size);
+		return -1;
+	}
+	if (ice_check_uncompressed_size(&ice, dest_len) < 0) {
+		return -1;
+	}
+
 	switch (mem_u32(buf + 0)) {
 	case ICE_OLD_MAGIC:
 		/* Ice! may use a 32-bit or an 8-bit buffer. */
@@ -754,6 +767,6 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 		break;
 	}
 
-	ret = ice_unpack(&ice, (ice_uint8 *)dest, dest_len);
-	return ret;
+	/* Only use the portion of the provided buffer that is needed. */
+	return ice_unpack(&ice, (ice_uint8 *)dest, ice.uncompressed_size);
 }

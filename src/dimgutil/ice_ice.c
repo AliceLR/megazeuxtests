@@ -91,7 +91,8 @@ int test_and_depack(void **_out, ice_uint32 *_out_size,
 	out_size = ice1_unpack_test(data, size);
 	if (out_size >= 0) {
 		ICE_OUTPUT("format: Pack-Ice v1\n");
-		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT) {
+		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT ||
+		    out_size > ice_uncompressed_bound(size)) {
 			ICE_OUTPUT("unsupported output size %ld\n", out_size);
 			return -1;
 		}
@@ -115,7 +116,8 @@ int test_and_depack(void **_out, ice_uint32 *_out_size,
 	out_size = ice2_unpack_test(data, size);
 	if (out_size >= 0) {
 		ICE_OUTPUT("format: Pack-Ice v2\n");
-		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT) {
+		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT ||
+		    out_size > ice_uncompressed_bound(size)) {
 			ICE_OUTPUT("unsupported output size %ld\n", out_size);
 			return -1;
 		}
