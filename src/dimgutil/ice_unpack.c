@@ -81,7 +81,6 @@
 struct ice_state
 {
 	void *in;
-	ice_uint32 in_size;
 	ice_read_fn read_fn;
 	ice_seek_fn seek_fn;
 	ice_uint32 compressed_size;
@@ -672,7 +671,6 @@ int ice1_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	}
 
 	ice.in = priv;
-	ice.in_size = in_len;
 	ice.read_fn = read_fn;
 	ice.seek_fn = seek_fn;
 	ice.compressed_size = in_len - 8u;
@@ -737,7 +735,6 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 	}
 
 	ice.in = priv;
-	ice.in_size = in_len;
 	ice.read_fn = read_fn;
 	ice.seek_fn = seek_fn;
 	ice.compressed_size = mem_u32(buf + 4);
