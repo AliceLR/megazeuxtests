@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #endif
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,7 +94,8 @@ int test_and_depack(void **_out, ice_uint32 *_out_size,
 		ICE_OUTPUT("format: Pack-Ice v1\n");
 		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT ||
 		    out_size > ice_uncompressed_bound(size)) {
-			ICE_OUTPUT("unsupported output size %ld\n", out_size);
+			ICE_OUTPUT("unsupported output size %ld from "
+				"input size %" PRIu32 "\n", out_size, size);
 			return -1;
 		}
 		out = malloc(out_size);
@@ -118,7 +120,8 @@ int test_and_depack(void **_out, ice_uint32 *_out_size,
 		ICE_OUTPUT("format: Pack-Ice v2\n");
 		if (out_size == 0 || out_size > ICE_DEPACK_LIMIT ||
 		    out_size > ice_uncompressed_bound(size)) {
-			ICE_OUTPUT("unsupported output size %ld\n", out_size);
+			ICE_OUTPUT("unsupported output size %ld from "
+				"input size %" PRIu32 "\n", out_size, size);
 			return -1;
 		}
 		out = malloc(out_size);

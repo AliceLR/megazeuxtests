@@ -75,6 +75,7 @@ static ICE_INLINE int ice_read_bits_SZ(
 		*bits <<= num;
 	} else {
 		ice_load_SZ(ice, bits, bits_left);
+		debug("        (new buffer %08x)", (unsigned)*bits);
 		ret |= *bits >> (32 - left);
 		*bits <<= left;
 	}
@@ -89,12 +90,13 @@ static ICE_INLINE int ice_read_bits_SZ(
 			*bits |= (unsigned)ice_read_byte(ice) << (24u - *bits_left);
 			*bits_left += 8;
 		}
+		debug("        (new buffer %08x)", (unsigned)*bits);
 	}
 	ret = *bits >> (32 - num);
 	*bits <<= num;
 	*bits_left -= num;
 #endif
-	debug("      <- %03x", ret);
+	debug("      <- %03x [%d]", ret, num);
 	return ret;
 }
 
@@ -193,19 +195,13 @@ static ICE_INLINE int ice_at_stream_start_SZ(
 	ice_uint32 * ICE_RESTRICT bits, int * ICE_RESTRICT bits_left,
 	size_t offset)
 {
-#if STREAMSIZE == 32
-	size_t start = (ice->version == VERSION_113) ? 0 : 12;
-#else
-	size_t start = 12;
-#endif
-	/* Uses one or the other based on config; suppress both. */
 	(void)bits;
 	(void)bits_left;
 
 #ifdef ICE_ORIGINAL_BITSTREAM
-	return offset == start && *bits == 0x80000000u;
+	return ice->next_seek < 0 && offset == 0 && *bits == 0x80000000u;
 #else
-	return offset == start && *bits_left <= 0;
+	return ice->next_seek < 0 && offset == 0 && *bits_left <= 0;
 #endif
 }
 
@@ -225,6 +221,7 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 	while (1) {
 		length = ice_read_literal_length_SZ(ice, bits, bits_left);
 		if (length < 0) {
+			debug("  ERROR: eof decoding literal length");
 			return -1;
 		}
 		debug("  (%zu remaining) copy of %d", pos - dest, length);
@@ -235,6 +232,7 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 		for (; length > 0; length--) {
 			int b = ice_read_byte(ice);
 			if (b < 0) {
+				debug("  ERROR: eof during literal copy");
 				return -1;
 			}
 			*(--pos) = (ice_uint8)b; /* MSVC hallucinates C4244 */
@@ -245,10 +243,12 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 
 		length = ice_read_window_length_SZ(ice, bits, bits_left);
 		if (length <= 0) {
+			debug("  ERROR: eof decoding window length");
 			return -1;
 		}
 		dist = ice_read_window_distance_SZ(ice, bits, bits_left, length);
 		if (dist <= 0) {
+			debug("  ERROR: eof decoding window distance");
 			return -1;
 		}
 
@@ -312,8 +312,9 @@ static ICE_INLINE int ice_unpack_fn_SZ(
 	}
 
 	if (!ice_at_stream_start_SZ(ice, bits, bits_left, ice->buffer_pos)) {
-		debug("  remaining data in stream: pos=%u bits=%08u left=%d",
+		debug("  ERROR: stream not empty: pos=%u bits=%08x left=%d",
 			(unsigned)ice->buffer_pos, (unsigned)*bits, *bits_left);
+		return -1;
 	}
 	return 0;
 }

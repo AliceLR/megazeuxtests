@@ -243,6 +243,11 @@ static int ice_init_buffer(struct ice_state *ice)
 	}
 
 	ice->next_seek = (ice_int64)len - ice->next_length;
+	if (ice->version >= VERSION_21X) {
+		/* Tracked uncompressed size subtracts the header,
+		 * so adjust the seek position to account for it. */
+		ice->next_seek += 12;
+	}
 
 	ice->buffer_pos = 0;
 	if (ice_fill_buffer(ice, 1) < 0) {
@@ -636,6 +641,7 @@ ice_int64 ice1_unpack_test(const void *end_of_file, size_t sz)
 
 	debug("ice1_unpack_test");
 	if (sz < 8) {
+		debug("ice1: file too small");
 		return -1;
 	}
 	magic = mem_u32(data + sz - 4);
@@ -644,6 +650,7 @@ ice_int64 ice1_unpack_test(const void *end_of_file, size_t sz)
 	if (magic == ICE_OLD_MAGIC) {
 		return (ice_int64)uncompressed_size;
 	}
+	debug("ice1: failed magic check");
 	return -1;
 }
 
@@ -693,6 +700,7 @@ ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz)
 
 	debug("ice2_unpack_test");
 	if (sz < 12) {
+		debug("ice2: file too small");
 		return -1;
 	}
 	magic = mem_u32(data + 0);
@@ -708,6 +716,7 @@ ice_int64 ice2_unpack_test(const void *start_of_file, size_t sz)
 	case TSM_MAGIC:
 		return (ice_int64)uncompressed_size;
 	}
+	debug("ice2: failed magic check");
 	return -1;
 }
 
@@ -745,6 +754,8 @@ int ice2_unpack(void * ICE_RESTRICT dest, size_t dest_len,
 			(unsigned)ice.compressed_size);
 		return -1;
 	}
+	ice.compressed_size -= 12;
+
 	if (ice_check_uncompressed_size(&ice, dest_len) < 0) {
 		return -1;
 	}
