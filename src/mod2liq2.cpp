@@ -549,6 +549,23 @@ static bool convert_mod_pattern(uint8_t *patbuf, size_t patsz,
   return true;
 }
 
+
+#ifdef LIBFUZZER_FRONTEND
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
+  if(fp)
+  {
+    // TODO
+    fclose(fp);
+  }
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main(int argc, char *argv[])
 {
   static uint8_t patbuf[64 * 64 * 4];

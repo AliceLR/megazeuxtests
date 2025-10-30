@@ -1158,6 +1158,22 @@ static bool write_liq_instrument(const ldss &ls,
 
 /** Main */
 
+#ifdef LIBFUZZER_FRONTEND
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+{
+  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
+  if(fp)
+  {
+    // TODO
+    fclose(fp);
+  }
+  return 0;
+}
+
+#define main _main
+static __attribute__((unused))
+#endif
+
 int main(int argc, char *argv[])
 {
   std::vector<event> events;
