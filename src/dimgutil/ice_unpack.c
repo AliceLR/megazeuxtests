@@ -241,6 +241,7 @@ static int ice_init_buffer(struct ice_state *ice)
 	if (ice->next_length == 0) {
 		ice->next_length = ICE_BUFFER_SIZE;
 	}
+	debug("  initial read length: %u", ice->next_length);
 
 	ice->next_seek = (ice_int64)len - ice->next_length;
 	if (ice->version >= VERSION_21X) {
@@ -248,6 +249,7 @@ static int ice_init_buffer(struct ice_state *ice)
 		 * so adjust the seek position to account for it. */
 		ice->next_seek += 12;
 	}
+	debug("  initial read seek: %u", (unsigned)ice->next_seek);
 
 	ice->buffer_pos = 0;
 	if (ice_fill_buffer(ice, 1) < 0) {
