@@ -485,9 +485,9 @@ class STM_loader : modutil::loader
 public:
   STM_loader(): modutil::loader("STM", "stm", "Scream Tracker 2") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
-    return STM_read(fp);
+    return STM_read(state.reader.unwrap()); /* FIXME: */
   }
 
   virtual void report() const override

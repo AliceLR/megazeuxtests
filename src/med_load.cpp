@@ -1809,8 +1809,10 @@ class MED_loader : modutil::loader
 public:
   MED_loader(): modutil::loader("MED", "med", "MED/OctaMED") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     char magic[4];
     if(!fread(magic, 4, 1, fp))
       return modutil::FORMAT_ERROR;

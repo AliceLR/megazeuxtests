@@ -1486,9 +1486,9 @@ class IT_loader : public modutil::loader
 public:
   IT_loader(): modutil::loader("IT", "it", "Impulse Tracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
-    return IT_read(fp);
+    return IT_read(state.reader.unwrap()); /* FIXME: */
   }
 
   virtual void report() const override

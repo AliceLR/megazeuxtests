@@ -286,8 +286,10 @@ class S3M_loader : public modutil::loader
 public:
   S3M_loader(): modutil::loader("S3M", "s3m", "Scream Tracker 3") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     S3M_data m{};
     S3M_header &h = m.header;
     uint8_t buffer[96];

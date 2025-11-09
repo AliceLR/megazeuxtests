@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2021-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -193,11 +193,15 @@ class Coconizer_loader: modutil::loader
 public:
   Coconizer_loader(): modutil::loader("-", "coco", "Coconizer") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    vio &vf = state.reader;
+    int64_t file_length = vf.length();
+
     Coconizer_data m{};
     Coconizer_header &h = m.header;
-    uint8_t buffer[2048];
+    uint8_t buffer[32];
+    uint8_t pattern[4 * NUM_ROWS * 8];
     modutil::error err;
 
     /* This format has no magic and must have its header and instruments
@@ -206,7 +210,7 @@ public:
     if(file_length <= 0)
       return modutil::FORMAT_ERROR;
 
-    if(!fread(buffer, 32, 1, fp))
+    if(vf.read_buffer(buffer) < 32)
       return modutil::FORMAT_ERROR;
 
     h.info = buffer[0];
@@ -225,7 +229,7 @@ public:
     {
       Coconizer_instrument &ins = m.instruments[i];
 
-      if(!fread(buffer, 32, 1, fp))
+      if(vf.read_buffer(buffer) < 32)
         return modutil::FORMAT_ERROR;
 
       ins.sample_offset = mem_u32le(buffer +  0);
@@ -249,14 +253,14 @@ public:
     m.num_channels = h.info & 0x0f;
 
     /* Orders. */
-    if(fseek(fp, h.orders_offset, SEEK_SET))
+    if(vf.seek(h.orders_offset, SEEK_SET) < 0)
       return modutil::SEEK_ERROR;
 
-    if(!fread(m.orders, h.num_orders, 1, fp))
+    if(vf.read(m.orders, h.num_orders) < h.num_orders)
       return modutil::READ_ERROR;
 
     /* Patterns. */
-    if(fseek(fp, h.patterns_offset, SEEK_SET))
+    if(vf.seek(h.patterns_offset, SEEK_SET) < 0)
       return modutil::SEEK_ERROR;
 
     size_t pattern_size = 4 * NUM_ROWS * m.num_channels;
@@ -265,11 +269,19 @@ public:
       Coconizer_pattern &p = m.patterns[i];
       p.allocate(m.num_channels, NUM_ROWS);
 
-      if(!fread(buffer, pattern_size, 1, fp))
-        return modutil::READ_ERROR;
+      if(vf.eof())
+        continue;
+
+      size_t num_in = vf.read(pattern, pattern_size);
+      if(num_in < pattern_size)
+      {
+        /* Recover broken patterns by zeroing missing portion. */
+        format::warning("read error in pattern %zu", i);
+        memset(pattern + num_in, 0, pattern_size - num_in);
+      }
 
       Coconizer_event *current = p.events;
-      uint8_t *pos = buffer;
+      uint8_t *pos = pattern;
 
       for(size_t row = 0; row < NUM_ROWS; row++)
       {

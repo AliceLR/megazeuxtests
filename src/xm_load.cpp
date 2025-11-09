@@ -723,8 +723,10 @@ class XM_loader : public modutil::loader
 public:
   XM_loader(): modutil::loader("XM", "xm", "Extended Module") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     XM_data m{};
     XM_header &h = m.header;
     bool invalid = false;

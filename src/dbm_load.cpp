@@ -1102,8 +1102,10 @@ class DBM_loader : public modutil::loader
 public:
   DBM_loader(): modutil::loader("DBM", "dbm", "DigiBooster Pro") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     DBM_data m{};
     auto parser = DBM_parser;
     parser.max_chunk_length = 0;

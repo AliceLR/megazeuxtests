@@ -297,8 +297,10 @@ class FAR_loader : modutil::loader
 public:
   FAR_loader(): modutil::loader("FAR", "far", "Farandole Composer") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     FAR_data m{};
     FAR_header &h = m.header;
     size_t len;

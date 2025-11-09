@@ -207,8 +207,10 @@ class PSM_loader : modutil::loader
 public:
   PSM_loader(): modutil::loader("PSM", "masi", "Protracker Studio Module / Epic MegaGames MASI") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     PSM_data m{};
     auto parser = PSM_parser;
     parser.max_chunk_length = 0;

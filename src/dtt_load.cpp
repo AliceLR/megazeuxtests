@@ -182,8 +182,10 @@ class DTT_loader: public modutil::loader
 public:
   DTT_loader(): modutil::loader("-", "dtt", "Desktop Tracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     DTT_data m{};
     DTT_header &h = m.header;
 

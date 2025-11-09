@@ -135,8 +135,10 @@ class NO_loader : public modutil::loader
 public:
   NO_loader(): modutil::loader("LIQ", "liqno", "Liquid Tracker NO") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     NO_data m{};
     NO_header &h = m.header;
     uint8_t buffer[64];

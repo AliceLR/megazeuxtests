@@ -335,8 +335,10 @@ class OKT_loader : modutil::loader
 public:
   OKT_loader(): modutil::loader("OKT", "okta", "Oktalyzer") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     OKT_data m{};
     auto parser = OKT_parser;
     parser.max_chunk_length = 0;

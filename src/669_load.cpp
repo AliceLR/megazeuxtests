@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2020 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2020-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -123,16 +123,21 @@ struct _669_data
 
 class _669_loader : public modutil::loader
 {
+  static constexpr size_t pattern_data_size = NUM_ROWS * NUM_CHANNELS * 3;
+
 public:
   _669_loader(): modutil::loader("669", "669", "Composer 669") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    vio &vf = state.reader;
+
     _669_data m{};
     _669_header &h = m.header;
     const char *type;
+    uint8_t buffer[pattern_data_size];
 
-    if(!fread(h.magic, 2, 1, fp))
+    if(vf.read(h.magic, 2) < 2)
       return modutil::FORMAT_ERROR;
 
     if(!memcmp(h.magic, "if", 2))
@@ -155,16 +160,19 @@ public:
 
     /* Header */
 
-    if(!fread(h.message, sizeof(h.message), 1, fp))
+    if(vf.read_buffer(h.message) < sizeof(h.message))
       return modutil::READ_ERROR;
 
-    h.num_samples = fgetc(fp);
-    h.num_patterns = fgetc(fp);
-    h.repeat_pos = fgetc(fp);
+    if(vf.read(buffer, 3) < 3)
+      return modutil::READ_ERROR;
 
-    if(!fread(h.orders, sizeof(h.orders), 1, fp) ||
-       !fread(h.pattern_tempos, sizeof(h.pattern_tempos), 1, fp) ||
-       !fread(h.pattern_breaks, sizeof(h.pattern_breaks), 1, fp))
+    h.num_samples = buffer[0];
+    h.num_patterns = buffer[1];
+    h.repeat_pos = buffer[2];
+
+    if(vf.read_buffer(h.orders) < sizeof(h.orders) ||
+       vf.read_buffer(h.pattern_tempos) < sizeof(h.pattern_tempos) ||
+       vf.read_buffer(h.pattern_breaks) < sizeof(h.pattern_breaks))
       return modutil::READ_ERROR;
 
     if(h.num_samples > MAX_SAMPLES)
@@ -190,13 +198,24 @@ public:
     {
       _669_instrument &ins = m.instruments[i];
 
-      if(!fread(ins.filename, sizeof(ins.filename), 1, fp))
-        return modutil::READ_ERROR;
+      size_t num_in = vf.read(buffer, 25);
+      if(num_in < 25)
+      {
+        /* Recover broken instrument by zeroing missing portion. */
+        format::warning("read error in instrument %zu", i);
+        memset(buffer + num_in, 0, 25 - num_in);
+      }
 
+      memcpy(ins.filename, buffer, 13);
       ins.filename[12] = '\0';
-      ins.length     = fget_u32le(fp);
-      ins.loop_start = fget_u32le(fp);
-      ins.loop_end   = fget_u32le(fp);
+
+      ins.length     = mem_u32le(buffer + 13);
+      ins.loop_start = mem_u32le(buffer + 17);
+      ins.loop_end   = mem_u32le(buffer + 21);
+
+      /* Don't attempt to read further instruments if EOF. */
+      if(vf.eof())
+        break;
     }
 
     /* Patterns */
@@ -209,20 +228,28 @@ public:
 
       p.allocate();
 
+      /* Skip read if something already hit EOF. */
+      if(vf.eof())
+        continue;
+
+      size_t num_in = vf.read(buffer, pattern_data_size);
+      if(num_in < pattern_data_size)
+      {
+        /* Recover broken pattern by zeroing missing portion. */
+        format::warning("read error in pattern %zu", i);
+        memset(buffer + num_in, 0, pattern_data_size - num_in);
+      }
+
       _669_event *current = p.events;
+      uint8_t *ev = buffer;
       for(size_t row = 0; row < NUM_ROWS; row++)
       {
         for(size_t track = 0; track < NUM_CHANNELS; track++, current++)
         {
-          uint8_t ev[3];
-          if(!fread(ev, 3, 1, fp))
-            goto pat_read_error;
-
           *current = _669_event(ev[0], ev[1], ev[2]);
+          ev += 3;
         }
       }
-pat_read_error:
-      ;
     }
 
 

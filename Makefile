@@ -75,6 +75,7 @@ MODULEDIAG_OBJS := \
   ${OBJ}/modutil.o \
   ${OBJ}/encode.o \
   ${OBJ}/error.o \
+  ${OBJ}/vio.o \
   ${OBJ}/Config.o \
   ${OBJ}/LZW.o \
   ${OBJ}/mod_load.o \

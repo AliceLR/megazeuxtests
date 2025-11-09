@@ -668,8 +668,11 @@ class MUSX_loader: modutil::loader
 public:
   MUSX_loader(): modutil::loader("-", "musx", "!Tracker-compatible/MUSX") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+    long file_length = state.reader.length(); /* FIXME: */
+
     MUSX_data m{};
     uint8_t tmp[8];
 

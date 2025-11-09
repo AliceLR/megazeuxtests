@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2023 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2023-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -115,8 +115,10 @@ enum XMF_effects
 
 enum XMF_flags
 {
+  S_16BIT = (1 << 2),
   S_LOOP  = (1 << 3),
-  S_16BIT = (1 << 4), // BIDI? guessed.
+  S_BIDIR = (1 << 4),
+  S_VALID_MASK = (S_16BIT | S_LOOP | S_BIDIR),
 };
 
 struct XMF_instrument
@@ -136,8 +138,8 @@ struct XMF_instrument
 struct XMF_sequence
 {
   /*   0 */ uint8_t  orders[MAX_ORDERS];
-  /* 256 */ uint8_t  num_channels;
-  /* 257 */ uint8_t  num_patterns;
+  /* 256 */ uint16_t num_channels; /* stored as uint8_t, -1 */
+  /* 257 */ uint16_t num_patterns; /* stored as uint8_t, -1 */
   /* 258 */ uint8_t  default_panning[MAX_CHANNELS];
   /* 258 + num_channels */
 };
@@ -236,25 +238,38 @@ static void check_event_features(XMF_data &m, const XMF_event *event)
 class XMF_loader : public modutil::loader
 {
 public:
-  XMF_loader(): modutil::loader("XMF", "imperium", "Imperium Galactica") {}
+  XMF_loader(): modutil::loader("XMF", "astroidea", "Imperium Galactica / Astroidea") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    vio &vf = state.reader;
+    int64_t file_length = vf.length();
+
     XMF_data m{};
     XMF_sequence &h = m.sequence;
+    uint8_t version;
 
-    if(fgetc(fp) != 0x03)
+    /* 3 is used for Imperium Galactica.
+     * 4 is used for all other Astroidea XMFs. */
+    version = vf.u8();
+    if(version != 3 && version != 4)
+    {
+      trace("not XMF: version %d", version);
       return modutil::FORMAT_ERROR;
+    }
 
     /* Instruments */
-    /* FIXME: better format checking once the sample junk is figured out. */
+    int64_t samples_size = 0;
     for(size_t i = 0; i < MAX_INSTRUMENTS; i++)
     {
       XMF_instrument &ins = m.instruments[i];
       uint8_t tmp[16];
 
-      if(fread(tmp, 1, 16, fp) < 16)
+      if(vf.read_buffer(tmp) < sizeof(tmp))
+      {
+        trace("not XMF: read error at instrument %zu", i);
         return modutil::FORMAT_ERROR;
+      }
 
       ins.loop_start     = mem_u24le(tmp + 0);
       ins.loop_end       = mem_u24le(tmp + 3);
@@ -268,36 +283,90 @@ public:
        * Most data offsets are word-padded, but not always...
        * In two files (SAMPLE.XMF and URES.XMF) these start well past the end of the file! */
       if(ins.data_start > ins.data_end)
+      {
+        trace("not XMF: i%zu: data_start %" PRIu32 " > data_end %" PRIu32,
+          i, ins.data_start, ins.data_end);
         return modutil::FORMAT_ERROR;
+      }
 
       ins.length = ins.data_end - ins.data_start;
 
+      /* Flags should only include known flags. */
+      if(ins.flags & ~S_VALID_MASK)
+      {
+        trace("not XMF: i%zu: out-of-range flags %x", i, ins.flags);
+        return modutil::FORMAT_ERROR;
+      }
+      /* Bidirectional loops should also have the loop flag set. */
+      if((ins.flags & S_BIDIR) && (~ins.flags & S_LOOP))
+      {
+        trace("not XMF: i%zu: bidir set, loop unset %x", i, ins.flags);
+        return modutil::FORMAT_ERROR;
+      }
+      /* 16-bit samples should have an even number of bytes. */
+      if((ins.flags & S_16BIT) && (ins.length & 1))
+      {
+        trace("not XMF: i%zu: 16-bit %u but length odd %" PRIu32,
+          i, ins.flags, ins.length);
+        return modutil::FORMAT_ERROR;
+      }
+      /* Non-zero length samples shouldn't have junk low sample rates. */
+      if(ins.length > 0 && ins.sample_rate < 100)
+      {
+        trace("not XMF: i%zu: bad sample rate %d", i, (int)ins.sample_rate);
+        return modutil::FORMAT_ERROR;
+      }
       /* Loops are always well-formed. */
       if(ins.loop_end && (ins.loop_start > ins.loop_end || ins.loop_end > ins.length))
+      {
+        trace("not XMF: i%zu: badly behaved loop "
+          "(start %" PRIu32 ", end %" PRIu32 ", length %" PRIu32 ")",
+          i, ins.loop_start, ins.loop_end, ins.length);
         return modutil::FORMAT_ERROR;
+      }
 
-      /* TODO: samples never overlap? */
+      samples_size += ins.length;
 
-      /* TODO: better way of determining usage? */
-      if(ins.length && ins.sample_rate)
+      if(ins.length > 0)
         m.num_instruments = i + 1;
+    }
+
+    /* Sequence */
+    if(vf.read_buffer(h.orders) < sizeof(h.orders))
+    {
+      trace("not XMF: read error in order list");
+      return modutil::FORMAT_ERROR;
+    }
+
+    h.num_channels = (uint16_t)vf.u8() + 1;
+    h.num_patterns = (uint16_t)vf.u8() + 1;
+    if(vf.eof() || vf.error())
+    {
+      trace("not XMF: read error in channel/pattern counts");
+      return modutil::FORMAT_ERROR;
+    }
+
+    if(h.num_channels < 1 || h.num_channels > MAX_CHANNELS)
+    {
+      trace("not XMF: bad channel count %d", (int)h.num_channels);
+      return modutil::FORMAT_ERROR;
+    }
+
+    /* Overall filesize should be well-behaved. */
+    int64_t header_size = 0x1103 + h.num_channels;
+    int64_t patterns_size = (int)h.num_channels * h.num_patterns * 64 * 6;
+    if(file_length < header_size + patterns_size ||
+       file_length - header_size - patterns_size < samples_size)
+    {
+      trace("not XMF: header size %" PRId64 " + patterns size %" PRId64
+        " + samples size %" PRId64 " < file size %" PRId64,
+        header_size, patterns_size, samples_size, file_length);
+      return modutil::FORMAT_ERROR;
     }
 
     total_xmf++;
 
-    /* Sequence */
-    if(fread(h.orders, 1, 256, fp) < 256)
-      return modutil::READ_ERROR;
-
-    h.num_channels = fgetc(fp) + 1;
-    h.num_patterns = fgetc(fp) + 1;
-    if(ferror(fp))
-      return modutil::READ_ERROR;
-
-    if(h.num_channels < 1 || h.num_channels > MAX_CHANNELS)
-      return modutil::INVALID;
-
-    if(fread(h.default_panning, 1, h.num_channels, fp) < h.num_channels)
+    if(vf.read(h.default_panning, h.num_channels) < h.num_channels)
       return modutil::READ_ERROR;
 
     for(size_t i = 0; i < 256; i++)
@@ -313,10 +382,18 @@ public:
       XMF_pattern &p = m.patterns[i];
       p.initialize(h.num_channels);
 
+      if(vf.eof())
+        break;
+
       size_t sz = XMF_pattern::size(h.num_channels);
 
-      if(fread(p.events.data(), 1, sz, fp) < sz)
-        return modutil::READ_ERROR;
+      size_t num_in = vf.read(p.events.data(), sz);
+      if(num_in < sz)
+      {
+        /* Recover broken pattern by zeroing missing portion. */
+        format::warning("read error in pattern %zu", i);
+        memset(p.events.data() + num_in, 0, sz - num_in);
+      }
 
       XMF_event *current = p.get_events();
 

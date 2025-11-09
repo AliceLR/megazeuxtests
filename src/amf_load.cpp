@@ -773,9 +773,9 @@ class AMF_loader : modutil::loader
 public:
   AMF_loader(): modutil::loader("AMF", "dsmi", "Digital Sound and Music Interface") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
-    return AMF_read(fp);
+    return AMF_read(state.reader.unwrap()); /* FIXME: */
   }
 
   virtual void report() const override

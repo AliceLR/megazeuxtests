@@ -527,8 +527,11 @@ class LIQ_loader : public modutil::loader
 public:
   LIQ_loader(): modutil::loader("LIQ", "liqnew", "Liquid Tracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+    long file_length = state.reader.length(); /* FIXME: */
+
     LIQ_data m{};
     LIQ_header &h = m.header;
     std::vector<uint8_t> patbuf;

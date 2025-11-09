@@ -203,8 +203,10 @@ class PS16_loader : modutil::loader
 public:
   PS16_loader(): modutil::loader("PSM", "ps16", "Protracker Studio 16 / Epic MegaGames MASI") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     PS16_data m{};
     PS16_header &h = m.header;
     uint8_t buf[256];

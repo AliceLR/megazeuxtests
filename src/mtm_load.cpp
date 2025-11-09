@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2021-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -179,12 +179,17 @@ class MTM_loader : public modutil::loader
 public:
   MTM_loader(): modutil::loader("MTM", "mtm", "MultiTracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    vio &vf = state.reader;
+
     MTM_data m{};
     MTM_header &h = m.header;
+    uint8_t header[31];
+    uint8_t track[3 * 256];
+    uint8_t pattern[2 * MAX_CHANNELS];
 
-    if(!fread(h.magic, 3, 1, fp))
+    if(vf.read_buffer(h.magic) < 3)
       return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, "MTM", 3))
@@ -192,30 +197,31 @@ public:
 
     total_mtms++;
 
-    h.version = fgetc(fp);
+    if(vf.read_buffer(header) < sizeof(header))
+      return modutil::READ_ERROR;
+
+    h.version = header[0];
     if(h.version != 0x10)
     {
       format::error("unknown version %02x", h.version);
       return modutil::BAD_VERSION;
     }
 
-    if(!fread(h.name, sizeof(h.name), 1, fp))
-      return modutil::READ_ERROR;
-
+    memcpy(h.name, header + 1, sizeof(h.name));
     memcpy(m.name, h.name, sizeof(h.name));
     m.name[sizeof(h.name)] = '\0';
     strip_module_name(m.name, sizeof(m.name));
 
-    h.tracks_stored  = fget_u16le(fp);
-    h.last_pattern   = fgetc(fp);
-    h.last_order     = fgetc(fp);
-    h.comment_length = fget_u16le(fp);
-    h.num_samples    = fgetc(fp);
-    h.attribute      = fgetc(fp);
-    h.num_rows       = fgetc(fp);
-    h.num_channels   = fgetc(fp);
+    h.tracks_stored  = mem_u16le(header + 21);
+    h.last_pattern   = header[23];
+    h.last_order     = header[24];
+    h.comment_length = mem_u16le(header + 25);
+    h.num_samples    = header[27];
+    h.attribute      = header[28];
+    h.num_rows       = header[29];
+    h.num_channels   = header[30];
 
-    if(!fread(h.panning_table, sizeof(h.panning_table), 1, fp))
+    if(vf.read_buffer(h.panning_table) < sizeof(h.panning_table))
       return modutil::READ_ERROR;
 
     m.num_tracks = h.tracks_stored + 1;
@@ -229,36 +235,56 @@ public:
     for(size_t i = 0; i < h.num_samples; i++)
     {
       MTM_instrument &ins = m.instruments[i];
+      uint8_t buf[37];
 
-      if(!fread(ins.name, sizeof(ins.name), 1, fp))
-        return modutil::READ_ERROR;
+      if(vf.eof())
+        break;
 
-      ins.length         = fget_u32le(fp);
-      ins.loop_start     = fget_u32le(fp);
-      ins.loop_end       = fget_u32le(fp);
-      ins.finetune       = fgetc(fp);
-      ins.default_volume = fgetc(fp);
-      ins.attribute      = fgetc(fp);
+      size_t num_in = vf.read_buffer(buf);
+      if(num_in < sizeof(buf))
+      {
+        /* Recover broken instruments by zeroing missing portion. */
+        format::warning("read error at instrument %zu", i);
+        memset(buf + num_in, 0, sizeof(buf) - num_in);
+      }
 
-      if(feof(fp))
-        return modutil::READ_ERROR;
+      memcpy(ins.name, buf, sizeof(ins.name));
+      ins.length         = mem_u32le(buf + 22);
+      ins.loop_start     = mem_u32le(buf + 26);
+      ins.loop_end       = mem_u32le(buf + 30);
+      ins.finetune       = buf[34];
+      ins.default_volume = buf[35];
+      ins.attribute      = buf[36];
     }
 
     /* Orders. */
-    if(!fread(m.orders, sizeof(m.orders), 1, fp))
-      return modutil::READ_ERROR;
+    if(vf.read_buffer(m.orders) < sizeof(m.orders))
+      format::warning("read error in order list");
 
     /* Tracks. */
+    const size_t track_size = h.num_rows * 3;
+
     m.allocate_tracks(m.num_tracks, h.num_rows);
     for(size_t i = 1; i < m.num_tracks; i++)
     {
       MTM_event *current = m.tracks[i];
+
+      if(vf.eof())
+        break;
+
+      size_t num_in = vf.read(track, track_size);
+      if(num_in < track_size)
+      {
+        /* Recover broken track by zeroing missing portion. */
+        format::warning("read error in track %zu", i);
+        memset(track + num_in, 0, track_size - num_in);
+      }
+      uint8_t *pos = track;
+
       for(size_t row = 0; row < h.num_rows; row++, current++)
       {
-        uint8_t a = fgetc(fp);
-        uint8_t b = fgetc(fp);
-        uint8_t c = fgetc(fp);
-        *current = MTM_event(a, b, c);
+        *current = MTM_event(pos[0], pos[1], pos[2]);
+        pos += 3;
 
         switch(current->effect)
         {
@@ -269,24 +295,38 @@ public:
               m.uses[FT_E_SPEED] = true;
         }
       }
-      if(feof(fp))
-        return modutil::READ_ERROR;
     }
 
     /* Patterns. */
     for(size_t i = 0; i < m.num_patterns; i++)
-      for(size_t j = 0; j < MAX_CHANNELS; j++)
-        m.patterns[i][j] = fget_u16le(fp);
+    {
+      if(vf.eof())
+        break;
 
-    if(feof(fp))
-      return modutil::READ_ERROR;
+      size_t num_in = vf.read_buffer(pattern);
+      if(num_in < sizeof(pattern))
+      {
+        /* Recover broken pattern by zeroing missing portion. */
+        format::warning("read error in pattern %zu", i);
+        memset(pattern + num_in, 0, sizeof(pattern) - num_in);
+      }
+
+      for(size_t j = 0; j < MAX_CHANNELS; j++)
+        m.patterns[i][j] = mem_u16le(pattern + j * 2);
+    }
 
     /* Comment. */
-    if(h.comment_length)
+    if(h.comment_length && !vf.eof())
     {
       m.comment = new char[h.comment_length + 1];
-      if(!fread(m.comment, h.comment_length, 1, fp))
-        return modutil::READ_ERROR;
+
+      size_t num_in = vf.read(m.comment, h.comment_length);
+      if(num_in < h.comment_length)
+      {
+        /* Recover broken comment by zeroing missing portion. */
+        format::warning("read error in comment");
+        memset(m.comment + num_in, 0, h.comment_length - num_in);
+      }
 
       /* MultiTracker nul pads 40-byte lines... */
       unsigned last_line = 0;

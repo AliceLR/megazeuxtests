@@ -88,15 +88,13 @@ static bool is_loader_filtered(const modutil::loader *loader)
   return false;
 }
 
-static void check_module(FILE *fp)
+static void check_module(vio &vf)
 {
-  if(fp)
   {
     loaded_mod_magic[0] = '\0';
 
     modutil::error err;
     bool has_format = false;
-    long file_length = get_file_length(fp);
 
     for(const modutil::loader *loader : loaders_vector())
     {
@@ -104,10 +102,12 @@ static void check_module(FILE *fp)
         continue;
 
       trace("%-4s %-8s %s", loader->ext, loader->tag, loader->name);
-      err = loader->load(fp, file_length);
+
+      modutil::data state(vf);
+      err = loader->load(state);
       if(err == modutil::FORMAT_ERROR)
       {
-        rewind(fp);
+        vf.seek(0, SEEK_SET);
         continue;
       }
 
@@ -155,17 +155,18 @@ static void check_module(FILE *fp)
 
 static void check_module(const char *filename)
 {
-  FILE *fp = fopen(filename, "rb");
-  if(fp)
+  try
   {
-    format::line("File", "%s", filename);
+    vio_file vf(filename, "rb");
 
-    setvbuf(fp, NULL, _IOFBF, 8192);
-    check_module(fp);
-    fclose(fp);
+    format::line("File", "%s", filename);
+    check_module(vf);
   }
-  else
+  catch(const char *e)
+  {
     format::error("failed to open '%s'.", filename);
+    return;
+  }
 }
 
 } /* namespace modutil */

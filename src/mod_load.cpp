@@ -969,8 +969,11 @@ class MOD_loader : public modutil::loader
 public:
   MOD_loader() : modutil::loader("MOD", "mod", "Protracker and Soundtracker compatible modules") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+    long file_length = state.reader.length(); /* FIXME: */
+
     return MOD_read(fp, file_length);
   };
 

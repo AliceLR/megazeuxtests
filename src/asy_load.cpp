@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2021 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2021-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -119,12 +119,15 @@ class ASYLUM_loader : public modutil::loader
 public:
   ASYLUM_loader(): modutil::loader("AMF", "asylum", "ASYLUM Music Format") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    vio &vf = state.reader;
+
     ASYLUM_data m{};
     ASYLUM_header &h = m.header;
+    uint8_t header[6];
 
-    if(!fread(h.magic, sizeof(h.magic), 1, fp))
+    if(vf.read_buffer(h.magic) < sizeof(h.magic))
       return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, MAGIC, sizeof(h.magic)))
@@ -133,14 +136,17 @@ public:
     total_asylum++;
 
     /* Header */
-    h.initial_speed = fgetc(fp);
-    h.initial_tempo = fgetc(fp);
-    h.num_samples   = fgetc(fp);
-    h.num_patterns  = fgetc(fp);
-    h.num_orders    = fgetc(fp);
-    h.restart_byte  = fgetc(fp);
+    if(vf.read_buffer(header) < sizeof(header))
+      return modutil::READ_ERROR;
 
-    if(!fread(h.orders, sizeof(h.orders), 1, fp))
+    h.initial_speed = header[0];
+    h.initial_tempo = header[1];
+    h.num_samples   = header[2];
+    h.num_patterns  = header[3];
+    h.num_orders    = header[4];
+    h.restart_byte  = header[5];
+
+    if(vf.read_buffer(h.orders) < sizeof(h.orders))
       return modutil::READ_ERROR;
 
     // The file format provides a fixed 64 instrument structs.
@@ -155,10 +161,12 @@ public:
     {
       uint8_t buf[37];
 
-      if(!fread(buf, sizeof(buf), 1, fp))
+      size_t num_in = vf.read_buffer(buf);
+      if(num_in < sizeof(buf))
       {
+        /* Recover broken instruments by zeroing missing portion. */
         format::error("read error in instrument %zu", i);
-        return modutil::READ_ERROR;
+        memset(buf + num_in, 0, sizeof(buf) - num_in);
       }
 
       ASYLUM_instrument &ins = m.instruments[i];
@@ -170,6 +178,9 @@ public:
       ins.length         = mem_u32le(buf + 25);
       ins.loop_start     = mem_u32le(buf + 29);
       ins.loop_length    = mem_u32le(buf + 33);
+
+      if(vf.eof())
+        break;
     }
 
     /* Patterns */
@@ -178,12 +189,17 @@ public:
       ASYLUM_pattern &p = m.patterns[i];
       p.allocate();
 
+      if(vf.eof())
+        continue;
+
       uint8_t buf[ROWS * CHANNELS * 4];
 
-      if(!fread(buf, sizeof(buf), 1, fp))
+      size_t num_in = vf.read_buffer(buf);
+      if(num_in < sizeof(buf))
       {
+        /* Recover broken pattern by zeroing missing portion. */
         format::error("read error in pattern %zu", i);
-        return modutil::READ_ERROR;
+        memset(buf + num_in, 0, sizeof(buf) - num_in);
       }
 
       ASYLUM_event *current = p.events;

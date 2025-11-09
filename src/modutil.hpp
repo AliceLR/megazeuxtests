@@ -29,10 +29,19 @@
 #include "common.hpp"
 #include "error.hpp"
 #include "format.hpp"
+#include "vio.hpp"
 
 namespace modutil
 {
   extern char loaded_mod_magic[4];
+
+  class data
+  {
+  public:
+    vio &reader;
+
+    data(vio &r): reader(r) {}
+  };
 
   class loader
   {
@@ -40,7 +49,7 @@ namespace modutil
     const char *ext;
     const char *tag;
     const char *name;
-    virtual modutil::error load(FILE *fp, long file_length) const = 0;
+    virtual modutil::error load(modutil::data state) const = 0;
     virtual void           report() const = 0;
 
     loader(const char *e, const char *t, const char *n);

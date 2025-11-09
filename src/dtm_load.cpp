@@ -1100,8 +1100,11 @@ class DTM_loader: modutil::loader
 public:
   DTM_loader(): modutil::loader("DTM", "dtm", "Digital Tracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+    long file_length = state.reader.length(); /* FIXME: */
+
     DTM_module m{};
     uint8_t magic[4];
     if(fread(magic, 1, 4, fp) < 4)

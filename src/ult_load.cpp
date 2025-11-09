@@ -311,8 +311,10 @@ class ULT_loader : modutil::loader
 public:
   ULT_loader(): modutil::loader("ULT", "ult", "Ultra Tracker") {}
 
-  virtual modutil::error load(FILE *fp, long file_length) const override
+  virtual modutil::error load(modutil::data state) const override
   {
+    FILE *fp = state.reader.unwrap(); /* FIXME: */
+
     ULT_data m{};
     ULT_header &h = m.header;
     int err;
