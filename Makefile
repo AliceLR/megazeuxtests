@@ -100,6 +100,7 @@ MODULEDIAG_OBJS := \
   ${OBJ}/okt_load.o \
   ${OBJ}/ps16_load.o \
   ${OBJ}/psm_load.o \
+  ${OBJ}/rtm_load.o \
   ${OBJ}/stm_load.o \
   ${OBJ}/sym_load.o \
   ${OBJ}/ult_load.o \

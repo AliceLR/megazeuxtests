@@ -157,6 +157,12 @@ static inline constexpr uint32_t mem_u32le(const void *_mem) noexcept
   return mem[0] | (mem[1] << 8) | (mem[2] << 16) | (mem[3] << 24);
 }
 
+static inline constexpr int32_t mem_s32le(const void *_mem) noexcept
+{
+  const uint8_t *mem = (const uint8_t *)_mem;
+  return mem[0] | (mem[1] << 8) | (mem[2] << 16) | ((int8_t)mem[3] << 24);
+}
+
 static inline constexpr uint32_t mem_u32be(const void *_mem) noexcept
 {
   const uint8_t *mem = (const uint8_t *)_mem;
