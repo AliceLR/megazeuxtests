@@ -1223,7 +1223,7 @@ public:
 
         if(m.pattern_format_version == format_mod)
         {
-          using EVENT = format::event<format::periodMOD, format::sample, format::effect>;
+          using EVENT = format::event<format::periodMOD, format::sample<>, format::effect>;
           format::pattern<EVENT> pattern(i, m.num_channels, p.length);
 
           if(!Config.dump_pattern_rows)
@@ -1235,7 +1235,7 @@ public:
           for(const DTM_event &ev : p.events)
           {
             format::periodMOD a{ ev.note };
-            format::sample    b{ ev.instrument };
+            format::sample<>  b{ ev.instrument };
             format::effect    c{ ev.effect, ev.param };
 
             pattern.insert(EVENT(a, b, c));
@@ -1244,7 +1244,8 @@ public:
         }
         else
         {
-          using EVENT = format::event<format::note, format::sample, format::volume, format::effectXM>;
+          using EVENT = format::event<format::note<>, format::sample<>,
+                                      format::volume<>, format::effectXM>;
           format::pattern<EVENT> pattern(i, m.num_channels, p.length);
 
           if(!Config.dump_pattern_rows)
@@ -1255,9 +1256,9 @@ public:
 
           for(const DTM_event &ev : p.events)
           {
-            format::note     a{ static_cast<uint8_t>(ev.note) };
-            format::sample   b{ ev.instrument };
-            format::volume   c{ ev.volume };
+            format::note<>   a{ static_cast<uint8_t>(ev.note) };
+            format::sample<> b{ ev.instrument };
+            format::volume<> c{ ev.volume };
             format::effectXM d{ ev.effect, ev.param };
 
             pattern.insert(EVENT(a, b, c, d));

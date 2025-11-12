@@ -766,7 +766,7 @@ public:
       {
         SYM_order &p = m.orders[i];
 
-        using EVENT = format::event<format::note, format::sample, effectSYM>;
+        using EVENT = format::event<format::note<>, format::sample<>, effectSYM>;
         format::pattern<EVENT> pattern(i, h.num_channels, NUM_ROWS);
         pattern.labels("Ord.", "Order");
 
@@ -785,9 +785,9 @@ public:
             SYM_track &t = idx < h.num_tracks ? m.tracks[idx] : m.blank_track;
             SYM_event &e = t.events[row];
 
-            format::note   a{ e.note };
-            format::sample b{ e.instrument };
-            effectSYM      c{ e.effect, e.param };
+            format::note<>   a{ e.note };
+            format::sample<> b{ e.instrument };
+            effectSYM        c{ e.effect, e.param };
 
             pattern.insert(EVENT(a, b, c));
           }

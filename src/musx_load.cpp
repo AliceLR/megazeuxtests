@@ -769,7 +769,7 @@ public:
       {
         MUSX_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::effectXM>;
+        using EVENT = format::event<format::note<>, format::sample<>, format::effectXM>;
         format::pattern<EVENT> pattern(i, m.num_channels, p.num_rows);
 
         if(!Config.dump_pattern_rows)
@@ -783,8 +783,8 @@ public:
         {
           for(size_t track = 0; track < m.num_channels; track++, ev++)
           {
-            format::note     a{ ev->note };
-            format::sample   b{ ev->sample };
+            format::note<>   a{ ev->note };
+            format::sample<> b{ ev->sample };
             format::effectXM c{ ev->effect, ev->param };
 
             pattern.insert(EVENT(a, b, c));

@@ -766,8 +766,9 @@ static modutil::error GDM_read(FILE *fp)
     {
       GDM_pattern &p = m.patterns[i];
 
-      using EVENT = format::event<format::note, format::sample, format::effectWide,
-                                  format::effectWide, format::effectWide, format::effectWide>;
+      using EVENT = format::event<format::note<>, format::sample<>,
+                                  format::effectWide, format::effectWide,
+                                  format::effectWide, format::effectWide>;
       format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.raw_size);
 
       if(!Config.dump_pattern_rows)
@@ -792,8 +793,8 @@ static modutil::error GDM_read(FILE *fp)
             continue;
           }
 
-          format::note       a{ current->note };
-          format::sample     b{ current->sample };
+          format::note<>     a{ current->note };
+          format::sample<>   b{ current->sample };
           format::effectWide c{ current->effects[0].effect, current->effects[0].param };
           format::effectWide d{ current->effects[1].effect, current->effects[1].param };
           format::effectWide e{ current->effects[2].effect, current->effects[2].param };

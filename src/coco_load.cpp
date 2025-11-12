@@ -343,7 +343,8 @@ public:
       {
         Coconizer_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::effectWide>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::effectWide>;
         format::pattern<EVENT> pattern(i, m.num_channels, NUM_ROWS);
 
         if(!Config.dump_pattern_rows)
@@ -357,8 +358,8 @@ public:
         {
           for(size_t track = 0; track < m.num_channels; track++, current++)
           {
-            format::note       a{ current->note };
-            format::sample     b{ current->instrument };
+            format::note<>     a{ current->note };
+            format::sample<>   b{ current->instrument };
             format::effectWide c{ current->effect, current->param };
 
             pattern.insert(EVENT(a, b, c));

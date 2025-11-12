@@ -406,7 +406,7 @@ public:
 
       for(size_t i = 0; i < m.num_patterns; i++)
       {
-        using EVENT = format::event<format::note, format::sample, format::effect>;
+        using EVENT = format::event<format::note<>, format::sample<>, format::effect>;
         format::pattern<EVENT> pattern(i, h.num_channels, h.num_rows);
 
         if(!Config.dump_pattern_rows)
@@ -426,9 +426,9 @@ public:
 
             MTM_event *ev = m.tracks[idx] + row;
 
-            format::note   a{ ev->note };
-            format::sample b{ ev->instrument };
-            format::effect c{ ev->effect, ev->param };
+            format::note<>   a{ ev->note };
+            format::sample<> b{ ev->instrument };
+            format::effect   c{ ev->effect, ev->param };
 
             pattern.insert(EVENT(a, b, c));
           }

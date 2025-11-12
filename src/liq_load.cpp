@@ -193,24 +193,24 @@ struct LIQ_header
   /*    */ uint16_t amplification; /* "0-1000d" */
 };
 
-/* Note- the -1=none fields get shifted up by 1 since the formatter expects
- * 0 for none. No LIQ I've found contains the -1 code for effects, as the
+/* Note- No LIQ I've found contains the -1 code for effects, as the
  * pattern packer never seems to emit it. */
 struct LIQ_event
 {
-  uint8_t note;       /* 0-107 C-1 thru B-9 (?), -1=none, -2=note off */
-  uint8_t instrument; /* -1=none */
-  uint8_t volume;     /* -1=none */
-  uint8_t effect;     /* 65-90=A-Z, -1=none */
+  uint8_t note = 0xff;       /* 0-107 C-1 thru B-9 (?), -1=none, -2=note off */
+  uint8_t instrument = 0xff; /* -1=none */
+  uint8_t volume = 0xff;     /* -1=none */
+  uint8_t effect;            /* 65-90=A-Z, -1=none */
   uint8_t param;
 
   unsigned octave() const
   {
-    return note && note != (0xfe + 1) ? (note - 1) / 12 : 0;
+    return note < 0xfe ? note / 12 : 0;
   }
 
   uint8_t fix_effect(uint8_t fx)
   {
+    /* using 0 for empty output */
     return fx != 0xff ? fx - '@' : 0;
   }
 
@@ -219,9 +219,9 @@ struct LIQ_event
     if(data.size() - pos < 5)
       return 0;
 
-    note          = data[pos + 0] + 1;
-    instrument    = data[pos + 1] + 1;
-    volume        = data[pos + 2] + 1;
+    note          = data[pos + 0];
+    instrument    = data[pos + 1];
+    volume        = data[pos + 2];
     effect        = fix_effect(data[pos + 3]);
     param         = data[pos + 4];
     return 5;
@@ -241,11 +241,11 @@ struct LIQ_event
       return 0;
 
     if(mask & 1)
-      note        = data[pos++] + 1;
+      note        = data[pos++];
     if(mask & 2)
-      instrument  = data[pos++] + 1;
+      instrument  = data[pos++];
     if(mask & 4)
-      volume      = data[pos++] + 1;
+      volume      = data[pos++];
     if(mask & 8)
       effect      = fix_effect(data[pos++]);
     if(mask & 16)
@@ -901,7 +901,8 @@ done:
 
         LIQ_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effectIT>;
+        using EVENT = format::event<format::note<255>, format::sample<255>,
+                                    format::volume<255>, format::effectIT>;
         format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.packed_bytes);
 
         if(!Config.dump_pattern_rows)
@@ -915,10 +916,10 @@ done:
           for(size_t track = 0; track < p.num_channels; track++)
           {
             LIQ_event &current = p.events[track * p.num_rows + row];
-            format::note      a{ current.note };
-            format::sample    b{ current.instrument };
-            format::volume    c{ current.volume };
-            format::effectIT  d{ current.effect, current.param };
+            format::note<255>   a{ current.note };
+            format::sample<255> b{ current.instrument };
+            format::volume<255> c{ current.volume };
+            format::effectIT    d{ current.effect, current.param };
             pattern.insert(EVENT(a, b, c, d));
           }
         }

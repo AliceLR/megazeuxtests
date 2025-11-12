@@ -528,7 +528,8 @@ public:
         FAR_pattern &p = m.patterns[i];
         int pattern_len = h.pattern_length[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effect669>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::volume<>, format::effect669>;
         format::pattern<EVENT, 16> pattern(i, p.columns, p.rows, pattern_len);
         // TODO also print break.
 
@@ -543,9 +544,9 @@ public:
         {
           for(size_t track = 0; track < p.columns; track++, current++)
           {
-            format::note      a{ current->note };
-            format::sample    b{ current->instrument };
-            format::volume    c{ current->volume };
+            format::note<>    a{ current->note };
+            format::sample<>  b{ current->instrument };
+            format::volume<>  c{ current->volume };
             format::effect669 d{ current->effect, current->effect > 0 };
             pattern.insert(EVENT(a, b, c, d));
           }

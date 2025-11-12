@@ -689,7 +689,8 @@ public:
       {
         S3M_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effectIT>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::volume<>, format::effectIT>;
         format::pattern<EVENT> pattern(i, MAX_CHANNELS, 64, p.packed_size);
         pattern.extra("PSeg: %u", p.pattern_segment);
 
@@ -705,9 +706,9 @@ public:
         {
           for(size_t track = 0; track < MAX_CHANNELS; track++, current++)
           {
-            format::note     a{ current->note };
-            format::sample   b{ current->instrument };
-            format::volume   c{ current->volume };
+            format::note<>   a{ current->note };
+            format::sample<> b{ current->instrument };
+            format::volume<> c{ current->volume };
             format::effectIT d{ current->effect, current->param };
             pattern.insert(EVENT(a, b, c, d));
           }

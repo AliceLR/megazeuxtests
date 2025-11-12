@@ -478,30 +478,33 @@ namespace format
     (Config.highlight[effect] & Highlight::EFFECT) || (Config.highlight[param] & Highlight::PARAMETER)) ? \
       " " HIGHLIGHT_START str HIGHLIGHT_END : " " str)
 
+  template<int EMPTY_NOTE=0>
   struct note
   {
     uint8_t value;
     uint8_t enable = true;
     static constexpr int width() { return 3; }
-    bool can_print() const { return enable && value != 0; }
+    bool can_print() const { return enable && value != EMPTY_NOTE; }
     void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::NOTE), value); else spaces(width()); }
   };
 
+  template<int EMPTY_INSTRUMENT=0>
   struct sample
   {
     uint8_t value;
     uint8_t enable = true;
     static constexpr int width() { return 3; }
-    bool can_print() const { return enable && value != 0; }
+    bool can_print() const { return enable && value != EMPTY_INSTRUMENT; }
     void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::INSTRUMENT), value); else spaces(width()); }
   };
 
+  template<int EMPTY_VOLUME=0>
   struct volume
   {
     uint8_t value;
     uint8_t enable = true;
     static constexpr int width() { return 3; }
-    bool can_print() const { return enable && value != 0; }
+    bool can_print() const { return enable && value != EMPTY_VOLUME; }
     void print() const { if(can_print()) fprintf(stderr, HIGHLIGHT("%02x", value, Highlight::VOLUME), value); else spaces(width()); }
   };
 

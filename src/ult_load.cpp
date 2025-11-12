@@ -531,7 +531,8 @@ public:
 
       for(unsigned int i = 0; i < h.num_patterns; i++)
       {
-        using EVENT = format::event<format::note, format::sample, format::effect, format::effect>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::effect, format::effect>;
         format::pattern<EVENT> pattern(i, h.num_channels, 64);
 
         if(!Config.dump_pattern_rows)
@@ -548,10 +549,10 @@ public:
         {
           for(unsigned int track = 0; track < p.channels; track++, current++)
           {
-            format::note   a{ current->note };
-            format::sample b{ current->sample };
-            format::effect c{ current->effect, current->param };
-            format::effect d{ current->effect2, current->param2 };
+            format::note<>   a{ current->note };
+            format::sample<> b{ current->sample };
+            format::effect   c{ current->effect, current->param };
+            format::effect   d{ current->effect2, current->param2 };
 
             pattern.insert(EVENT(a, b, c, d));
           }

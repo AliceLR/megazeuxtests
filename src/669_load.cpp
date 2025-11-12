@@ -300,7 +300,8 @@ public:
       {
         _669_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effect669>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::volume<>, format::effect669>;
         format::pattern<EVENT> pattern(i, NUM_CHANNELS, NUM_ROWS);
 
         pattern.extra("Tempo=%u, Break=%u", p.tempo, p.brk);
@@ -316,9 +317,9 @@ public:
         {
           for(size_t track = 0; track < NUM_CHANNELS; track++, current++)
           {
-            format::note      a{ current->note, current->has_note() };
-            format::sample    b{ current->instrument, current->has_note() };
-            format::volume    c{ current->volume, current->has_volume() };
+            format::note<>    a{ current->note, current->has_note() };
+            format::sample<>  b{ current->instrument, current->has_note() };
+            format::volume<>  c{ current->volume, current->has_volume() };
             format::effect669 d{ current->effect, current->has_effect() };
 
             pattern.insert(EVENT(a, b, c, d));

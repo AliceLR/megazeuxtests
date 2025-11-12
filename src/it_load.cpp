@@ -1443,7 +1443,8 @@ static modutil::error IT_read(FILE *fp)
         void print() const { if(can_print()) fprintf(stderr, " %c%02x", chrs[volume_effect], volume_param); else format::spaces(width()); }
       };
 
-      using EVENT = format::event<format::note, format::sample, volumeIT, format::effectIT>;
+      using EVENT = format::event<format::note<>, format::sample<>,
+                                  volumeIT, format::effectIT>;
       format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.raw_size);
 
       if(p.raw_size != p.raw_size_stored)
@@ -1465,8 +1466,8 @@ static modutil::error IT_read(FILE *fp)
       {
         for(size_t track = 0; track < p.num_channels; track++, current++)
         {
-          format::note     a{ current->note };
-          format::sample   b{ current->instrument };
+          format::note<>   a{ current->note };
+          format::sample<> b{ current->instrument };
           volumeIT         c{ current->volume_effect, current->volume_param };
           format::effectIT d{ current->effect, current->param };
 

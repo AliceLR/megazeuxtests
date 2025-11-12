@@ -468,8 +468,9 @@ public:
       {
         DTT_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::effectWide,
-                                    format::effectWide, format::effectWide, format::effectWide>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::effectWide, format::effectWide,
+                                    format::effectWide, format::effectWide>;
         format::pattern<EVENT> pattern(i, h.num_channels, p.num_rows, p.compressed_size);
 
         if(!Config.dump_pattern_rows)
@@ -483,8 +484,8 @@ public:
         {
           for(size_t track = 0; track < h.num_channels; track++, current++)
           {
-            format::note       a{ current->note };
-            format::sample     b{ current->sample };
+            format::note<>     a{ current->note };
+            format::sample<>   b{ current->sample };
             format::effectWide c{ current->effect[0], current->param[0] };
             format::effectWide d{ current->effect[1], current->param[1] };
             format::effectWide e{ current->effect[2], current->param[2] };

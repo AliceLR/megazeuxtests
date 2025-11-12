@@ -474,7 +474,8 @@ public:
       {
         PS16_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effectWide>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::volume<>, format::effectWide>;
         format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, p.raw_size);
 
         if(!Config.dump_pattern_rows)
@@ -493,9 +494,9 @@ public:
         {
           for(size_t track = 0; track < p.num_channels; track++, current++)
           {
-            format::note       a{ current->note };
-            format::sample     b{ current->instrument };
-            format::volume     c{ current->volume };
+            format::note<>     a{ current->note };
+            format::sample<>   b{ current->instrument };
+            format::volume<>   c{ current->volume };
             format::effectWide d{ current->effect, current->param };
 
             pattern.insert(EVENT(a, b, c, d));

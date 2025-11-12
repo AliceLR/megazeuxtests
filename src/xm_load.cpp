@@ -965,7 +965,8 @@ public:
       {
         XM_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effectXM>;
+        using EVENT = format::event<format::note<>, format::sample<>,
+                                    format::volume<>, format::effectXM>;
         format::pattern<EVENT> pattern(i, h.num_channels, p.num_rows, p.packed_size);
 
         if(!Config.dump_pattern_rows)
@@ -976,9 +977,9 @@ public:
 
         for(const XM_event &ev : p.events)
         {
-          format::note     a{ ev.note };
-          format::sample   b{ ev.instrument };
-          format::volume   c{ ev.volume };
+          format::note<>   a{ ev.note };
+          format::sample<> b{ ev.instrument };
+          format::volume<> c{ ev.volume };
           format::effectXM d{ ev.effect, ev.param };
 
           pattern.insert(EVENT(a, b, c, d));

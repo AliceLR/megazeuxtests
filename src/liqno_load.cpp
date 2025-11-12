@@ -70,9 +70,9 @@ struct NO_instrument
 
 struct NO_event
 {
-  uint8_t note;
-  uint8_t instrument;
-  uint8_t volume;
+  uint8_t note = 0xff;
+  uint8_t instrument = 0xff;
+  uint8_t volume = 0xff;
   uint8_t effect;
   uint8_t param;
 
@@ -80,12 +80,11 @@ struct NO_event
   {
     uint32_t pack = mem_u32le(data);
 
-    /* NO uses -1 for unset and counts from 0.
-     * Pattern printing doesn't really like that currently, so add 1 before mask. */
-    note        = ((pack >>  0u) + 1u) & 0x3fu;
-    instrument  = ((pack >>  6u) + 1u) & 0x7fu;
-    volume      = ((pack >> 13u) + 1u) & 0x7fu;
-    effect      = ((pack >> 20u) + 1u) & 0x0fu;
+    /* NO uses -1 for unset and counts from 0. */
+    note        = (pack >>  0u) & 0x3fu;
+    instrument  = (pack >>  6u) & 0x7fu;
+    volume      = (pack >> 13u) & 0x7fu;
+    effect      = (pack >> 20u) & 0x0fu;
     param       = pack >> 24u;
   }
 };
@@ -279,7 +278,8 @@ done:
 
         NO_pattern &p = m.patterns[i];
 
-        using EVENT = format::event<format::note, format::sample, format::volume, format::effectIT>;
+        using EVENT = format::event<format::note<255>, format::sample<255>,
+                                    format::volume<255>, format::effectIT>;
         format::pattern<EVENT> pattern(i, p.num_channels, p.num_rows, size_of_pattern);
 
         if(!Config.dump_pattern_rows)
@@ -293,10 +293,10 @@ done:
         {
           for(size_t track = 0; track < p.num_channels; track++, current++)
           {
-            format::note      a{ current->note };
-            format::sample    b{ current->instrument };
-            format::volume    c{ current->volume };
-            format::effectIT  d{ current->effect, current->param };
+            format::note<255>   a{ current->note };
+            format::sample<255> b{ current->instrument };
+            format::volume<255> c{ current->volume };
+            format::effectIT    d{ current->effect, current->param };
             pattern.insert(EVENT(a, b, c, d));
           }
         }

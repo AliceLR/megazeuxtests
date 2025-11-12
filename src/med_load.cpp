@@ -1705,7 +1705,7 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       MMD1block &b = m.patterns[i];
 
       // TODO: MMD1+ supports up to 256(?) effect channels via blockinfo.
-      using EVENT = format::event<format::note, format::sample, format::effectWide>;
+      using EVENT = format::event<format::note<>, format::sample<>, format::effectWide>;
       format::pattern<EVENT> pattern(i, b.num_tracks, b.num_rows);
       pattern.labels("Blk.", "Block");
 
@@ -1720,8 +1720,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       {
         for(unsigned int track = 0; track < b.num_tracks; track++, current++)
         {
-          format::note       a{ current->note };
-          format::sample     b{ current->instrument };
+          format::note<>     a{ current->note };
+          format::sample<>   b{ current->instrument };
           format::effectWide c{ current->effect, current->param };
 
           pattern.insert(EVENT(a, b, c));
