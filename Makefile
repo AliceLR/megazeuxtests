@@ -133,6 +133,10 @@ S3M2LIQ_EXE := s3m2liq${BINEXT}
 S3M2LIQ_OBJS := \
   ${OBJ}/s3m2liq.o
 
+COCORIP_EXE  := cocorip${BINEXT}
+COCORIP_OBJS := \
+  ${OBJ}/cocorip.o
+
 WAV2AVR_EXE  := wav2avr${BINEXT}
 WAV2AVR_OBJS := \
   ${OBJ}/wav2avr.o \
@@ -193,6 +197,10 @@ ${MOD2LIQ2_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 ${S3M2LIQ_EXE}: ${S3M2LIQ_OBJS}
 ${S3M2LIQ_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
 
+-include ${COCORIP_OBJS:.o=.d}
+${COCORIP_EXE}: ${COCORIP_OBJS}
+${COCORIP_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+
 -include ${WAV2AVR_OBJS:.o=.d}
 ${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
 ${WAV2AVR_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
@@ -227,6 +235,7 @@ ALL_EXES := \
   ${DSYMGEN_EXE} \
   ${MOD2LIQ2_EXE} \
   ${S3M2LIQ_EXE} \
+  ${COCORIP_EXE} \
   ${WAV2AVR_EXE} \
   ${IFFDUMP_EXE} \
   ${ICODIAG_EXE} \
@@ -269,6 +278,10 @@ ${S3M2LIQ_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${S3M2LIQ_OBJS} ${LDLIBS}
 
+${COCORIP_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCC} ${LDFLAGS} -o $@ ${COCORIP_OBJS} ${LDLIBS}
+
 ${WAV2AVR_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${WAV2AVR_OBJS} ${LDLIBS}
@@ -306,6 +319,7 @@ clean:
 	rm -f dsymgen dsymgen.exe dsymgen_san*
 	rm -f mod2liq2 mod2liq2.exe mod2liq2_san*
 	rm -f s3m2liq s3m2liq.exe s3m2liq_san*
+	rm -f cocorip cocorip.exe cocorip_san*
 	rm -rf wav2avr wav2avr.exe wav2avr_san*
 	rm -f iffdump iffdump.exe iffdump_san*
 	rm -f icodiag icodiag.exe icodiag_san*
