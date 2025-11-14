@@ -125,6 +125,10 @@ namespace format
     endline();
   }
 
+#ifdef __clang__
+/* Silence the most worthless warning Clang has managed to inflict yet */
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#endif
 #define trace(str, ...) \
   if(Config.trace) format::line(" trace", "%s:%d " str,  __FILE__, __LINE__, ##__VA_ARGS__);
 

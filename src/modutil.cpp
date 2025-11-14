@@ -181,12 +181,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
   Config.dump_descriptions = true;
   Config.quiet = true;
 
-  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
-  if(fp)
-  {
-    modutil::check_module(fp);
-    fclose(fp);
-  }
+  vio_buffer vf(data, size);
+  modutil::check_module(vf);
+
   return 0;
 }
 
