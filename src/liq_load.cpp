@@ -658,7 +658,7 @@ public:
     if(header_remaining > 0 && header_remaining < 4)
     {
       format::warning("header data too short to fit echo data");
-      header_remaining = 0;
+      goto skip_remaining_header;
     }
     if(h.format_version >= 0x101 && header_remaining >= 4)
     {
@@ -715,13 +715,13 @@ public:
         else
         {
           format::warning("header data too short to fit echo pools");
-          header_remaining = 0;
+          goto skip_remaining_header;
         }
       }
       else
       {
         format::warning("header data too short to fit echo data");
-        header_remaining = 0;
+        goto skip_remaining_header;
       }
     }
 
@@ -732,6 +732,7 @@ public:
       header_remaining -= 2;
     }
 
+skip_remaining_header:
     if(header_remaining > 0)
     {
       format::warning("unloaded header bytes: %zu", header_remaining);
