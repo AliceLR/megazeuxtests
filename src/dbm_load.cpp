@@ -44,6 +44,10 @@ enum DBM_features
   FT_BAD_PAN_ENVELOPE,
   FT_NEGATIVE_ENVELOPE_VALUE,
   FT_HIGH_ENVELOPE_VALUE,
+  FT_OCT_0,
+  FT_OCT_GE_9,
+  FT_NOTE_GE_12,
+  FT_NOTE_OFF,
   FT_S_8_BIT,
   FT_S_16_BIT,
   FT_S_32_BIT,
@@ -103,6 +107,10 @@ static const char *FEATURE_STR[NUM_FEATURES] =
   "BadPanEnv",
   "EnvPt<0",
   "EnvPt>64",
+  "Oct=0",
+  "Oct>=9",
+  "Note>=12",
+  "NoteOff(1f)",
   "S:8",
   "S:16",
   "S:32",
@@ -181,7 +189,6 @@ enum DBM_effects
   E_ECHO_FEEDBACK       = 0x21,
   E_ECHO_MIX            = 0x22,
   E_ECHO_CROSS          = 0x23,
-
   EX_FILTER             = 0x0,
   EX_FINE_PORTAMENTO_UP = 0x1,
   EX_FINE_PORTAMENTO_DN = 0x2,
@@ -390,7 +397,7 @@ static DBM_features effect_feature(uint8_t effect, uint8_t param)
 {
   switch(effect)
   {
-    case E_ARPEGGIO:           return FT_E_ARPEGGIO;
+    case E_ARPEGGIO:           return param ? FT_E_ARPEGGIO : NUM_FEATURES;
     case E_PORTAMENTO_UP:      return FT_E_PORTAMENTO;
     case E_PORTAMENTO_DN:      return FT_E_PORTAMENTO;
     case E_TONEPORTA:          return FT_E_TONEPORTA;
@@ -637,42 +644,52 @@ public:
           format::error("invalid pattern data.");
           return modutil::INVALID;
         }
+        DBM_pattern::note &e = row[channel];
 
         if(flags & DBM_pattern::NOTE)
         {
-          row[channel].note = fgetc(fp);
+          e.note = fgetc(fp);
           left--;
+
+          if((e.note & 0xf0) == 0)
+            m.uses[FT_OCT_0] = true;
+          if((e.note & 0xf0) >= 0x90)
+            m.uses[FT_OCT_GE_9] = true;
+          if((e.note & 0x0f) >= 12 && e.note != 0x1f)
+            m.uses[FT_NOTE_GE_12] = true;
+          if(e.note == 0x1f)
+            m.uses[FT_NOTE_OFF] = true;
         }
         if(flags & DBM_pattern::INSTRUMENT)
         {
-          row[channel].instrument = fgetc(fp);
+          e.instrument = fgetc(fp);
           left--;
         }
         if(flags & DBM_pattern::EFFECT_1)
         {
-          row[channel].effect_1 = fgetc(fp);
+          e.effect_1 = fgetc(fp);
           left--;
         }
         if(flags & DBM_pattern::PARAM_1)
         {
-          row[channel].param_1 = fgetc(fp);
+          e.param_1 = fgetc(fp);
           left--;
         }
         if(flags & DBM_pattern::EFFECT_2)
         {
-          row[channel].effect_2 = fgetc(fp);
+          e.effect_2 = fgetc(fp);
           left--;
         }
         if(flags & DBM_pattern::PARAM_2)
         {
-          row[channel].param_2 = fgetc(fp);
+          e.param_2 = fgetc(fp);
           left--;
         }
 
         if(feof(fp))
           return modutil::READ_ERROR;
 
-        check_event(m, row[channel]);
+        check_event(m, e);
       }
       if(left)
       {
