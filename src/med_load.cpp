@@ -138,6 +138,7 @@ enum MED_features
   FT_HYBRID_USES_IFFOCT,
   FT_HYBRID_USES_EXT,
   FT_HYBRID_USES_SYNTH,
+  FT_DELAY_RETRIG_ON_HOLD_DECAY_INSTRUMENT,
   NUM_FEATURES
 };
 
@@ -224,6 +225,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "HybIFFOCT",
   "HybExt",
   "HybSyn(?!)",
+  "E:DelayOrRetrigOnHoldDecay",
 };
 
 
@@ -1417,6 +1419,33 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       }
       if(skip && fseek(fp, skip, SEEK_CUR))
         return modutil::SEEK_ERROR;
+    }
+  }
+
+  /* Detect features requiring both blocks and instruments loaded. */
+  for(size_t i = 0; i < s.num_blocks; i++)
+  {
+    MMD1block &b = m.patterns[i];
+    MMD0note *pat = b.events.data();
+    MMD0note *current = pat;
+
+    bool is_bpm_mode = (s.flags2 & F2_BPM);
+    for(size_t j = 0; j < b.num_rows; j++)
+    {
+      for(size_t k = 0; k < b.num_tracks; k++, current++)
+      {
+        if(!current->instrument || current->instrument > s.num_instruments)
+          continue;
+
+        MMD3instr_ext &sx = m.instruments_ext[current->instrument - 1];
+        if(sx.hold &&
+          (current->effect == E_DELAY_RETRIGGER ||
+           (current->effect == E_TEMPO &&
+            current->param >= 0xf1 && current->param <= 0xf5)))
+        {
+          m.uses[FT_DELAY_RETRIG_ON_HOLD_DECAY_INSTRUMENT] = true;
+        }
+      }
     }
   }
 
