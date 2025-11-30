@@ -1346,13 +1346,17 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
       MMD3instr_ext &sx = m.instruments_ext[i];
       int skip = x.sample_ext_size;
 
-      if(x.sample_ext_size >= 4)
+      if(x.sample_ext_size >= 2)
       {
         sx.hold               = fgetc(fp);
         sx.decay              = fgetc(fp);
+        skip -= 2;
+      }
+      if(x.sample_ext_size >= 4)
+      {
         sx.suppress_midi_off  = fgetc(fp);
         sx.finetune           = fgetc(fp);
-        skip -= 4;
+        skip -= 2;
       }
       if(x.sample_ext_size >= 8)
       {
