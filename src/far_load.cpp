@@ -36,6 +36,7 @@ enum FAR_feature
   FT_LOOP_TO,
   FT_SIZE_0_PATTERN,
   FT_SAMPLE_16BIT,
+  FT_NOTE_WITHOUT_VOLUME,
   FT_E_RAMP_DELAY_ON,
   FT_E_RAMP_DELAY_OFF,
   FT_E_FULFILL_LOOP,
@@ -66,6 +67,7 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "O:LoopTo",
   "P:Size0",
   "S:16",
+  "NoteWithoutVol",
   "E:RampDelayOn",
   "E:RampDelayOff",
   "E:FulfillLoop",
@@ -289,6 +291,9 @@ static void check_event_features(FAR_data &m, FAR_event &ev)
   FAR_feature ft = get_effect_feature(ev.effect);
   if(ft)
     m.uses[ft] = true;
+
+  if(ev.note && !ev.volume)
+    m.uses[FT_NOTE_WITHOUT_VOLUME] = true;
 }
 
 
@@ -528,7 +533,7 @@ public:
         FAR_pattern &p = m.patterns[i];
         int pattern_len = h.pattern_length[i];
 
-        using EVENT = format::event<format::note<>, format::sample<>,
+        using EVENT = format::event<format::note<>, format::sample<-1>,
                                     format::volume<>, format::effect669>;
         format::pattern<EVENT, 16> pattern(i, p.columns, p.rows, pattern_len);
         // TODO also print break.
@@ -544,10 +549,11 @@ public:
         {
           for(size_t track = 0; track < p.columns; track++, current++)
           {
-            format::note<>    a{ current->note };
-            format::sample<>  b{ current->instrument };
-            format::volume<>  c{ current->volume };
-            format::effect669 d{ current->effect, current->effect > 0 };
+            format::note<>      a{ current->note };
+            format::sample<-1>  b{ current->instrument,
+                                   current->instrument || current->note };
+            format::volume<>    c{ current->volume };
+            format::effect669   d{ current->effect, current->effect > 0 };
             pattern.insert(EVENT(a, b, c, d));
           }
         }
