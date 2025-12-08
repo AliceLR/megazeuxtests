@@ -138,6 +138,7 @@ enum MED_features
   FT_HYBRID_USES_IFFOCT,
   FT_HYBRID_USES_EXT,
   FT_HYBRID_USES_SYNTH,
+  FT_S_EXT_ENTRSZ_GT_18,
   FT_DELAY_RETRIG_ON_HOLD_DECAY_INSTRUMENT,
   NUM_FEATURES
 };
@@ -225,6 +226,7 @@ static const char * const FEATURE_DESC[NUM_FEATURES] =
   "HybIFFOCT",
   "HybExt",
   "HybSyn(?!)",
+  "SEntrSz>18",
   "E:DelayOrRetrigOnHoldDecay",
 };
 
@@ -1378,6 +1380,8 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
         m.use_long_repeat = true;
         skip -= 8;
       }
+      if(x.sample_ext_size > 18)
+        m.uses[FT_S_EXT_ENTRSZ_GT_18] = true;
 
       if(skip && fseek(fp, skip, SEEK_CUR))
         return modutil::SEEK_ERROR;
@@ -1497,6 +1501,12 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
 
     if(s.default_tempo >= 0x01 && s.default_tempo <= 0x0A)
       m.uses[FT_INIT_TEMPO_COMPAT] = true;
+  }
+
+  if(h.expansion_offset)
+  {
+    format::line("SEntrSz.", "%" PRIu32, x.sample_ext_size);
+    format::line("IEntrSz.", "%" PRIu32, x.instr_info_size);
   }
 
   format::uses(m.uses, FEATURE_DESC);
