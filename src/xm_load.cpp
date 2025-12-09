@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2020 Lachesis <petrifiedrowan@gmail.com>
+ * Copyright (C) 2020-2025 Lachesis <petrifiedrowan@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -290,6 +290,7 @@ struct XM_sample
   /* 17 */ uint8_t  reserved;
   /* 18 */ char     name[22];
   /* 40 */
+#define XM_SMP_HEADER_SIZE      40
 };
 
 struct XM_instrument
@@ -300,6 +301,7 @@ struct XM_instrument
   /*   4 */ char     name[22];
   /*  26 */ uint8_t  type;
   /*  27 */ uint16_t num_samples;
+#define XM_INS_HEADER_BASE_SIZE 29
 
   /*  29 */ uint32_t sample_header_size;
   /*  33 */ uint8_t  keymap[96];
@@ -322,6 +324,7 @@ struct XM_instrument
   /* 239 */ uint16_t fadeout;
   /* 241 */ uint16_t reserved;
   /* 243 */
+#define XM_INS_HEADER_FULL_SIZE 243
 
   void allocate()
   {
@@ -498,7 +501,7 @@ static void check_event(XM_data &m, const XM_event &ev)
   }
 }
 
-static modutil::error load_patterns(XM_data &m, FILE *fp)
+static modutil::error load_patterns(XM_data &m, vio &vf)
 {
   m.allocate_buffer();
 
@@ -507,36 +510,36 @@ static modutil::error load_patterns(XM_data &m, FILE *fp)
     XM_pattern &p = m.patterns[i];
     size_t version_header_size = (m.header.version >= 0x0103) ? 9 : 8;
 
-    p.header_size = fget_u32le(fp);
+    p.header_size = vf.u32le();
     if(p.header_size < version_header_size)
     {
-      format::error("invalid pattern %zu header size = %" PRIu32, i, p.header_size);
+      format::warning("invalid pattern %zu header size = %" PRIu32, i, p.header_size);
       return modutil::INVALID;
     }
 
-    p.packing_type = fgetc(fp);
+    p.packing_type = vf.u8();
 
     if(m.header.version >= 0x0103)
-      p.num_rows = fget_u16le(fp);
+      p.num_rows = vf.u16le();
     else
-      p.num_rows = fgetc(fp) + 1;
+      p.num_rows = vf.u8() + 1;
 
-    p.packed_size = fget_u16le(fp);
-    if(feof(fp))
+    p.packed_size = vf.u16le();
+    if(vf.eof())
       return modutil::READ_ERROR;
 
     // Skip any remaining header.
     if(p.header_size > version_header_size)
-      if(fseek(fp, p.header_size - version_header_size, SEEK_CUR))
+      if(vf.seek(p.header_size - version_header_size, SEEK_CUR))
         return modutil::SEEK_ERROR;
 
     p.allocate(m.header.num_channels, p.num_rows);
     if(!p.packed_size)
       continue;
 
-    if(fread(m.buffer.get(), 1, p.packed_size, fp) < p.packed_size)
+    if(vf.read(m.buffer.get(), p.packed_size) < p.packed_size)
     {
-      format::error("read error at pattern %zu", i);
+      format::warning("read error at pattern %zu", i);
       return modutil::READ_ERROR;
     }
 
@@ -574,9 +577,9 @@ break_current_pattern:
   return modutil::SUCCESS;
 }
 
-static modutil::error load_instruments(XM_data &m, FILE *fp)
+static modutil::error load_instruments(XM_data &m, vio &vf)
 {
-  uint8_t buffer[243];
+  uint8_t buffer[XM_INS_HEADER_FULL_SIZE];
 
   m.allocate_instruments();
 
@@ -584,9 +587,9 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
   {
     XM_instrument &ins = m.instruments[i];
 
-    if(!fread(buffer, 29, 1, fp))
+    if(vf.read(buffer, XM_INS_HEADER_BASE_SIZE) < XM_INS_HEADER_BASE_SIZE)
     {
-      format::error("read error at instrument %zu", i);
+      format::warning("read error at instrument %zu", i);
       return modutil::READ_ERROR;
     }
 
@@ -594,9 +597,10 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     ins.type        = buffer[26];
     ins.num_samples = mem_u16le(buffer + 27);
 
-    if(ins.header_size < 29 || (ins.num_samples && ins.header_size < 243))
+    if(ins.header_size < XM_INS_HEADER_BASE_SIZE)
     {
-      format::error("invalid instrument %zu header size = %" PRIu32, i, ins.header_size);
+      format::warning("invalid instrument %zu header size = %" PRIu32,
+        i, ins.header_size);
       return modutil::INVALID;
     }
 
@@ -607,17 +611,33 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     if(!ins.num_samples)
     {
       // Skip any remaining header.
-      if(ins.header_size > 29)
-        if(fseek(fp, ins.header_size - 29, SEEK_CUR))
+      if(ins.header_size > XM_INS_HEADER_BASE_SIZE)
+        if(vf.seek(ins.header_size - XM_INS_HEADER_BASE_SIZE, SEEK_CUR))
           return modutil::SEEK_ERROR;
 
       continue;
     }
 
-    if(!fread(buffer + 29, (243 - 29), 1, fp))
+    memset(buffer + XM_INS_HEADER_BASE_SIZE, 0,
+           sizeof(buffer) - XM_INS_HEADER_BASE_SIZE);
+
+    /* Sizes >243 not supported */
+    size_t num_in = MIN(ins.header_size, (uint32_t)XM_INS_HEADER_FULL_SIZE) -
+                    XM_INS_HEADER_BASE_SIZE;
+
+    if(vf.read(buffer + XM_INS_HEADER_BASE_SIZE, num_in) < num_in)
     {
-      format::error("read error at instrument %zu", i);
+      format::warning("read error at instrument %zu", i);
       return modutil::READ_ERROR;
+    }
+    /* Skip any remaining header */
+    if(ins.header_size > XM_INS_HEADER_FULL_SIZE)
+    {
+      if(vf.seek(ins.header_size - XM_INS_HEADER_FULL_SIZE, SEEK_CUR))
+      {
+        format::warning("seek error at instrument %zu", i);
+        return modutil::SEEK_ERROR;
+      }
     }
 
     memcpy(ins.keymap, buffer + 33, sizeof(ins.keymap));
@@ -642,16 +662,12 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     ins.fadeout            = mem_u16le(buffer + 239);
     ins.reserved           = mem_u16le(buffer + 241);
 
-    if(ins.sample_header_size < 40)
+    if(ins.sample_header_size < XM_SMP_HEADER_SIZE)
     {
-      format::error("invalid instrument %zu sample header size = %" PRIu32, i, ins.sample_header_size);
+      format::error("invalid instrument %zu sample header size = %" PRIu32,
+        i, ins.sample_header_size);
       return modutil::INVALID;
     }
-
-    // Skip any remaining header.
-    if(ins.header_size > 243)
-      if(fseek(fp, ins.header_size - 243, SEEK_CUR))
-        return modutil::SEEK_ERROR;
 
     ins.allocate();
 
@@ -660,9 +676,9 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     {
       XM_sample &s = ins.samples[j];
 
-      if(!fread(buffer, 40, 1, fp))
+      if(vf.read(buffer, XM_SMP_HEADER_SIZE) < XM_SMP_HEADER_SIZE)
       {
-        format::error("read error at instrument %zu sample %zu", i, j);
+        format::warning("read error at instrument %zu sample %zu", i, j);
         return modutil::READ_ERROR;
       }
 
@@ -679,9 +695,14 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
       s.name[sizeof(s.name) - 1] = '\0';
 
       // Skip any remaining header.
-      if(ins.sample_header_size > 40)
-        if(fseek(fp, ins.sample_header_size - 40, SEEK_CUR))
+      if(ins.sample_header_size > XM_SMP_HEADER_SIZE)
+      {
+        if(vf.seek(ins.sample_header_size - XM_SMP_HEADER_SIZE, SEEK_CUR))
+        {
+          format::warning("seek error at instrument %zu sample %zu", i, j);
           return modutil::SEEK_ERROR;
+        }
+      }
 
       if(s.type & XM_sample::STEREO)
         m.uses[FT_SAMPLE_STEREO] = true;
@@ -692,7 +713,8 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
       if(s.reserved == XM_sample::ADPCM)
       {
         m.uses[FT_SAMPLE_ADPCM] = true;
-        sample_total_length += ((s.length + 1) >> 1) /* Compressed size */ + 16 /* ADPCM table */;
+        sample_total_length += ((s.length + 1) >> 1) /* Compressed size */ +
+                                16 /* ADPCM table */;
       }
       else
         sample_total_length += s.length;
@@ -703,15 +725,18 @@ static modutil::error load_instruments(XM_data &m, FILE *fp)
     if(m.header.version >= 0x0104)
     {
       char tmp[8];
-      if(fread(tmp, 8, 1, fp))
+      if(vf.read_buffer(tmp) == 8)
       {
         if(!memcmp(tmp + 4, "OggS", 4))
           m.uses[FT_SAMPLE_OGG] = true;
 
         sample_total_length -= 8;
       }
-      if(fseek(fp, sample_total_length, SEEK_CUR))
+      if(vf.seek(sample_total_length, SEEK_CUR))
+      {
+        format::warning("seek error at instrument %zu sample data", i);
         return modutil::SEEK_ERROR;
+      }
     }
   }
   return modutil::SUCCESS;
@@ -725,7 +750,7 @@ public:
 
   virtual modutil::error load(modutil::data state) const override
   {
-    FILE *fp = state.reader.unwrap(); /* FIXME: */
+    vio &vf = state.reader;
 
     XM_data m{};
     XM_header &h = m.header;
@@ -733,7 +758,7 @@ public:
     bool mpt_extension = false;
     bool has_fe = false;
 
-    if(!fread(h.magic, sizeof(h.magic), 1, fp))
+    if(vf.read_buffer(h.magic) < sizeof(h.magic))
       return modutil::FORMAT_ERROR;
 
     if(memcmp(h.magic, "Extended Module: ", 17))
@@ -743,38 +768,38 @@ public:
 
     /* Header */
 
-    if(!fread(h.name, sizeof(h.name), 1, fp))
+    if(vf.read_buffer(h.name) < sizeof(h.name))
       return modutil::READ_ERROR;
 
     memcpy(m.name, h.name, sizeof(h.name));
     m.name[sizeof(h.name)] = '\0';
     strip_module_name(m.name, sizeof(m.name));
 
-    h.eof = fgetc(fp);
+    h.eof = vf.u8();
 
-    if(!fread(h.tracker, sizeof(h.tracker), 1, fp))
+    if(vf.read_buffer(h.tracker) < sizeof(h.tracker))
       return modutil::READ_ERROR;
 
     memcpy(m.tracker, h.tracker, sizeof(h.tracker));
     m.tracker[sizeof(h.tracker)] = '\0';
     strip_module_name(m.tracker, sizeof(m.tracker));
 
-    h.version     = fget_u16le(fp);
-    h.header_size = fget_u32le(fp);
+    h.version     = vf.u16le();
+    h.header_size = vf.u32le();
     if(h.header_size <= 20)
     {
       format::error("header size must be >20; is %" PRIu32, h.header_size);
       return modutil::INVALID;
     }
 
-    h.num_orders      = fget_u16le(fp);
-    h.restart_pos     = fget_u16le(fp);
-    h.num_channels    = fget_u16le(fp);
-    h.num_patterns    = fget_u16le(fp);
-    h.num_instruments = fget_u16le(fp);
-    h.flags           = fget_u16le(fp);
-    h.default_tempo   = fget_u16le(fp);
-    h.default_bpm     = fget_u16le(fp);
+    h.num_orders      = vf.u16le();
+    h.restart_pos     = vf.u16le();
+    h.num_channels    = vf.u16le();
+    h.num_patterns    = vf.u16le();
+    h.num_instruments = vf.u16le();
+    h.flags           = vf.u16le();
+    h.default_tempo   = vf.u16le();
+    h.default_bpm     = vf.u16le();
 
     if(h.num_channels > MAX_CHANNELS)
     {
@@ -796,17 +821,18 @@ public:
 
     if(h.num_orders > h.header_size - 20)
     {
-      format::error("header size %" PRIu32 " too small for %u orders", h.header_size, h.num_orders);
+      format::error("header size %" PRIu32 " too small for %u orders",
+        h.header_size, h.num_orders);
       return modutil::INVALID;
     }
 
-    if(!fread(h.orders, h.num_orders, 1, fp))
+    if(vf.read(h.orders, h.num_orders) < h.num_orders)
       return modutil::READ_ERROR;
 
     // Skip any remaining header size.
     size_t skip = h.header_size - h.num_orders - 20;
     if(skip)
-      if(fseek(fp, skip, SEEK_CUR))
+      if(vf.seek(skip, SEEK_CUR))
         return modutil::SEEK_ERROR;
 
     for(size_t i = 0; i < h.num_orders; i++)
@@ -842,21 +868,19 @@ public:
     modutil::error err;
     if(h.version >= 0x0104)
     {
-      err = load_patterns(m, fp);
-      if(err)
-        return err;
-      err = load_instruments(m, fp);
-      if(err)
-        return err;
+      err = load_patterns(m, vf);
+      if(err == modutil::SUCCESS)
+        err = load_instruments(m, vf);
+      else
+        format::warning("skipping instruments");
     }
     else
     {
-      err = load_instruments(m, fp);
-      if(err)
-        return err;
-      err = load_patterns(m, fp);
-      if(err)
-        return err;
+      err = load_instruments(m, vf);
+      if(err == modutil::SUCCESS)
+        err = load_patterns(m, vf);
+      else
+        format::warning("skipping patterns");
     }
 
 
@@ -878,7 +902,8 @@ public:
       // TODO print envelopes.
       static constexpr const char *i_labels[] =
       {
-        "Name", "T", "#Smp", "Inst.HSz", "Smpl.HSz", "#VPt", "#PPt", "Fade", "VTp", "VSw", "VDe", "VRt"
+        "Name", "T", "#Smp", "Inst.HSz", "Smpl.HSz",
+        "#VPt", "#PPt", "Fade", "VTp", "VSw", "VDe", "VRt"
       };
 
       static constexpr const char *s_labels[] =
