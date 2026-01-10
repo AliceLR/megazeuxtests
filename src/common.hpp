@@ -169,6 +169,17 @@ static inline constexpr uint32_t mem_u32be(const void *_mem) noexcept
   return (mem[0] << 24) | (mem[1] << 16) | (mem[2] << 8) | mem[3];
 }
 
+static inline constexpr uint32_t magic32(char a, char b, char c, char d) noexcept
+{
+  return ((unsigned)a << 24u) | ((unsigned)b << 16u) |
+         ((unsigned)c <<  8u) | ((unsigned)d);
+}
+
+static inline constexpr uint32_t mem_magic32(const void *mem) noexcept
+{
+  return mem_u32be(mem);
+}
+
 /* Multibyte file reading functions. */
 
 static inline uint16_t fget_u16le(FILE *fp) noexcept

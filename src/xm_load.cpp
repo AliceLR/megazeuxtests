@@ -35,6 +35,7 @@ static int num_xms;
 enum XM_features
 {
   FT_PATTERN_EARLY_END,
+  FT_INSTRUMENT_FADEOUT_OVER_FFF,
   FT_SAMPLE_STEREO,
   FT_SAMPLE_16,
   FT_SAMPLE_ADPCM,
@@ -43,6 +44,8 @@ enum XM_features
   FT_ORDER_FE,
   FT_ORDER_FE_MODPLUG_SKIP,
   FT_MODPLUG_FILTER,
+  FT_MODPLUG_EXTRA_DATA,
+  FT_MODPLUG_INSTRUMENT_HEADERS,
   FT_FX_UNKNOWN,
   FT_EX_UNKNOWN,
   FT_XX_UNKNOWN,
@@ -59,12 +62,17 @@ enum XM_features
   FT_FX_UNUSED_U,
   FT_FX_UNUSED_V,
   FT_FX_UNUSED_W,
+  FT_FX_1XX_S3M,
+  FT_FX_2XX_S3M,
+  FT_FX_AXY_S3M,
+  FT_NOTE_GT_KEYOFF,
   NUM_FEATURES
 };
 
 static constexpr const char *FEATURE_STR[NUM_FEATURES] =
 {
   "P:Trunc",
+  "I:Fadeout>FFF",
   "S:Stereo",
   "S:16",
   "S:ADPCM",
@@ -73,6 +81,8 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "O:FE",
   "MPT:FE",
   "MPT:Filter",
+  "MPT:Ext",
+  "MPT:InstHdr",
   "E:?xx",
   "E:E?x",
   "E:X?x",
@@ -89,6 +99,10 @@ static constexpr const char *FEATURE_STR[NUM_FEATURES] =
   "E:Uxx",
   "E:Vxx",
   "E:Wxx",
+  "E:S3M1xx?",
+  "E:S3M2xx?",
+  "E:S3MAxy?",
+  "Note>0x61",
 };
 
 static constexpr int MAX_CHANNELS = 256;
@@ -187,6 +201,7 @@ struct XM_header
 
 struct XM_event
 {
+  static constexpr int keyoff = 0x61;
   enum
   {
     NOTE       = (1<<0),
@@ -204,49 +219,36 @@ struct XM_event
   uint8_t param = 0;
 
   XM_event() {}
-  XM_event(uint8_t *&stream, uint8_t *end)
+  XM_event(uint8_t *&stream, uint8_t *end) noexcept
   {
-    uint8_t flags = (stream < end) ? *stream : 0;
-    stream++;
+    /* Pattern buffer has extra end data allocated to allow skipping checks here. */
+    uint8_t flags = *(stream++);
 
     if(flags & PACKED)
     {
       if(flags & NOTE)
-      {
-        note = (stream < end) ? *stream : 0;
-        stream++;
-      }
+        note = *(stream++);
+
       if(flags & INSTRUMENT)
-      {
-        instrument = (stream < end) ? *stream : 0;
-        stream++;
-      }
+        instrument = *(stream++);
+
       if(flags & VOLUME)
-      {
-        volume = (stream < end) ? *stream : 0;
-        stream++;
-      }
+        volume = *(stream++);
+
       if(flags & EFFECT)
-      {
-        effect = (stream < end) ? *stream : 0;
-        stream++;
-      }
+        effect = *(stream++);
+
       if(flags & PARAM)
-      {
-        param = (stream < end) ? *stream : 0;
-        stream++;
-      }
+        param = *(stream++);
     }
     else
     {
-      note = flags;
-      if(stream + 4 <= end)
-      {
-        instrument = stream[0];
-        volume     = stream[1];
-        effect     = stream[2];
-        param      = stream[3];
-      }
+      note       = flags;
+      instrument = stream[0];
+      volume     = stream[1];
+      effect     = stream[2];
+      param      = stream[3];
+
       stream += 4;
     }
   }
@@ -260,11 +262,6 @@ struct XM_pattern
   uint8_t  packing_type;
   uint16_t num_rows;
   uint16_t packed_size;
-
-  void allocate(uint16_t channels, uint16_t rows)
-  {
-    events.resize(channels * rows);
-  }
 };
 
 struct XM_sample
@@ -288,7 +285,7 @@ struct XM_sample
   /* 15 */ uint8_t  panning;
   /* 16 */ int8_t   transpose;
   /* 17 */ uint8_t  reserved;
-  /* 18 */ char     name[22];
+  /* 18 */ char     name[22 + 1];
   /* 40 */
 #define XM_SMP_HEADER_SIZE      40
 };
@@ -298,7 +295,7 @@ struct XM_instrument
   std::vector<XM_sample> samples;
 
   /*   0 */ uint32_t header_size;
-  /*   4 */ char     name[22];
+  /*   4 */ char     name[22 + 1];
   /*  26 */ uint8_t  type;
   /*  27 */ uint16_t num_samples;
 #define XM_INS_HEADER_BASE_SIZE 29
@@ -332,23 +329,32 @@ struct XM_instrument
   }
 };
 
+struct XM_modplug_ext
+{
+  bool detected;
+  std::vector<char> text;
+};
+
 struct XM_data
 {
   XM_header                  header;
   XM_pattern                 patterns[256];
   std::vector<XM_instrument> instruments;
+  XM_modplug_ext             mpt;
 
+#define PATTERN_BUFFER_SIZE (65536 + 6) /* Extra to allow removing bounds checks. */
   std::unique_ptr<uint8_t[]> buffer;
 
   char name[21];
   char tracker[21];
   size_t num_samples;
+  int64_t sample_total_length;
   bool uses[NUM_FEATURES];
 
   void allocate_buffer()
   {
     if(!buffer)
-      buffer = std::make_unique<uint8_t[]>(65536);
+      buffer = std::make_unique<uint8_t[]>(PATTERN_BUFFER_SIZE);
   }
 
   void allocate_instruments()
@@ -360,11 +366,12 @@ struct XM_data
 
 static void check_event(XM_data &m, const XM_event &ev)
 {
+  if(ev.note > XM_event::keyoff)
+    m.uses[FT_NOTE_GT_KEYOFF] = true;
+
   switch(ev.effect)
   {
     case FX_ARPEGGIO:
-    case FX_PORTAMENTO_UP:
-    case FX_PORTAMENTO_DOWN:
     case FX_TONE_PORTAMENTO:
     case FX_VIBRATO:
     case FX_PORTAMENTO_VOLSLIDE:
@@ -372,7 +379,6 @@ static void check_event(XM_data &m, const XM_event &ev)
     case FX_TREMOLO:
     case FX_PAN:
     case FX_OFFSET:
-    case FX_VOLSLIDE:
     case FX_JUMP:
     case FX_VOLUME:
     case FX_BREAK:
@@ -380,6 +386,22 @@ static void check_event(XM_data &m, const XM_event &ev)
     case FX_GLOBAL_VOLUME:
     case FX_GLOBAL_VOLSLIDE:
     case FX_KEY_OFF:
+      break;
+
+    case FX_PORTAMENTO_UP:
+      if(ev.param >= 0xe0)
+        m.uses[FT_FX_1XX_S3M] = true;
+      break;
+
+    case FX_PORTAMENTO_DOWN:
+      if(ev.param >= 0xe0)
+        m.uses[FT_FX_2XX_S3M] = true;
+      break;
+
+    case FX_VOLSLIDE:
+      if(((ev.param & 0xf0) == 0xf0 && (ev.param & 0x0f)) ||
+         ((ev.param & 0x0f) == 0x0f && (ev.param & 0xf0)))
+        m.uses[FT_FX_AXY_S3M] = true;
       break;
 
     case FX_ENVELOPE_POSITION:
@@ -533,7 +555,6 @@ static modutil::error load_patterns(XM_data &m, vio &vf)
       if(vf.seek(p.header_size - version_header_size, SEEK_CUR))
         return modutil::SEEK_ERROR;
 
-    p.allocate(m.header.num_channels, p.num_rows);
     if(!p.packed_size)
       continue;
 
@@ -542,14 +563,16 @@ static modutil::error load_patterns(XM_data &m, vio &vf)
       format::warning("read error at pattern %zu", i);
       return modutil::READ_ERROR;
     }
+    memset(m.buffer.get() + p.packed_size, 0, 6);
 
     uint8_t *current = m.buffer.get();
     uint8_t *end = current + p.packed_size;
-    XM_event *pos = p.events.data();
+    std::vector<XM_event> &events = p.events;
+    events.reserve(m.header.num_channels * p.num_rows);
 
     for(size_t j = 0; j < p.num_rows; j++)
     {
-      for(size_t k = 0; k < m.header.num_channels; k++, pos++)
+      for(size_t k = 0; k < m.header.num_channels; k++)
       {
         /* Some modules have patterns that end early on an event boundary.
          * Not clear what tracker(s) do this or why. */
@@ -559,7 +582,7 @@ static modutil::error load_patterns(XM_data &m, vio &vf)
           goto break_current_pattern;
         }
 
-        *pos = XM_event(current, end);
+        events.emplace_back(current, end);
         if(current > end)
         {
           format::warning("invalid pattern packing for %zu", i);
@@ -568,7 +591,7 @@ static modutil::error load_patterns(XM_data &m, vio &vf)
           );
           goto break_current_pattern;
         }
-        check_event(m, *pos);
+        check_event(m, events.back());
       }
     }
 break_current_pattern:
@@ -604,7 +627,7 @@ static modutil::error load_instruments(XM_data &m, vio &vf)
       return modutil::INVALID;
     }
 
-    memcpy(ins.name, buffer + 4, sizeof(ins.name));
+    memcpy(ins.name, buffer + 4, sizeof(ins.name) - 1);
     ins.name[sizeof(ins.name) - 1] = '\0';
 
     m.num_samples += ins.num_samples;
@@ -669,6 +692,9 @@ static modutil::error load_instruments(XM_data &m, vio &vf)
       return modutil::INVALID;
     }
 
+    if(ins.fadeout > 0xfff)
+      m.uses[FT_INSTRUMENT_FADEOUT_OVER_FFF] = true;
+
     ins.allocate();
 
     size_t sample_total_length = 0;
@@ -691,7 +717,7 @@ static modutil::error load_instruments(XM_data &m, vio &vf)
       s.panning     = buffer[15];
       s.transpose   = buffer[16];
       s.reserved    = buffer[17];
-      memcpy(s.name, buffer + 18, sizeof(s.name));
+      memcpy(s.name, buffer + 18, sizeof(s.name) - 1);
       s.name[sizeof(s.name) - 1] = '\0';
 
       // Skip any remaining header.
@@ -738,7 +764,74 @@ static modutil::error load_instruments(XM_data &m, vio &vf)
         return modutil::SEEK_ERROR;
       }
     }
+    else
+      m.sample_total_length += sample_total_length;
   }
+  return modutil::SUCCESS;
+}
+
+static modutil::error load_modplug_ext(XM_data &m, vio &vf)
+{
+  XM_modplug_ext &mpt = m.mpt;
+  uint8_t buf[8];
+
+  while(1)
+  {
+    if(vf.read_buffer(buf) < 8)
+      break;
+
+    uint32_t magic = mem_magic32(buf + 0);
+    uint32_t sz    = mem_u32le(buf + 4);
+    if(sz > INT32_MAX)
+      break;
+
+    switch(magic)
+    {
+      case magic32('t','e','x','t'):
+      {
+        mpt.detected = true;
+        mpt.text.resize(sz + 1);
+        sz = vf.read(mpt.text.data(), sz);
+        mpt.text[sz] = '\0';
+        for(size_t i = 0; i < sz; i++)
+        {
+          char &c = mpt.text[i];
+          if(c == '\r')
+            c = '\n';
+          else
+          if(c < 32 && c > 126 && c != '\n' && c != '\t')
+            c = '.';
+        }
+        break;
+      }
+
+      case magic32('M','I','D','I'):
+      case magic32('P','N','A','M'):
+      case magic32('C','N','A','M'):
+      case magic32('C','H','F','X'):
+      case magic32('X','T','P','M'):
+      {
+        mpt.detected = true;
+        if(vf.seek(sz, SEEK_CUR) < 0)
+          goto exit;
+        break;
+      }
+
+      default:
+      {
+        if((magic & magic32('F','X',0,0)) == magic32('F','X',0,0))
+          mpt.detected = true;
+
+        if(vf.seek(sz, SEEK_CUR) < 0)
+          goto exit;
+        break;
+      }
+    }
+  }
+exit:
+  if(mpt.detected)
+    m.uses[FT_MODPLUG_EXTRA_DATA] = true;
+
   return modutil::SUCCESS;
 }
 
@@ -881,19 +974,56 @@ public:
         err = load_patterns(m, vf);
       else
         format::warning("skipping patterns");
+
+      if(err == modutil::SUCCESS)
+      {
+        if(vf.seek(m.sample_total_length, SEEK_CUR) < 0)
+        {
+          format::warning("failed to seek past end-of-file sample data");
+          err = modutil::SEEK_ERROR;
+        }
+      }
     }
+
+    /* Modplug extension data and detection. */
+    if(err == modutil::SUCCESS)
+      err = load_modplug_ext(m, vf);
+
+    for(const XM_instrument &ins : m.instruments)
+    {
+      if(ins.header_size == 0x0107 && ins.num_samples == 0 &&
+         ins.sample_header_size == 0)
+      {
+        m.uses[FT_MODPLUG_INSTRUMENT_HEADERS] = true;
+        m.mpt.detected = true;
+      }
+    }
+
+    if(!strncmp(m.tracker, "FastTracker v 2.00", 18)) /* Old MPT versions */
+      m.mpt.detected = true;
+
+    const char *mpt_string = "";
+    if(m.mpt.detected && !strncmp(m.tracker, "FastTracker v", 13))
+      mpt_string = " (Modplug Tracker)";
 
 
     /* Print information. */
 
     format::line("Name",     "%s", m.name);
-    format::line("Type",     "XM %04x %s", h.version, m.tracker);
+    format::line("Type",     "XM %04x %s%s", h.version, m.tracker, mpt_string);
     format::line("Instr.",   "%u", h.num_instruments);
     format::line("Samples",  "%zu", m.num_samples);
     format::line("Channels", "%u", h.num_channels);
     format::line("Patterns", "%u", h.num_patterns);
     format::line("Orders",   "%u", h.num_orders);
+    format::line("Speed",    "%u", h.default_tempo);
+    format::line("BPM",      "%u", h.default_bpm);
+    format::line("HeaderSz", "%04" PRIx32 "h", h.header_size);
+    format::line("Filesize", "%" PRId64 "", vf.length());
     format::uses(m.uses, FEATURE_STR);
+
+    if(m.mpt.text.size())
+      format::description<96>("Text", m.mpt.text.data(), m.mpt.text.size());
 
     if(Config.dump_samples)
     {
@@ -908,7 +1038,7 @@ public:
 
       static constexpr const char *s_labels[] =
       {
-        "Name", "Ins", "Length", "LoopStart", "LoopLen", "Vol", "Fine", "Flg", "Tr"
+        "Name", "Ins", "Length", "LoopStart", "LoopLen", "Vol", "Pan", "Fine", "Flg", "Tr"
       };
 
       table::table<
@@ -936,7 +1066,8 @@ public:
         table::number<10>,
         table::number<10>,
         table::spacer,
-        table::number<4>,
+        table::number<3>,
+        table::number<3>,
         table::number<4>,
         table::number<4>,
         table::number<4>> s_table;
@@ -970,7 +1101,7 @@ public:
           {
             s_table.row(smp, s.name, i, {},
               s.length, s.loop_start, s.loop_length, {},
-              s.volume, s.finetune, s.type, s.transpose);
+              s.volume, s.panning, s.finetune, s.type, s.transpose);
             smp++;
           }
           i++;
