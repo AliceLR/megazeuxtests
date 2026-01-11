@@ -68,6 +68,7 @@ BINEXT := ${TAG}${BINEXT}
 SRC  = src
 OBJ  = src/.build${TAG}
 
+CONV_OBJ = ${OBJ}/converters
 DIMG_OBJ = ${OBJ}/dimgutil
 
 MODULEDIAG_EXE  := moddiag${BINEXT}
@@ -124,23 +125,23 @@ MODULEUNPACK_OBJS := \
 
 DSYMGEN_EXE  := dsymgen${BINEXT}
 DSYMGEN_OBJS := \
-  ${OBJ}/dsymgen.o
+  ${CONV_OBJ}/dsymgen.o
 
 MOD2LIQ2_EXE := mod2liq2${BINEXT}
 MOD2LIQ2_OBJS := \
-  ${OBJ}/mod2liq2.o
+  ${CONV_OBJ}/mod2liq2.o
 
 S3M2LIQ_EXE := s3m2liq${BINEXT}
 S3M2LIQ_OBJS := \
-  ${OBJ}/s3m2liq.o
+  ${CONV_OBJ}/s3m2liq.o
 
 COCORIP_EXE  := cocorip${BINEXT}
 COCORIP_OBJS := \
-  ${OBJ}/cocorip.o
+  ${CONV_OBJ}/cocorip.o
 
 WAV2AVR_EXE  := wav2avr${BINEXT}
 WAV2AVR_OBJS := \
-  ${OBJ}/wav2avr.o \
+  ${CONV_OBJ}/wav2avr.o \
   ${OBJ}/error.o \
   ${OBJ}/Config.o \
 
@@ -188,23 +189,23 @@ ${MODULEUNPACK_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 
 -include ${DSYMGEN_OBJS:.o=.d}
 ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
-${DSYMGEN_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+${DSYMGEN_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
 -include ${MOD2LIQ2_OBJS:.o=.d}
 ${MOD2LIQ2_EXE}: ${MOD2LIQ2_OBJS}
-${MOD2LIQ2_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+${MOD2LIQ2_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
 -include ${S3M2LIQ_OBJS:.o=.d}
 ${S3M2LIQ_EXE}: ${S3M2LIQ_OBJS}
-${S3M2LIQ_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+${S3M2LIQ_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
 -include ${COCORIP_OBJS:.o=.d}
 ${COCORIP_EXE}: ${COCORIP_OBJS}
-${COCORIP_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+${COCORIP_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
 -include ${WAV2AVR_OBJS:.o=.d}
 ${WAV2AVR_EXE}: ${WAV2AVR_OBJS}
-${WAV2AVR_OBJS}: $(filter-out $(wildcard ${OBJ}),${OBJ})
+${WAV2AVR_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
 -include ${IFFDUMP_OBJS:.o=.d}
 ${IFFDUMP_EXE}: ${IFFDUMP_OBJS}
@@ -247,7 +248,7 @@ ALL_EXES := \
 
 all: ${ALL_EXES}
 
-${OBJ} ${OBJ}/dimgutil:
+${OBJ} ${OBJ}/converters ${OBJ}/dimgutil:
 	$(if ${V},,@echo " MKDIR   " $@)
 	@mkdir -p "$@"
 

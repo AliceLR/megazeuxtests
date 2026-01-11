@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <vector>
 
-#include "IFF.hpp"
-#include "common.hpp"
+#include "../IFF.hpp"
+#include "../common.hpp"
 
 #define AVR_FALSE         0x0000
 #define AVR_TRUE          0xffff
@@ -245,8 +245,8 @@ int main(int argc, char *argv[])
   if(sep)
     input_filename = sep + 1;
   size_t name_len = strlen(input_filename);
-  char filename[8]{};
-  char filename_ext[20]{};
+  char filename[8 + 1]{};
+  char filename_ext[20 + 1]{};
   // rare correct usage of this function!
   strncpy(filename, input_filename, 8);
   if(name_len > 8)

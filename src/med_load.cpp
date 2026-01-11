@@ -1437,7 +1437,6 @@ static modutil::error read_mmd(FILE *fp, int mmd_version)
     MMD0note *pat = b.events.data();
     MMD0note *current = pat;
 
-    bool is_bpm_mode = (s.flags2 & F2_BPM);
     for(size_t j = 0; j < b.num_rows; j++)
     {
       for(size_t k = 0; k < b.num_tracks; k++, current++)
