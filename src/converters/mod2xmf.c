@@ -35,7 +35,6 @@
 #define MOD_MAX_CHANNELS 99
 #define MOD_ROWS       64
 
-/* Add 1 extra channel to help with tempo and breaks. */
 #define XMF_ROWS 64
 #define XMF_SAMPLES 256
 #define XMF_ORDERS 256
