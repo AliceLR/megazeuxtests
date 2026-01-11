@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #define FORMAT_NONE -1
@@ -215,9 +216,9 @@ static int convert_mod(FILE *out, const uint8_t *in, size_t in_len, int chn)
 }
 
 #ifdef LIBFUZZER_FRONTEND
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-  FILE *fp = fmemopen(const_cast<uint8_t *>(data), size, "rb");
+  FILE *fp = fmemopen((uint8_t *)data, size, "rb");
   if(fp)
   {
     // TODO

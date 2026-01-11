@@ -358,5 +358,11 @@ endif
 
 batch:
 	@${MAKE}
-	@for s in ${BATCH_SANITIZE}; do CC=clang CXX=clang++ ${MAKE} SANITIZE=$$s; done
-	@for f in ${BATCH_FUZZER}; do CC=clang CXX=clang++ ${MAKE} FUZZER=$$f; done
+	@for s in ${BATCH_SANITIZE}; do \
+		echo "***** BUILDING SANITIZED: $$s *****"; \
+		CC=clang CXX=clang++ ${MAKE} SANITIZE=$$s; \
+	done
+	@for f in ${BATCH_FUZZER}; do \
+		echo "***** BUILDING FUZZER: $$f *****"; \
+		CC=clang CXX=clang++ ${MAKE} FUZZER=$$f; \
+	done

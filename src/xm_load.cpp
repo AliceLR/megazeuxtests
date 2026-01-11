@@ -799,7 +799,7 @@ static modutil::error load_modplug_ext(XM_data &m, vio &vf)
           if(c == '\r')
             c = '\n';
           else
-          if(c < 32 && c > 126 && c != '\n' && c != '\t')
+          if((c < 32 || c > 126) && c != '\n' && c != '\t')
             c = '.';
         }
         break;
