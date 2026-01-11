@@ -127,6 +127,10 @@ DSYMGEN_EXE  := dsymgen${BINEXT}
 DSYMGEN_OBJS := \
   ${CONV_OBJ}/dsymgen.o
 
+MOD2XMF_EXE := mod2xmf${BINEXT}
+MOD2XMF_OBJS := \
+  ${CONV_OBJ}/mod2xmf.o
+
 MOD2LIQ2_EXE := mod2liq2${BINEXT}
 MOD2LIQ2_OBJS := \
   ${CONV_OBJ}/mod2liq2.o
@@ -191,6 +195,10 @@ ${MODULEUNPACK_OBJS}: $(filter-out $(wildcard ${DIMG_OBJ}),${DIMG_OBJ})
 ${DSYMGEN_EXE}: ${DSYMGEN_OBJS}
 ${DSYMGEN_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
 
+-include ${MOD2XMF_OBJS:.o=.d}
+${MOD2XMF_EXE}: ${MOD2XMF_OBJS}
+${MOD2XMF_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
+
 -include ${MOD2LIQ2_OBJS:.o=.d}
 ${MOD2LIQ2_EXE}: ${MOD2LIQ2_OBJS}
 ${MOD2LIQ2_OBJS}: $(filter-out $(wildcard ${CONV_OBJ}),${CONV_OBJ})
@@ -235,6 +243,7 @@ ALL_EXES := \
   ${MODULEDIAG_EXE}  \
   ${MODULEUNPACK_EXE} \
   ${DSYMGEN_EXE} \
+  ${MOD2XMF_EXE} \
   ${MOD2LIQ2_EXE} \
   ${S3M2LIQ_EXE} \
   ${COCORIP_EXE} \
@@ -271,6 +280,10 @@ ${MODULEUNPACK_EXE}:
 ${DSYMGEN_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
 	${LINKCXX} ${LDFLAGS} -o $@ ${DSYMGEN_OBJS} ${LDLIBS}
+
+${MOD2XMF_EXE}:
+	$(if ${V},,@echo " LINK    " $@)
+	${LINKCXX} ${LDFLAGS} -o $@ ${MOD2XMF_OBJS} ${LDLIBS}
 
 ${MOD2LIQ2_EXE}:
 	$(if ${V},,@echo " LINK    " $@)
@@ -319,6 +332,7 @@ clean:
 	rm -f modutil modutil.exe modutil_san*
 	rm -f dimgutil dimgutil.exe dimgutil_san*
 	rm -f dsymgen dsymgen.exe dsymgen_san*
+	rm -f mod2xmf mod2xmf.exe mod2xmf_san*
 	rm -f mod2liq2 mod2liq2.exe mod2liq2_san*
 	rm -f s3m2liq s3m2liq.exe s3m2liq_san*
 	rm -f cocorip cocorip.exe cocorip_san*
