@@ -2,18 +2,23 @@
  *
  * Copyright (C) 2023-2026 Lachesis <petrifiedrowan@gmail.com>
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 
 #include <ctype.h>
@@ -26,6 +31,7 @@
 
 #define FORMAT_NONE -1
 #define FORMAT_MOD 0
+#define FORMAT_ULT 1
 
 #define MOD_HEADER_LEN 1084
 #define MOD_SAMPLE_LEN 30
@@ -35,9 +41,23 @@
 #define MOD_MAX_CHANNELS 99
 #define MOD_ROWS       64
 
+#define ULT_V1_0          1
+#define ULT_V1_4          2
+#define ULT_V1_5          3
+#define ULT_V1_6          4
+#define ULT_SAMPLE_LEN_10 64
+#define ULT_SAMPLE_LEN_16 66
+#define ULT_MAX_CHANNELS  32 /* Format allows up to 256, tracker limits to 32 */
+#define ULT_ROWS          64
+
 #define XMF_ROWS 64
 #define XMF_SAMPLES 256
 #define XMF_ORDERS 256
+
+#define GUS_SAMPLE_16_BIT (1 << 2)
+#define GUS_SAMPLE_LOOP   (1 << 3)
+#define GUS_SAMPLE_BIDIR  (1 << 4)
+#define GUS_SAMPLE_VALID  (GUS_SAMPLE_16_BIT | GUS_SAMPLE_LOOP | GUS_SAMPLE_BIDIR)
 
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MAGIC(a,b,c,d) ((a) | ((b) << 8) | ((c) << 16) | ((uint32_t)(d) << 24UL))
@@ -45,6 +65,11 @@
 static uint16_t memget16be(const uint8_t *buf)
 {
   return (buf[0] << 8) | buf[1];
+}
+
+static uint16_t memget16le(const uint8_t *buf)
+{
+  return buf[0] | (buf[1] << 8);
 }
 
 static uint32_t memget32le(const uint8_t *buf)
@@ -67,7 +92,7 @@ static void memput24le(uint32_t val, uint8_t *buf)
 
 static int convert_mod(FILE *out, const uint8_t *in, size_t in_len, int chn)
 {
-  uint8_t buf[MOD_MAX_CHANNELS * MOD_ROWS * 4];
+  uint8_t buf[MOD_MAX_CHANNELS * MOD_ROWS * 6];
   const uint8_t *samples = in + 20;
   const uint8_t *patterns = in + MOD_HEADER_LEN;
   const uint8_t *sdata;
@@ -110,7 +135,7 @@ static int convert_mod(FILE *out, const uint8_t *in, size_t in_len, int chn)
     memput16le(rate,                pos + 14);
 
     pos[12] = (volume * 0xff) >> 6;
-    pos[13] = loopend ? 0x08 : 0x00;
+    pos[13] = loopend ? GUS_SAMPLE_LOOP : 0x00;
 
     samples_total += len;
     samples += MOD_SAMPLE_LEN;
@@ -214,6 +239,215 @@ static int convert_mod(FILE *out, const uint8_t *in, size_t in_len, int chn)
   return 0;
 }
 
+
+static void ult_convert_fx(uint8_t *fx, uint8_t *param)
+{
+  /* XMF implements MOD commands aside from ULT balance (0x10) and
+   * ULT retrigger (0x11). The non-standard ULT commands need to be
+   * filtered out/remapped.
+   */
+  switch(*fx)
+  {
+  case 0x5:             /* Special commands */
+  case 0x6:             /* Unused */
+  case 0x8:             /* Unused */
+    *fx = *param = 0;
+    break;
+
+  case 0xb:             /* Balance */
+    *fx = 0x10;
+    break;
+
+  case 0x0e:
+    switch(*param >> 4)
+    {
+    case 0x0:           /* Vibrato strength */
+    case 0x3:           /* Unused */
+    case 0x4:           /* Unused */
+    case 0x5:           /* Unused */
+    case 0x6:           /* Unused */
+    case 0x7:           /* Unused */
+    case 0xe:           /* Unused */
+    case 0xf:           /* Unused */
+      *fx = *param = 0;
+      break;
+
+    case 0x8:           /* Delay track */
+      *param = 0xe0 | (*param & 0x0f);
+      break;
+
+    case 0x9:           /* Retrigger (XMF E9x only retriggers once?) */
+      *fx = 0x11;
+      *param &= 0x0f;
+      break;
+    }
+  }
+}
+
+static void ult_convert_event(uint8_t *dest, const uint8_t *src)
+{
+  dest[0] = src[0];         /* Note */
+  dest[1] = src[1];         /* Instrument */
+  dest[2] = src[2] >> 4;    /* Effect (hi) */
+  dest[3] = src[2] & 0x0f;  /* Effect (lo) */
+  dest[4] = src[3];         /* Param (lo) */
+  dest[5] = src[4];         /* Param (hi) */
+
+  ult_convert_fx(dest + 2, dest + 5);
+  ult_convert_fx(dest + 3, dest + 4);
+}
+
+static int convert_ult(FILE *out, const uint8_t *in, size_t in_len)
+{
+  const uint8_t *eof = in + in_len;
+  const uint8_t *sequence;
+  const uint8_t *patterns;
+  const uint8_t *sdata;
+  const uint8_t *sample;
+  uint8_t *buf;
+  uint8_t *pos;
+  size_t samples_total = 0;
+  size_t pattern_size;
+  size_t pitch;
+
+  unsigned version = in[14] - '0';
+  unsigned text_length = in[47] * 32;
+  unsigned num_samples;
+  uint16_t num_channels;
+  uint16_t num_patterns;
+  size_t i;
+  size_t j;
+  size_t k;
+
+  buf = (uint8_t *)calloc(16, XMF_SAMPLES);
+  if(!buf)
+    return 2;
+
+  if(text_length > in_len || 49 >= in_len - text_length)
+    return 2;
+
+  num_samples = *(in + 48 + text_length);
+  sample = in + 49 + text_length;
+  pos = buf;
+
+  for(i = 0; i < num_samples && (sample < eof - 66); i++)
+  {
+    uint32_t loop_start = memget32le(sample + 44);
+    uint32_t loop_end   = memget32le(sample + 48);
+    uint32_t size_start = memget32le(sample + 52);
+    uint32_t size_end   = memget32le(sample + 56);
+    uint8_t default_vol = sample[60];
+    uint8_t bidi        = sample[61];
+    uint16_t c2speed    = 8363;
+    uint16_t finetune;
+    size_t length = (size_end > size_start) ? size_end - size_start : 0;
+
+    if(version >= ULT_V1_6)
+    {
+      c2speed = memget16le(sample + 62);
+      finetune = memget16le(sample + 64);
+      sample += ULT_SAMPLE_LEN_16;
+    }
+    else
+    {
+      finetune = memget16le(sample + 62);
+      sample += ULT_SAMPLE_LEN_10;
+    }
+
+    memput24le(loop_start, pos + 0);
+    memput24le(loop_end, pos + 3);
+    memput24le(samples_total, pos + 6);
+    memput24le(samples_total + length, pos + 9);
+    pos[12] = default_vol;
+    pos[13] = bidi & GUS_SAMPLE_VALID;
+    memput16le(c2speed, pos + 14);
+
+    /* XMF likely does not support UT-style "finetune" in any capacity. */
+    (void)finetune;
+
+    samples_total += length;
+    pos += 16;
+  }
+  sequence = sample;
+
+  /* Imperium Galactica uses 3, others use 4; possibly directly
+   * copied (minus '0') from the Ultra Tracker magic string? */
+  fputc(0x03, out);
+  fwrite(buf, 16, 256, out);
+  free(buf);
+
+  /* Sequence is identical to Ultra Tracker. */
+  if(sequence > eof || 258 > eof - sequence)
+    return 2;
+
+  num_channels = sequence[256] + 1;
+  num_patterns = sequence[257] + 1;
+  if(num_channels > ULT_MAX_CHANNELS || 258 + num_channels > eof - sequence)
+    return 2;
+
+  fwrite(sequence, 1, 258 + num_channels, out);
+  patterns = sequence + 258 + num_channels;
+  pattern_size = num_channels * ULT_ROWS * 6;
+  pitch = num_channels * 6;
+
+  /* Patterns - ULT stores patterns track-major, uses RLE compression;
+   *            XMF are uncompressed and stored pattern-major (like MOD). */
+  buf = (uint8_t *)calloc(num_patterns, pattern_size);
+  if(!buf)
+    return 2;
+
+  for(i = 0; i < num_channels; i++)
+  {
+    for(j = 0; j < num_patterns; j++)
+    {
+      pos = buf + j * pattern_size + i * 6;
+
+      for(k = 0; k < ULT_ROWS; )
+      {
+        if(patterns > eof - 5)
+          return 2;
+
+        if(patterns[0] == 0xfc) /* RLE */
+        {
+          uint8_t event[6];
+          int count = patterns[1];
+
+          if(patterns > eof - 7)
+            return 2;
+
+          ult_convert_event(event, patterns + 2);
+          patterns += 7;
+          do
+          {
+            memcpy(pos, event, 6);
+            pos += pitch;
+            count--;
+            k++;
+          }
+          while(count > 0 && k < ULT_ROWS);
+        }
+        else
+        {
+          ult_convert_event(pos, patterns);
+          patterns += 5;
+          pos += pitch;
+          k++;
+        }
+      }
+    }
+  }
+  fwrite(buf, num_patterns, pattern_size, out);
+  free(buf);
+
+  sdata = patterns;
+  if(sdata > eof || samples_total > (size_t)(eof - sdata))
+    return 2;
+
+  /* Copy sample data direct. */
+  fwrite(sdata, 1, samples_total, out);
+  return 0;
+}
+
 #ifdef LIBFUZZER_FRONTEND
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
@@ -241,8 +475,29 @@ int main(int argc, char *argv[])
   FILE *in_f;
   FILE *out;
 
+  fprintf(stderr,
+    "mod2xmf - convert MOD and ULT to Imperium Galactica XMF\n"
+    "Copyright (C) 2023-2026 Lachesis\n"
+    "\n"
+    "NOTICE: This utility is intended for replayer research for Imperium\n"
+    "Galactica ONLY. This utility makes NO ATTEMPT to ensure accurate\n"
+    "conversion, and in fact intentionally avoids it in some cases\n"
+    "for convenience. Any MOD/ULT provided to this utility should have been\n"
+    "crafted WITH THE EXPRESS PURPOSE of being interpreted by Imperium Galactica\n"
+    "and the output file should be well-tested with Imperium Galactica before\n"
+    "distributing. To replayer authors: if you attempt to detect files made\n"
+    "with this tool, they should be played as if they are original Imperium\n"
+    "Galactica modules, not as their source formats.\n"
+    "\n"
+    "DO NOT USE THIS UTILITY FOR STUPID CRAP!\n"
+    "\n"
+  );
   if(argc != 3)
+  {
+    fprintf(stderr, "Usage: mod2xmf [infile] [outfile]\n"
+                    "Writes 03h XMF conversion of [infile] to [outfile].\n");
     return 1;
+  }
 
   if(stat(argv[1], &st) < 0)
     return 1;
@@ -261,7 +516,13 @@ int main(int argc, char *argv[])
   }
   fclose(in_f);
 
-  if(in_len >= MOD_HEADER_LEN)
+  if(format == FORMAT_NONE && in_len >= 66)
+  {
+    if(!memcmp(in, "MAS_UTrack_V00", 14))
+      format = FORMAT_ULT;
+  }
+
+  if(format == FORMAT_NONE && in_len >= MOD_HEADER_LEN)
   {
     /* Ignoring Digital Tracker, FEST, WOW for now. */
     uint32_t magic = memget32le(in + 1080);
@@ -322,6 +583,9 @@ int main(int argc, char *argv[])
   {
   case FORMAT_MOD:
     ret = convert_mod(out, in, in_len, chn);
+    break;
+  case FORMAT_ULT:
+    ret = convert_ult(out, in, in_len);
     break;
   default:
     ret = 1;
