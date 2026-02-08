@@ -8,8 +8,9 @@ This repository is currently the home of a handful of utilities which all need b
 
 * `moddiag` (formerly `modutil`) dumps a bunch of information about module formats I've had to work with developing libxmp, most (but not all) of which are formats supported by MegaZeux. Some of the information printed is actually useful!
   * MOD, S3M, XM, IT
-  * Other DOS formats: 669, DSMI AMF, ASYLUM AMF, DSIK DSM, FAR, GDM, MTM, Epic MegaGames PSM (both), STM, ULT
+  * Other DOS formats: 669, DSMI AMF, ASYLUM AMF, DSIK DSM, FAR, GDM, LIQ (both), MTM, Epic MegaGames PSM (both), RTM, STM, ULT, XMF
   * Other Amiga formats: DIGI Booster Pro, MED (partial support), Oktalyzer
+  * Other Atari formats: Digital Tracker
   * RISC OS formats: Archimedes !Tracker, Coconizer, Desktop Tracker, Digital Symphony
   * `iffdump` is a testing program for `modutil`'s IFF support that sometimes is also useful debugging new IFF-based formats.
 * `modunpack` (formerly `dimgutil`)
@@ -38,7 +39,7 @@ copyrights that really need to be scrutinized better (see CREDITS.md).
 
 ## License
 ```
-Copyright (C) 2020-2024 Lachesis <petrifiedrowan@gmail.com>
+Copyright (C) 2020-2026 Lachesis <petrifiedrowan@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
